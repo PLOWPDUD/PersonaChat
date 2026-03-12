@@ -176,7 +176,9 @@ export function Home() {
                   <div>
                     <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{chat.character.name}</h3>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      Last active: {chat.updatedAt?.toDate().toLocaleDateString()}
+                      Last active: {chat.updatedAt && typeof chat.updatedAt.toDate === 'function' 
+                        ? chat.updatedAt.toDate().toLocaleDateString() 
+                        : 'Just now'}
                     </p>
                   </div>
                 </div>

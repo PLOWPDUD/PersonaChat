@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children?: ReactNode;
@@ -9,7 +9,7 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
@@ -24,7 +24,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public render() {
-    const { children } = (this as any).props;
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
