@@ -1,0 +1,75 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "photoURL": { "type": "string", "format": "uri", "description": "The user's profile picture URL." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "An AI character created by a user.",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string", "description": "The UID of the user who created this character." },
+        "name": { "type": "string", "description": "The character's name." },
+        "avatarUrl": { "type": "string", "format": "uri", "description": "The character's avatar image URL." },
+        "greeting": { "type": "string", "description": "The character's initial greeting message." },
+        "description": { "type": "string", "description": "Detailed description of the character's persona." },
+        "personality": { "type": "string", "description": "The character's personality traits." },
+        "visibility": { "type": "string", "enum": ["public", "private"], "description": "Whether the character is public or private." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the character was created." }
+      },
+      "required": ["creatorId", "name", "greeting", "description", "visibility", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat session between a user and a character.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user." },
+        "characterId": { "type": "string", "description": "The ID of the character." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the chat was started." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." }
+      },
+      "required": ["userId", "characterId", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A single message within a chat session.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "description": "The ID of the chat this message belongs to." },
+        "role": { "type": "string", "enum": ["user", "model"], "description": "Who sent the message." },
+        "content": { "type": "string", "description": "The content of the message." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." }
+      },
+      "required": ["chatId", "role", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/characters/{characterId}": {
+      "schema": { "$ref": "#/entities/Character" },
+      "description": "Stores AI characters."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Stores chat sessions."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores messages within a chat."
+    }
+  }
+}

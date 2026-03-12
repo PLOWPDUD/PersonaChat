@@ -1,0 +1,177 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - The user's unique ID
+    //   - displayName: string (optional) - The user's display name
+    //   - email: string (required) - The user's email address
+    //   - photoURL: string (optional) - The user's profile picture URL
+    //   - createdAt: timestamp (required) - When the user was created
+    //
+    // Collection: characters
+    // Document ID: {characterId}
+    // Fields:
+    //   - creatorId: string (required) - The UID of the user who created this character
+    //   - name: string (required) - The character's name
+    //   - avatarUrl: string (optional) - The character's avatar image URL
+    //   - greeting: string (required) - The character's initial greeting message
+    //   - description: string (required) - Detailed description of the character's persona
+    //   - personality: string (optional) - The character's personality traits
+    //   - visibility: string (required) - 'public' or 'private'
+    //   - createdAt: timestamp (required) - When the character was created
+    //
+    // Collection: chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - userId: string (required) - The UID of the user
+    //   - characterId: string (required) - The ID of the character
+    //   - createdAt: timestamp (required) - When the chat was started
+    //   - updatedAt: timestamp (required) - When the chat was last updated
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - chatId: string (required) - The ID of the chat this message belongs to
+    //   - role: string (required) - 'user' or 'model'
+    //   - content: string (required) - The content of the message
+    //   - createdAt: timestamp (required) - When the message was sent
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.creatorId;
+    }
+
+    function uidUnchanged(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == request.auth.uid;
+    }
+
+    function uidNotModified(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'email', 'photoURL', 'createdAt']) &&
+             request.resource.data.uid == request.auth.uid &&
+             request.resource.data.email is string &&
+             isValidOptionalString('displayName', 0, 100) &&
+             isValidOptionalString('photoURL', 0, 1000) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidCharacter() {
+      return hasRequiredFields(['creatorId', 'name', 'greeting', 'description', 'visibility', 'createdAt']) &&
+             hasOnlyAllowedFields(['creatorId', 'name', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt']) &&
+             request.resource.data.creatorId == request.auth.uid &&
+             validStringLength('name', 1, 100) &&
+             isValidOptionalString('avatarUrl', 0, 1000) &&
+             validStringLength('greeting', 1, 1000) &&
+             validStringLength('description', 1, 5000) &&
+             isValidOptionalString('personality', 0, 2000) &&
+             request.resource.data.visibility in ['public', 'private'] &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidChat() {
+      return hasRequiredFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
+             request.resource.data.userId == request.auth.uid &&
+             request.resource.data.characterId is string &&
+             request.resource.data.createdAt is timestamp &&
+             request.resource.data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(chatId) {
+      return hasRequiredFields(['chatId', 'role', 'content', 'createdAt']) &&
+             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt']) &&
+             request.resource.data.chatId == chatId &&
+             request.resource.data.role in ['user', 'model'] &&
+             validStringLength('content', 1, 10000) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can only read and write their own profile
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    match /characters/{characterId} {
+      // Anyone authenticated can read public characters, or their own private characters
+      allow read: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner());
+      allow create: if isAuthenticated() && isValidCharacter();
+      allow update: if isDocOwner() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']);
+      allow delete: if isDocOwner();
+    }
+
+    match /chats/{chatId} {
+      // Users can only read and write their own chats
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidChat();
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt']);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      match /messages/{messageId} {
+        // Users can only read and write messages in their own chats
+        allow read: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid;
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid && isValidMessage(chatId);
+        allow update: if false; // Messages should not be updated
+        allow delete: if false; // Messages should not be deleted
+      }
+    }
+  }
+}

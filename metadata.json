@@ -1,0 +1,5 @@
+{
+  "name": "PersonaChat",
+  "description": "A Character.ai-like app where users can create and chat with AI personalities.",
+  "requestFramePermissions": []
+}
