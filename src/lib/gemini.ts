@@ -22,7 +22,7 @@ export async function generateCharacterResponse(
   chatHistory: { role: 'user' | 'model'; content: string }[],
   userMessage: string,
   memories: string[] = [],
-  model: string = 'gemini-3-flash-preview'
+  model: string = 'gemini-flash-latest'
 ) {
   const apiKey = getApiKey();
   
@@ -133,7 +133,7 @@ Format your response as: [Character Name]: [Message]`;
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
     }
     if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-      throw new Error("API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings.");
+      throw new Error(`API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota for the model ${model}. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings.`);
     }
     if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
       throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions at [Google AI Studio](https://aistudio.google.com/app/apikey) and update it in Settings.");
