@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { logOut } from '../lib/firebase';
-import { MessageSquare, PlusCircle, LogOut, User as UserIcon, Search } from 'lucide-react';
+import { MessageSquare, PlusCircle, LogOut, User as UserIcon, Search, UserCircle } from 'lucide-react';
 
 export function Layout() {
   const { user } = useAuth();
@@ -38,6 +38,14 @@ export function Layout() {
               >
                 <PlusCircle className="w-4 h-4" />
                 <span className="hidden sm:inline">Create Character</span>
+              </Link>
+
+              <Link 
+                to="/personas" 
+                className="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+              >
+                <UserCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">Personas</span>
               </Link>
               
               <div className="h-6 w-px bg-zinc-800 mx-2"></div>

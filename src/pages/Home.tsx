@@ -11,8 +11,10 @@ interface Character {
   avatarUrl: string;
   greeting: string;
   description: string;
-  visibility: 'public' | 'private';
+  visibility: 'public' | 'private' | 'unlisted';
   creatorId: string;
+  likesCount: number;
+  interactionsCount: number;
 }
 
 export function Home() {
@@ -241,7 +243,7 @@ export function Home() {
                     <div>
                       <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
                       <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
-                        {char.visibility === 'private' ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
+                        {char.visibility === 'private' ? <Lock className="w-3 h-3" /> : char.visibility === 'unlisted' ? <Globe className="w-3 h-3 text-yellow-500" /> : <Globe className="w-3 h-3" />}
                         <span className="capitalize">{char.visibility}</span>
                       </div>
                     </div>
@@ -251,6 +253,15 @@ export function Home() {
                 <p className="text-sm text-zinc-400 line-clamp-3 flex-1">
                   {char.greeting}
                 </p>
+
+                <div className="mt-4 flex items-center gap-4 text-xs text-zinc-500">
+                  <span className="flex items-center gap-1">
+                    <span className="font-semibold text-zinc-300">{char.likesCount || 0}</span> likes
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="font-semibold text-zinc-300">{char.interactionsCount || 0}</span> interactions
+                  </span>
+                </div>
                 
                 <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center text-sm font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors">
                   <MessageCircle className="w-4 h-4 mr-2" />

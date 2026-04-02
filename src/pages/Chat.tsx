@@ -15,6 +15,9 @@ interface Character {
   greeting: string;
   description: string;
   personality?: string;
+  visibility: 'public' | 'private' | 'unlisted';
+  likesCount: number;
+  interactionsCount: number;
 }
 
 interface Message {

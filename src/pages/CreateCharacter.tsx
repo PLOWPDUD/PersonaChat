@@ -21,7 +21,7 @@ export function CreateCharacter() {
     greeting: '',
     description: '',
     personality: '',
-    visibility: 'public' as 'public' | 'private'
+    visibility: 'public' as 'public' | 'private' | 'unlisted'
   });
 
   useEffect(() => {
@@ -156,7 +156,9 @@ export function CreateCharacter() {
           ...formData,
           name_lowercase,
           creatorId: user.uid,
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          likesCount: 0,
+          interactionsCount: 0
         };
 
         const docRef = await addDoc(collection(db, 'characters'), charData);
@@ -348,6 +350,7 @@ export function CreateCharacter() {
             >
               <option value="public">Public - Anyone can chat</option>
               <option value="private">Private - Only you can chat</option>
+              <option value="unlisted">Unlisted - Accessible via link</option>
             </select>
           </div>
         </div>

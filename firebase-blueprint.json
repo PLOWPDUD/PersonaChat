@@ -24,10 +24,12 @@
         "greeting": { "type": "string", "description": "The character's initial greeting message." },
         "description": { "type": "string", "description": "Detailed description of the character's persona." },
         "personality": { "type": "string", "description": "The character's personality traits." },
-        "visibility": { "type": "string", "enum": ["public", "private"], "description": "Whether the character is public or private." },
+        "visibility": { "type": "string", "enum": ["public", "private", "unlisted"], "description": "Whether the character is public, private, or unlisted." },
+        "likesCount": { "type": "number", "description": "The number of likes the character has received." },
+        "interactionsCount": { "type": "number", "description": "The number of interactions the character has had." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the character was created." }
       },
-      "required": ["creatorId", "name", "greeting", "description", "visibility", "createdAt"]
+      "required": ["creatorId", "name", "greeting", "description", "visibility", "createdAt", "likesCount", "interactionsCount"]
     },
     "Chat": {
       "title": "Chat",
@@ -63,6 +65,19 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "When the memory was added." }
       },
       "required": ["chatId", "content", "createdAt"]
+    },
+    "Persona": {
+      "title": "Persona",
+      "description": "A reusable set of personality traits and description.",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string", "description": "The UID of the user who created this persona." },
+        "name": { "type": "string", "description": "The persona's name." },
+        "description": { "type": "string", "description": "Detailed description of the persona." },
+        "personality": { "type": "string", "description": "The persona's personality traits." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the persona was created." }
+      },
+      "required": ["creatorId", "name", "description", "createdAt"]
     }
   },
   "firestore": {
@@ -85,6 +100,10 @@
     "/chats/{chatId}/memories/{memoryId}": {
       "schema": { "$ref": "#/entities/Memory" },
       "description": "Stores specific details the AI should remember."
+    },
+    "/personas/{personaId}": {
+      "schema": { "$ref": "#/entities/Persona" },
+      "description": "Stores user-created personas."
     }
   }
 }
