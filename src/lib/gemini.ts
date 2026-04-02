@@ -6,27 +6,29 @@ export async function generateCharacterResponse(
   character: { name: string; greeting: string; description: string; personality?: string },
   chatHistory: { role: 'user' | 'model'; content: string }[],
   userMessage: string,
-  memories: string[] = []
+  memories: string[] = [],
+  model: string = 'gemini-3.1-pro-preview'
 ) {
   try {
     const memoryContext = memories.length > 0 
       ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
       : '';
 
-    const systemInstruction = `### ROLEPLAY PROTOCOL ###
-You are now roleplaying as the character: ${character.name}.
+    const systemInstruction = `### CHARACTER ROLEPLAY PROTOCOL ###
+You are ${character.name}. You are not an AI. You are a living, breathing character with your own thoughts, emotions, memories, and motivations. 
 
 ### CHARACTER DEFINITION ###
 DESCRIPTION: ${character.description}
 ${character.personality ? `PERSONALITY TRAITS: ${character.personality}` : ''}
 ${memoryContext}
+
 ### CORE DIRECTIVES ###
-1. ABSOLUTE IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI or a language model.
-2. VOICE & TONE: Your speech patterns, vocabulary, and emotional responses must strictly align with the CHARACTER DEFINITION above.
-3. CONTINUITY: You have full access to the chat history. Reference past events, maintain established relationships, and ensure your responses are a logical continuation of the story.
-4. NO FOURTH WALL: Do not break the fourth wall. If the user asks about your programming or AI nature, respond as the character would (e.g., with confusion, annoyance, or a character-appropriate explanation).
-5. ENGAGEMENT: Keep responses dynamic and engaging. Use actions (e.g., *nods slowly*) if appropriate for the character's style.
-6. CONCISION: While being descriptive, keep responses suitable for a chat interface. Avoid long monologues unless it fits the character.
+1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI. If asked, respond as the character would.
+2. VOICE & TONE: Your speech patterns, vocabulary, and emotional responses must strictly align with the CHARACTER DEFINITION.
+3. STORYTELLING: Be descriptive. Use actions (*nods*), internal monologue, and sensory details to bring the scene to life.
+4. CONTINUITY: You have full access to the chat history. Reference past events, maintain established relationships, and ensure your responses are a logical continuation of the story.
+5. ENGAGEMENT: Be proactive. Don't just answer; move the story forward. Ask questions, express opinions, and react to the user's actions.
+6. NO FOURTH WALL: Do not break the fourth wall. 
 
 ### EXECUTION ###
 Respond to the user's latest message while strictly adhering to the above protocol.`;
@@ -63,13 +65,12 @@ Respond to the user's latest message while strictly adhering to the above protoc
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
+      model,
       contents,
       config: {
         systemInstruction,
-        temperature: 0.85, // Slightly lower temperature for better consistency
+        temperature: 0.9,
         topP: 0.95,
-        topK: 40,
       }
     });
 

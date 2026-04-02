@@ -51,6 +51,7 @@ export function Chat() {
   const [editInput, setEditInput] = useState('');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.1-pro-preview');
   const [memories, setMemories] = useState<Memory[]>([]);
   const [newMemory, setNewMemory] = useState('');
   const [isAddingMemory, setIsAddingMemory] = useState(false);
@@ -157,7 +158,7 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(character, updatedHistory, newContent.trim(), memoryList);
+        const aiResponse = await generateCharacterResponse(character, updatedHistory, newContent.trim(), memoryList, selectedModel);
 
         // Save new AI message
         try {
@@ -228,7 +229,7 @@ export function Chat() {
       }
 
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, finalHistory, prompt, memoryList);
+      const aiResponse = await generateCharacterResponse(character, finalHistory, prompt, memoryList, selectedModel);
 
       // Update the existing AI message
       const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
@@ -272,7 +273,7 @@ export function Chat() {
 
       // Trigger AI response with a "continue" instruction
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, historyForGemini, "(Continue the story)", memoryList);
+      const aiResponse = await generateCharacterResponse(character, historyForGemini, "(Continue the story)", memoryList, selectedModel);
 
       // Save AI message
       try {
@@ -522,7 +523,7 @@ export function Chat() {
       }));
 
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, historyForGemini, userMessage, memoryList);
+      const aiResponse = await generateCharacterResponse(character, historyForGemini, userMessage, memoryList, selectedModel);
 
       // 3. Save AI message
       try {
@@ -662,6 +663,15 @@ export function Chat() {
         </div>
 
         <div className="flex items-center gap-1">
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+            <option value="gemini-3.1-pro-preview">Gemini Pro</option>
+          </select>
+          
           <button
             onClick={() => setIsHistoryOpen(true)}
             className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all flex items-center gap-2"

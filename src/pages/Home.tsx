@@ -13,6 +13,7 @@ interface Character {
   description: string;
   visibility: 'public' | 'private' | 'unlisted';
   creatorId: string;
+  creatorName?: string;
   likesCount: number;
   interactionsCount: number;
 }
@@ -81,68 +82,55 @@ export function Home() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">
-            {tab === 'recent' ? 'Recent Chats' : 'Characters'}
-          </h1>
-          <p className="text-zinc-400 mt-1">
-            {tab === 'recent' ? 'Continue your conversations.' : 'Discover and chat with AI personalities.'}
-          </p>
-        </div>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-4xl font-bold text-white tracking-tight">
+          {tab === 'recent' ? 'Recent Chats' : 'Discover'}
+        </h1>
+        <p className="text-zinc-400">
+          {tab === 'recent' ? 'Continue your conversations.' : 'Find your next favorite character.'}
+        </p>
         
-        <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit overflow-x-auto">
+        <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit mt-4">
           <button
             onClick={() => setTab('public')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === 'public' 
                 ? 'bg-zinc-800 text-white shadow-sm' 
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Globe className="w-4 h-4" />
-            Public
+            For You
           </button>
           <button
             onClick={() => setTab('recent')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === 'recent' 
                 ? 'bg-zinc-800 text-white shadow-sm' 
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <MessageCircle className="w-4 h-4" />
             Recent
           </button>
           <button
             onClick={() => setTab('mine')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === 'mine' 
                 ? 'bg-zinc-800 text-white shadow-sm' 
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <User className="w-4 h-4" />
             My Characters
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 h-48 animate-pulse">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-zinc-800 rounded-full"></div>
-                <div className="space-y-2 flex-1">
-                  <div className="h-4 bg-zinc-800 rounded w-1/2"></div>
-                  <div className="h-3 bg-zinc-800 rounded w-1/4"></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="h-3 bg-zinc-800 rounded w-full"></div>
-                <div className="h-3 bg-zinc-800 rounded w-5/6"></div>
-              </div>
+            <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 h-64 animate-pulse">
+              <div className="w-20 h-20 bg-zinc-800 rounded-full mx-auto mb-4"></div>
+              <div className="h-4 bg-zinc-800 rounded w-3/4 mx-auto mb-2"></div>
+              <div className="h-3 bg-zinc-800 rounded w-1/2 mx-auto"></div>
             </div>
           ))}
         </div>
@@ -160,39 +148,22 @@ export function Home() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {recentChats.map((chat) => (
               <Link 
                 key={chat.id} 
                 to={`/chat/${chat.characterId}/${chat.id}`}
-                className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col h-full"
+                className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col items-center text-center"
               >
-                <div className="flex items-center gap-4 mb-4">
-                  {chat.character.avatarUrl ? (
-                    <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-12 h-12 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                      <Bot className="w-6 h-6 text-zinc-400" />
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{chat.character.name}</h3>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      Last active: {chat.updatedAt && typeof chat.updatedAt.toDate === 'function' 
-                        ? chat.updatedAt.toDate().toLocaleDateString() 
-                        : 'Just now'}
-                    </p>
+                {chat.character.avatarUrl ? (
+                  <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
+                    <Bot className="w-10 h-10 text-zinc-400" />
                   </div>
-                </div>
-                
-                <p className="text-sm text-zinc-400 line-clamp-2 flex-1 italic">
-                  "{chat.character.greeting}"
-                </p>
-                
-                <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center text-sm font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                  <MessageCircle className="w-4 h-4 mr-2" />
-                  Continue chat
-                </div>
+                )}
+                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{chat.character.name}</h3>
+                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {chat.character.creatorName || 'Unknown'}</p>
               </Link>
             ))}
           </div>
@@ -214,61 +185,23 @@ export function Home() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {characters.map((char) => (
-            <div 
+            <Link 
               key={char.id} 
-              className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col h-full relative"
+              to={`/chat/${char.id}`}
+              className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col items-center text-center relative"
             >
-              {char.creatorId === user?.uid && (
-                <Link
-                  to={`/edit/${char.id}`}
-                  className="absolute top-4 right-4 p-2 bg-zinc-800 hover:bg-indigo-600 text-zinc-400 hover:text-white rounded-xl transition-all z-10 border border-zinc-700"
-                  title="Edit Character"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </Link>
+              {char.avatarUrl ? (
+                <img src={char.avatarUrl} alt={char.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
+                  <User className="w-10 h-10 text-zinc-400" />
+                </div>
               )}
-              
-              <Link to={`/chat/${char.id}`} className="flex-1 flex flex-col">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    {char.avatarUrl ? (
-                      <img src={char.avatarUrl} alt={char.name} className="w-14 h-14 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                        <User className="w-6 h-6 text-zinc-400" />
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
-                      <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
-                        {char.visibility === 'private' ? <Lock className="w-3 h-3" /> : char.visibility === 'unlisted' ? <Globe className="w-3 h-3 text-yellow-500" /> : <Globe className="w-3 h-3" />}
-                        <span className="capitalize">{char.visibility}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <p className="text-sm text-zinc-400 line-clamp-3 flex-1">
-                  {char.greeting}
-                </p>
-
-                <div className="mt-4 flex items-center gap-4 text-xs text-zinc-500">
-                  <span className="flex items-center gap-1">
-                    <span className="font-semibold text-zinc-300">{char.likesCount || 0}</span> likes
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="font-semibold text-zinc-300">{char.interactionsCount || 0}</span> interactions
-                  </span>
-                </div>
-                
-                <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center text-sm font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                  <MessageCircle className="w-4 h-4 mr-2" />
-                  Chat now
-                </div>
-              </Link>
-            </div>
+              <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
+              <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
+            </Link>
           ))}
         </div>
       )}
