@@ -162,7 +162,7 @@ export function Home() {
             {recentChats.map((chat) => (
               <Link 
                 key={chat.id} 
-                to={`/chat/${chat.characterId}`}
+                to={`/chat/${chat.characterId}/${chat.id}`}
                 className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col h-full"
               >
                 <div className="flex items-center gap-4 mb-4">

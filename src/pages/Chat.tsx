@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -31,7 +31,7 @@ interface Memory {
 }
 
 export function Chat() {
-  const { characterId } = useParams<{ characterId: string }>();
+  const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
   
@@ -49,8 +49,42 @@ export function Chat() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [newMemory, setNewMemory] = useState('');
   const [isAddingMemory, setIsAddingMemory] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState<any[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleNewChat = async () => {
+    if (!user || !characterId || !character) return;
+    
+    setLoading(true);
+    try {
+      const newChatRef = doc(collection(db, 'chats'));
+      const newChatId = newChatRef.id;
+      
+      await setDoc(newChatRef, {
+        userId: user.uid,
+        characterId: characterId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        title: `Chat with ${character.name}`
+      });
+      
+      await addDoc(collection(db, `chats/${newChatId}/messages`), {
+        chatId: newChatId,
+        role: 'model',
+        content: character.greeting,
+        createdAt: serverTimestamp()
+      });
+      
+      navigate(`/chat/${characterId}/${newChatId}`);
+      setIsHistoryOpen(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'chats');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleClearHistory = async () => {
     if (!chatId || !character) return;
@@ -215,46 +249,47 @@ export function Chat() {
         setCharacter(charData);
 
         // 2. Find or create chat session
-        const currentChatId = `${user.uid}_${characterId}`;
-        setChatId(currentChatId);
+        let currentChatId = urlChatId;
         
-        const chatRef = doc(db, 'chats', currentChatId);
-        let chatSnap;
-        try {
-          chatSnap = await getDoc(chatRef);
-        } catch (e) {
-          handleFirestoreError(e, OperationType.GET, `chats/${currentChatId}`);
-          return;
-        }
-        
-        if (!chatSnap.exists()) {
-          // Create chat
-          try {
-            await setDoc(chatRef, {
+        if (!currentChatId) {
+          // Try to find the latest chat for this character
+          const chatsRef = collection(db, 'chats');
+          const q = query(
+            chatsRef, 
+            where('userId', '==', user.uid), 
+            where('characterId', '==', characterId),
+            orderBy('updatedAt', 'desc'),
+            limit(1)
+          );
+          const chatDocs = await getDocs(q);
+          
+          if (!chatDocs.empty) {
+            currentChatId = chatDocs.docs[0].id;
+            navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+          } else {
+            // Create new chat if none exists
+            const newChatRef = doc(collection(db, 'chats'));
+            currentChatId = newChatRef.id;
+            await setDoc(newChatRef, {
               userId: user.uid,
               characterId: characterId,
               createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
+              updatedAt: serverTimestamp(),
+              title: `Chat with ${charData.name}`
             });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `chats/${currentChatId}`);
-            return;
-          }
-          
-          // Add initial greeting
-          try {
+            
             await addDoc(collection(db, `chats/${currentChatId}/messages`), {
               chatId: currentChatId,
               role: 'model',
               content: charData.greeting,
               createdAt: serverTimestamp()
             });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `chats/${currentChatId}/messages`);
-            return;
+            navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           }
         }
 
+        setChatId(currentChatId);
+        
         // 3. Listen to messages
         const messagesRef = collection(db, `chats/${currentChatId}/messages`);
         const q = query(messagesRef, orderBy('createdAt', 'asc'));
@@ -263,11 +298,9 @@ export function Chat() {
           const msgs: Message[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
-            // Handle pending writes where createdAt might be null
             if (data.createdAt || !doc.metadata.hasPendingWrites) {
               msgs.push({ id: doc.id, ...data } as Message);
             } else {
-              // If it's a pending write and createdAt is null, we can use a local timestamp for sorting
               msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
             }
           });
@@ -291,9 +324,27 @@ export function Chat() {
           handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/memories`);
         });
 
+        // 5. Listen to chat history
+        const chatsRef = collection(db, 'chats');
+        const hq = query(
+          chatsRef, 
+          where('userId', '==', user.uid), 
+          where('characterId', '==', characterId),
+          orderBy('updatedAt', 'desc')
+        );
+        
+        const unsubscribeHistory = onSnapshot(hq, (snapshot) => {
+          const history = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setChatHistory(history);
+        });
+
         return () => {
           unsubscribe();
           unsubscribeMemories();
+          unsubscribeHistory();
         };
       } catch (error) {
         console.error('Chat initialization error:', error);
@@ -302,7 +353,7 @@ export function Chat() {
     };
 
     initChat();
-  }, [user, characterId, navigate]);
+  }, [user, characterId, urlChatId, navigate]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -393,7 +444,72 @@ export function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl">
+    <div className="flex flex-col h-[calc(100vh-6rem)] max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
+      {/* History Sidebar Overlay */}
+      {isHistoryOpen && (
+        <div 
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 transition-all duration-300"
+          onClick={() => setIsHistoryOpen(false)}
+        >
+          <div 
+            className="absolute left-0 top-0 bottom-0 w-80 bg-zinc-900 border-r border-zinc-800 shadow-2xl flex flex-col transform transition-transform duration-300"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-500" />
+                Chat History
+              </h3>
+              <button 
+                onClick={() => setIsHistoryOpen(false)}
+                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <button
+                onClick={handleNewChat}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-900/20"
+              >
+                <Plus className="w-5 h-5" />
+                New Chat
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {chatHistory.map((chat) => (
+                <button
+                  key={chat.id}
+                  onClick={() => {
+                    navigate(`/chat/${characterId}/${chat.id}`);
+                    setIsHistoryOpen(false);
+                  }}
+                  className={`w-full text-left p-3 rounded-xl transition-all group ${
+                    chatId === chat.id 
+                      ? 'bg-zinc-800 text-white border border-zinc-700' 
+                      : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {chat.title || `Chat with ${character.name}`}
+                      </p>
+                      <p className="text-[10px] opacity-50 mt-1">
+                        {chat.updatedAt?.toDate() ? new Date(chat.updatedAt.toDate()).toLocaleString() : 'Just now'}
+                      </p>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 transition-transform ${chatId === chat.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Chat Header */}
       <div className="flex items-center gap-4 p-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm z-10">
         <button 
@@ -411,10 +527,23 @@ export function Chat() {
               <Bot className="w-5 h-5 text-zinc-400" />
             </div>
           )}
-          <div>
-            <h2 className="text-lg font-semibold text-white leading-tight">{character.name}</h2>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold text-white leading-tight truncate">{character.name}</h2>
             <p className="text-xs text-zinc-400">AI Character</p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setIsHistoryOpen(true)}
+            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all flex items-center gap-2"
+            title="Chat History"
+          >
+            <History className="w-5 h-5" />
+            <span className="hidden sm:inline text-sm font-medium">History</span>
+          </button>
+          
+          <div className="w-px h-6 bg-zinc-800 mx-1" />
         </div>
 
         <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">

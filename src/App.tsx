@@ -49,6 +49,7 @@ export default function App() {
               <Route path="create" element={<CreateCharacter />} />
               <Route path="edit/:characterId" element={<CreateCharacter />} />
               <Route path="chat/:characterId" element={<Chat />} />
+              <Route path="chat/:characterId/:chatId" element={<Chat />} />
             </Route>
             
             <Route path="*" element={<Navigate to="/" replace />} />

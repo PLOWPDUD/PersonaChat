@@ -127,10 +127,11 @@ service cloud.firestore {
 
     function isValidChat() {
       return hasRequiredFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
-             hasOnlyAllowedFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(['userId', 'characterId', 'createdAt', 'updatedAt', 'title']) &&
              request.resource.data.userId == request.auth.uid &&
              request.resource.data.characterId is string &&
              request.resource.data.characterId.size() > 0 &&
+             isValidOptionalString('title', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              request.resource.data.updatedAt is timestamp;
     }
