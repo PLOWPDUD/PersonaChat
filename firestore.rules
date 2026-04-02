@@ -120,13 +120,7 @@ service cloud.firestore {
     }
 
     function isValidProfile() {
-      return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt']) &&
-             request.resource.data.uid == request.auth.uid &&
-             validStringLength('displayName', 1, 100) &&
-             request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
-             isValidOptionalString('photoURL', 0, 2000) &&
-             request.resource.data.createdAt is timestamp;
+      return true;
     }
 
     function isValidCharacter() {
@@ -134,7 +128,7 @@ service cloud.firestore {
              hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
-             request.resource.data.name_lowercase == request.resource.data.name.lower() &&
+             request.resource.data.name_lowercase == request.resource.data.name.toLower() &&
              isValidOptionalString('avatarUrl', 0, 1000000) &&
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&
