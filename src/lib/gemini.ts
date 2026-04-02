@@ -8,7 +8,7 @@ const getApiKey = () => {
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
     return import.meta.env.VITE_GEMINI_API_KEY;
   }
-  return undefined;
+  return '';
 };
 
 const apiKey = getApiKey();
@@ -22,8 +22,8 @@ export async function generateCharacterResponse(
   model: string = 'gemini-3.1-pro-preview'
 ) {
   if (!apiKey || apiKey === 'missing-key') {
-    console.error("GEMINI_API_KEY is missing or undefined. If you are on Vercel, ensure the environment variable is set to GEMINI_API_KEY or VITE_GEMINI_API_KEY and redeploy.");
-    throw new Error("API_KEY_MISSING: The Gemini API key is not configured in this environment.");
+    console.error("GEMINI_API_KEY is missing or empty. Please check your Vercel environment variables.");
+    throw new Error("API_KEY_MISSING: The Gemini API key is not configured in Vercel. Please add GEMINI_API_KEY to your Vercel project settings and REDEPLOY.");
   }
 
   try {
@@ -124,6 +124,9 @@ Format your response as: [Character Name]: [Message]`;
     console.error('Error generating character response:', error);
     if (error.message?.includes('safety')) {
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
+    }
+    if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
+      throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions in Google AI Studio and update Vercel.");
     }
     throw error;
   }
