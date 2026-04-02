@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -17,6 +17,7 @@ interface Character {
   avatarUrl: string;
   description: string;
   creatorId: string;
+  averageRating?: number;
 }
 
 export function Search() {
@@ -208,7 +209,15 @@ export function Search() {
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors">{char.name}</h3>
+                          <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                            {char.name}
+                            {char.averageRating && (
+                              <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                                <Star className="w-3 h-3 fill-current" />
+                                {char.averageRating.toFixed(1)}
+                              </span>
+                            )}
+                          </h3>
                           <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                         </div>
                         <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
@@ -246,7 +255,15 @@ export function Search() {
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors">{char.name}</h3>
+                            <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                              {char.name}
+                              {char.averageRating && (
+                                <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                                  <Star className="w-3 h-3 fill-current" />
+                                  {char.averageRating.toFixed(1)}
+                                </span>
+                              )}
+                            </h3>
                             <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                           </div>
                           <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />

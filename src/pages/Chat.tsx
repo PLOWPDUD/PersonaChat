@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -18,6 +18,9 @@ interface Character {
   visibility: 'public' | 'private' | 'unlisted';
   likesCount: number;
   interactionsCount: number;
+  ratingCount?: number;
+  totalRatingScore?: number;
+  averageRating?: number;
 }
 
 interface Message {
@@ -35,7 +38,7 @@ interface Memory {
 
 export function Chat() {
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
-  const { user } = useAuth();
+  const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
   
   const [character, setCharacter] = useState<Character | null>(null);
@@ -57,8 +60,113 @@ export function Chat() {
   const [isAddingMemory, setIsAddingMemory] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
+  const [userRating, setUserRating] = useState<number | null>(null);
+  const [isRatingOpen, setIsRatingOpen] = useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleRateCharacter = async (score: number) => {
+    if (!user || !characterId || !character) return;
+    
+    setIsSubmittingRating(true);
+    try {
+      const ratingRef = doc(db, `characters/${characterId}/ratings`, user.uid);
+      const ratingSnap = await getDoc(ratingRef);
+      
+      const charRef = doc(db, 'characters', characterId);
+      
+      if (ratingSnap.exists()) {
+        // Update existing rating
+        const oldScore = ratingSnap.data().score;
+        const scoreDiff = score - oldScore;
+        
+        await setDoc(ratingRef, {
+          score,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        
+        const newTotalScore = (character.totalRatingScore || 0) + scoreDiff;
+        const newAverage = newTotalScore / (character.ratingCount || 1);
+        
+        await setDoc(charRef, {
+          totalRatingScore: newTotalScore,
+          averageRating: newAverage
+        }, { merge: true });
+        
+      } else {
+        // Create new rating
+        await setDoc(ratingRef, {
+          userId: user.uid,
+          characterId: characterId,
+          score,
+          createdAt: serverTimestamp()
+        });
+        
+        const newCount = (character.ratingCount || 0) + 1;
+        const newTotalScore = (character.totalRatingScore || 0) + score;
+        const newAverage = newTotalScore / newCount;
+        
+        await setDoc(charRef, {
+          ratingCount: newCount,
+          totalRatingScore: newTotalScore,
+          averageRating: newAverage
+        }, { merge: true });
+      }
+      
+      setUserRating(score);
+      setIsRatingOpen(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `characters/${characterId}/ratings/${user.uid}`);
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
+  const handleReport = async () => {
+    if (!user || !characterId || !reportReason.trim()) return;
+    
+    setIsSubmittingReport(true);
+    try {
+      const reportRef = doc(collection(db, 'reports'));
+      await setDoc(reportRef, {
+        reporterId: user.uid,
+        targetId: characterId,
+        type: 'character',
+        reason: reportReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      setIsReportModalOpen(false);
+      setReportReason('');
+      alert('Report submitted successfully.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'reports');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
+  const handleDeleteCharacter = async () => {
+    if (!isOwner || !characterId) return;
+    
+    setIsDeletingCharacter(true);
+    try {
+      const charRef = doc(db, 'characters', characterId);
+      await deleteDoc(charRef);
+      navigate('/');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `characters/${characterId}`);
+    } finally {
+      setIsDeletingCharacter(false);
+      setIsDeleteModalOpen(false);
+    }
+  };
 
   const handleNewChat = async () => {
     if (!user || !characterId || !character) return;
@@ -377,7 +485,18 @@ export function Chat() {
         const charData = { id: charSnap.id, ...charSnap.data() } as Character;
         setCharacter(charData);
 
-        // 2. Find or create chat session
+        // 2. Fetch user's rating
+        const ratingRef = doc(db, `characters/${characterId}/ratings`, user.uid);
+        try {
+          const ratingSnap = await getDoc(ratingRef);
+          if (ratingSnap.exists()) {
+            setUserRating(ratingSnap.data().score);
+          }
+        } catch (e) {
+          console.error('Error fetching rating:', e);
+        }
+
+        // 3. Find or create chat session
         let currentChatId = urlChatId;
         
         if (!currentChatId) {
@@ -657,12 +776,43 @@ export function Chat() {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-white leading-tight truncate">{character.name}</h2>
+            <h2 className="text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
+              {character.name}
+              {character.averageRating && (
+                <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                  <Star className="w-3 h-3 fill-current" />
+                  {character.averageRating.toFixed(1)}
+                </span>
+              )}
+            </h2>
             <p className="text-xs text-zinc-400">AI Character</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 relative">
+          <button
+            onClick={() => setIsRatingOpen(!isRatingOpen)}
+            className={`p-2 rounded-lg transition-all flex items-center gap-2 ${userRating ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+            title="Rate Character"
+          >
+            <Star className={`w-5 h-5 ${userRating ? 'fill-current' : ''}`} />
+          </button>
+          
+          {isRatingOpen && (
+            <div className="absolute top-full right-0 mt-2 p-3 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-50 flex gap-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleRateCharacter(star)}
+                  disabled={isSubmittingRating}
+                  className={`p-1 hover:scale-110 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <Star className={`w-6 h-6 ${(userRating || 0) >= star ? 'text-yellow-500 fill-current' : 'text-zinc-500'}`} />
+                </button>
+              ))}
+            </div>
+          )}
+
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
@@ -682,6 +832,24 @@ export function Chat() {
           </button>
           
           <div className="w-px h-6 bg-zinc-800 mx-1" />
+
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-yellow-500 transition-all flex items-center gap-2"
+            title="Report Character"
+          >
+            <Flag className="w-5 h-5" />
+          </button>
+
+          {isOwner && (
+            <button
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-all flex items-center gap-2"
+              title="Delete Character (Admin)"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
@@ -965,6 +1133,73 @@ export function Chat() {
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {isReportModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Flag className="w-5 h-5 text-yellow-500" />
+              Report Character
+            </h3>
+            <p className="text-zinc-400 mb-4 text-sm">Please provide a reason for reporting this character.</p>
+            <textarea
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              placeholder="Reason for report..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px] mb-6 resize-none"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIsReportModalOpen(false);
+                  setReportReason('');
+                }}
+                className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReport}
+                disabled={!reportReason.trim() || isSubmittingReport}
+                className="px-4 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSubmittingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Submit Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Character Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-500" />
+              Delete Character
+            </h3>
+            <p className="text-zinc-400 mb-6">Are you sure you want to delete this character? This action cannot be undone and will delete all associated chats and ratings.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteCharacter}
+                disabled={isDeletingCharacter}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeletingCharacter ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Delete Character
               </button>
             </div>
           </div>

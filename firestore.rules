@@ -64,6 +64,24 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwnerRole() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'owner') ||
+          (request.auth.token.email == "videosonli5@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isModeratorRole() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role in ['owner', 'moderator']) ||
+          (request.auth.token.email == "videosonli5@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -119,20 +137,21 @@ service cloud.firestore {
              request.resource.data.createdAt is timestamp;
     }
 
-    function isValidProfile() {
+    function isValidProfile(userId) {
       return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt']) &&
-             request.resource.data.uid == request.auth.uid &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt', 'role']) &&
+             request.resource.data.uid == userId &&
              validStringLength('displayName', 1, 100) &&
              request.resource.data.displayName_lowercase == request.resource.data.displayName.toLower() &&
              isValidOptionalString('photoURL', 0, 1000000) &&
              request.resource.data.createdAt is timestamp &&
-             isValidOptionalTimestamp('updatedAt');
+             isValidOptionalTimestamp('updatedAt') &&
+             (!('role' in request.resource.data) || request.resource.data.role in ['user', 'moderator', 'owner']);
     }
 
     function isValidCharacter() {
       return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt', 'likesCount', 'interactionsCount']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount']) &&
+             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
              request.resource.data.name_lowercase == request.resource.data.name.toLower() &&
@@ -144,7 +163,10 @@ service cloud.firestore {
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt') &&
              request.resource.data.likesCount is number && request.resource.data.likesCount >= 0 &&
-             request.resource.data.interactionsCount is number && request.resource.data.interactionsCount >= 0;
+             request.resource.data.interactionsCount is number && request.resource.data.interactionsCount >= 0 &&
+             (!('ratingCount' in request.resource.data) || (request.resource.data.ratingCount is number && request.resource.data.ratingCount >= 0)) &&
+             (!('totalRatingScore' in request.resource.data) || (request.resource.data.totalRatingScore is number && request.resource.data.totalRatingScore >= 0)) &&
+             (!('averageRating' in request.resource.data) || (request.resource.data.averageRating is number && request.resource.data.averageRating >= 0 && request.resource.data.averageRating <= 5));
     }
 
     function isValidOptionalTimestamp(field) {
@@ -213,18 +235,44 @@ service cloud.firestore {
     match /profiles/{userId} {
       // Profiles are public for authenticated users
       allow read, list: if isAuthenticated();
-      allow create: if isOwner(userId) && isValidProfile();
-      allow update: if isOwner(userId) && isValidProfile() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
-      allow delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfile(userId) && (!('role' in request.resource.data) || request.resource.data.role == 'user' || isOwnerRole());
+      allow update: if isAuthenticated() && isValidProfile(userId) && areImmutableFieldsUnchanged(['uid', 'createdAt']) && (
+        (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
+        isOwnerRole()
+      );
+      allow delete: if isOwner(userId) || isOwnerRole();
     }
 
     match /characters/{characterId} {
       // Anyone authenticated can read public or unlisted characters, or their own private characters
-      allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner());
-      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner());
+      allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner() || isModeratorRole());
+      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner() || isModeratorRole());
       allow create: if isAuthenticated() && isValidCharacter();
-      allow update: if isDocOwner() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']);
-      allow delete: if isDocOwner();
+      allow update: if isAuthenticated() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']) && (isDocOwner() || isOwnerRole());
+      allow delete: if isDocOwner() || isOwnerRole();
+      
+      match /ratings/{userId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId) && 
+                      hasRequiredFields(['userId', 'characterId', 'score', 'createdAt']) &&
+                      hasOnlyAllowedFields(['userId', 'characterId', 'score', 'createdAt']) &&
+                      request.resource.data.userId == userId &&
+                      request.resource.data.characterId == characterId &&
+                      request.resource.data.score is number && 
+                      request.resource.data.score >= 1 && 
+                      request.resource.data.score <= 5 &&
+                      request.resource.data.createdAt is timestamp;
+        allow update: if isOwner(userId) && 
+                      hasRequiredFields(['userId', 'characterId', 'score', 'createdAt']) &&
+                      hasOnlyAllowedFields(['userId', 'characterId', 'score', 'createdAt']) &&
+                      request.resource.data.userId == userId &&
+                      request.resource.data.characterId == characterId &&
+                      request.resource.data.score is number && 
+                      request.resource.data.score >= 1 && 
+                      request.resource.data.score <= 5 &&
+                      areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt']);
+        allow delete: if isOwner(userId);
+      }
     }
 
     match /chats/{chatId} {
@@ -265,6 +313,21 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow update: if isAuthenticated();
       allow create: if isAuthenticated();
+    }
+
+    match /reports/{reportId} {
+      allow create: if isAuthenticated() && 
+                    hasRequiredFields(['reporterId', 'targetId', 'type', 'reason', 'status', 'createdAt']) &&
+                    hasOnlyAllowedFields(['reporterId', 'targetId', 'type', 'reason', 'status', 'createdAt', 'updatedAt']) &&
+                    request.resource.data.reporterId == request.auth.uid &&
+                    request.resource.data.type in ['character', 'user'] &&
+                    request.resource.data.status == 'pending' &&
+                    request.resource.data.createdAt is timestamp;
+      allow read: if isOwnerRole() || isModeratorRole();
+      allow update: if isOwnerRole() && 
+                    areImmutableFieldsUnchanged(['reporterId', 'targetId', 'type', 'reason', 'createdAt']) &&
+                    request.resource.data.status in ['pending', 'reviewed', 'resolved'];
+      allow delete: if isOwnerRole();
     }
   }
 }

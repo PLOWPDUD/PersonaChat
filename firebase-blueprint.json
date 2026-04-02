@@ -9,6 +9,7 @@
         "displayName": { "type": "string", "description": "The user's display name." },
         "email": { "type": "string", "format": "email", "description": "The user's email address." },
         "photoURL": { "type": "string", "format": "uri", "description": "The user's profile picture URL." },
+        "role": { "type": "string", "enum": ["user", "moderator", "owner"], "description": "The user's role for RBAC." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
       },
       "required": ["uid", "email", "createdAt"]
@@ -27,9 +28,24 @@
         "visibility": { "type": "string", "enum": ["public", "private", "unlisted"], "description": "Whether the character is public, private, or unlisted." },
         "likesCount": { "type": "number", "description": "The number of likes the character has received." },
         "interactionsCount": { "type": "number", "description": "The number of interactions the character has had." },
+        "ratingCount": { "type": "number", "description": "The number of ratings the character has received." },
+        "totalRatingScore": { "type": "number", "description": "The sum of all rating scores." },
+        "averageRating": { "type": "number", "description": "The average rating score." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the character was created." }
       },
       "required": ["creatorId", "name", "greeting", "description", "visibility", "createdAt", "likesCount", "interactionsCount"]
+    },
+    "Rating": {
+      "title": "Rating",
+      "description": "A user's rating for a character.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user." },
+        "characterId": { "type": "string", "description": "The ID of the character." },
+        "score": { "type": "number", "description": "The rating score (e.g., 1-5)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the rating was given." }
+      },
+      "required": ["userId", "characterId", "score", "createdAt"]
     },
     "Chat": {
       "title": "Chat",
@@ -78,6 +94,21 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "When the persona was created." }
       },
       "required": ["creatorId", "name", "description", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "A report submitted by a user or moderator.",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string", "description": "The UID of the user who submitted the report." },
+        "targetId": { "type": "string", "description": "The ID of the reported character or user." },
+        "type": { "type": "string", "enum": ["character", "user"], "description": "The type of entity being reported." },
+        "reason": { "type": "string", "description": "The reason for the report." },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"], "description": "The status of the report." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the report was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the report was last updated." }
+      },
+      "required": ["reporterId", "targetId", "type", "reason", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -88,6 +119,10 @@
     "/characters/{characterId}": {
       "schema": { "$ref": "#/entities/Character" },
       "description": "Stores AI characters."
+    },
+    "/characters/{characterId}/ratings/{userId}": {
+      "schema": { "$ref": "#/entities/Rating" },
+      "description": "Stores user ratings for a character."
     },
     "/chats/{chatId}": {
       "schema": { "$ref": "#/entities/Chat" },
@@ -104,6 +139,10 @@
     "/personas/{personaId}": {
       "schema": { "$ref": "#/entities/Persona" },
       "description": "Stores user-created personas."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Stores reports submitted by users and moderators."
     }
   }
 }

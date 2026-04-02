@@ -7,10 +7,19 @@ interface AuthContextType {
   user: User | null;
   profile: any | null;
   loading: boolean;
+  isOwner: boolean;
+  isModerator: boolean;
   updateProfile: (newProfile: any) => void;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true, updateProfile: () => {} });
+const AuthContext = createContext<AuthContextType>({ 
+  user: null, 
+  profile: null, 
+  loading: true, 
+  isOwner: false,
+  isModerator: false,
+  updateProfile: () => {} 
+});
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -18,6 +27,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const isOwner = user?.email === 'videosonli5@gmail.com' || profile?.role === 'owner';
+  const isModerator = isOwner || profile?.role === 'moderator';
 
   const updateProfile = (newProfile: any) => {
     setProfile((prev: any) => ({ ...prev, ...newProfile }));
@@ -61,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, updateProfile }}>
       {!loading && children}
     </AuthContext.Provider>
   );

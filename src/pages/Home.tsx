@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2 } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -16,6 +16,7 @@ interface Character {
   creatorName?: string;
   likesCount: number;
   interactionsCount: number;
+  averageRating?: number;
 }
 
 export function Home() {
@@ -164,6 +165,12 @@ export function Home() {
                 )}
                 <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{chat.character.name}</h3>
                 <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {chat.character.creatorName || 'Unknown'}</p>
+                {chat.character.averageRating && (
+                  <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                    <Star className="w-3 h-3 fill-current" />
+                    {chat.character.averageRating.toFixed(1)}
+                  </div>
+                )}
               </Link>
             ))}
           </div>
@@ -201,6 +208,12 @@ export function Home() {
               )}
               <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
               <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
+              {char.averageRating && (
+                <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                  <Star className="w-3 h-3 fill-current" />
+                  {char.averageRating.toFixed(1)}
+                </div>
+              )}
             </Link>
           ))}
         </div>

@@ -16,6 +16,7 @@ import { Profile } from './pages/Profile';
 import { Chat } from './pages/Chat';
 import { Stats } from './pages/Stats';
 import { Search } from './pages/Search';
+import { Admin } from './pages/Admin';
 import { NotFound } from './pages/NotFound';
 
 // Protected Route wrapper
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="personas" element={<Personas />} />
               <Route path="profile" element={<Profile />} />
               <Route path="stats" element={<Stats />} />
+              <Route path="admin" element={<Admin />} />
               <Route path="chat/:characterId" element={<Chat />} />
               <Route path="chat/:characterId/:chatId" element={<Chat />} />
             </Route>

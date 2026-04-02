@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
   const location = useLocation();
-  const { user, profile } = useAuth();
+  const { user, profile, isModerator } = useAuth();
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -14,6 +14,10 @@ export function Sidebar() {
     { path: '/personas', label: 'Personas', icon: UserCircle },
     { path: '/stats', label: 'Stats', icon: Users },
   ];
+
+  if (isModerator) {
+    navItems.push({ path: '/admin', label: 'Admin', icon: Shield });
+  }
 
   return (
     <div className="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-screen fixed left-0 top-0">
