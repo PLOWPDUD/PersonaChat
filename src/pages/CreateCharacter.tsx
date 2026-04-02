@@ -140,11 +140,13 @@ export function CreateCharacter() {
     setError('');
 
     try {
+      const name_lowercase = formData.name.toLowerCase();
       if (characterId) {
         // Update existing character
         const charRef = doc(db, 'characters', characterId);
         await updateDoc(charRef, {
           ...formData,
+          name_lowercase,
           updatedAt: serverTimestamp()
         });
         navigate(`/chat/${characterId}`);
@@ -152,6 +154,7 @@ export function CreateCharacter() {
         // Create new character
         const charData = {
           ...formData,
+          name_lowercase,
           creatorId: user.uid,
           createdAt: serverTimestamp()
         };

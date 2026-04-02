@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { logOut } from '../lib/firebase';
-import { MessageSquare, PlusCircle, LogOut, User as UserIcon } from 'lucide-react';
+import { MessageSquare, PlusCircle, LogOut, User as UserIcon, Search } from 'lucide-react';
 
 export function Layout() {
   const { user } = useAuth();
@@ -24,6 +24,14 @@ export function Layout() {
           
           {user && (
             <nav className="flex items-center gap-4">
+              <Link 
+                to="/search" 
+                className="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+              >
+                <Search className="w-4 h-4" />
+                <span className="hidden sm:inline">Search</span>
+              </Link>
+
               <Link 
                 to="/create" 
                 className="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"

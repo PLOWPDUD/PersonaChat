@@ -20,6 +20,7 @@ service cloud.firestore {
     // Fields:
     //   - creatorId: string (required) - The UID of the user who created this character
     //   - name: string (required) - The character's name
+    //   - name_lowercase: string (required) - Lowercase version for search
     //   - avatarUrl: string (optional) - The character's avatar image URL
     //   - greeting: string (required) - The character's initial greeting message
     //   - description: string (required) - Detailed description of the character's persona
@@ -42,6 +43,17 @@ service cloud.firestore {
     //   - role: string (required) - 'user' or 'model'
     //   - content: string (required) - The content of the message
     //   - createdAt: timestamp (required) - When the message was sent
+    //
+    // ===============================================================
+
+    // Collection: profiles
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - The user's unique ID
+    //   - displayName: string (required) - The user's display name
+    //   - displayName_lowercase: string (required) - Lowercase version for search
+    //   - photoURL: string (optional) - The user's profile picture URL
+    //   - createdAt: timestamp (required) - When the profile was created
     //
     // ===============================================================
 
@@ -107,11 +119,22 @@ service cloud.firestore {
              request.resource.data.createdAt is timestamp;
     }
 
+    function isValidProfile() {
+      return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt']) &&
+             request.resource.data.uid == request.auth.uid &&
+             validStringLength('displayName', 1, 100) &&
+             request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
+             isValidOptionalString('photoURL', 0, 2000) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
     function isValidCharacter() {
-      return hasRequiredFields(['creatorId', 'name', 'greeting', 'description', 'visibility', 'createdAt']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt']) &&
+      return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt']) &&
+             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
+             request.resource.data.name_lowercase == request.resource.data.name.lower() &&
              isValidOptionalString('avatarUrl', 0, 1000000) &&
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&
@@ -146,11 +169,12 @@ service cloud.firestore {
 
     function isValidMessage(chatId) {
       return hasRequiredFields(['chatId', 'role', 'content', 'createdAt']) &&
-             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt']) &&
+             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt', 'updatedAt']) &&
              request.resource.data.chatId == chatId &&
              request.resource.data.role in ['user', 'model'] &&
              validStringLength('content', 1, 50000) &&
-             request.resource.data.createdAt is timestamp;
+             request.resource.data.createdAt is timestamp &&
+             isValidOptionalTimestamp('updatedAt');
     }
 
     function isValidMemory(chatId) {
@@ -170,6 +194,14 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser();
       allow update: if isOwner(userId) && isValidUser() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    match /profiles/{userId} {
+      // Profiles are public for authenticated users
+      allow read, list: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidProfile();
+      allow update: if isOwner(userId) && isValidProfile() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
       allow delete: if isOwner(userId);
     }
 

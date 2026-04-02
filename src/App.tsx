@@ -12,6 +12,7 @@ import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 import { CreateCharacter } from './pages/CreateCharacter';
 import { Chat } from './pages/Chat';
+import { Search } from './pages/Search';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,7 @@ export default function App() {
               </ProtectedRoute>
             }>
               <Route index element={<Home />} />
+              <Route path="search" element={<Search />} />
               <Route path="create" element={<CreateCharacter />} />
               <Route path="edit/:characterId" element={<CreateCharacter />} />
               <Route path="chat/:characterId" element={<Chat />} />

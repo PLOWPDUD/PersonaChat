@@ -27,6 +27,28 @@ export const signInWithGoogle = async () => {
         createdAt: serverTimestamp()
       });
     }
+
+    // Create or update public profile
+    const profileRef = doc(db, 'profiles', user.uid);
+    const profileSnap = await getDoc(profileRef);
+    const displayName = user.displayName || 'Anonymous User';
+    if (!profileSnap.exists()) {
+      await setDoc(profileRef, {
+        uid: user.uid,
+        displayName: displayName,
+        displayName_lowercase: displayName.toLowerCase(),
+        photoURL: user.photoURL || '',
+        createdAt: serverTimestamp()
+      });
+    } else {
+      // Update if changed
+      await setDoc(profileRef, {
+        displayName: displayName,
+        displayName_lowercase: displayName.toLowerCase(),
+        photoURL: user.photoURL || profileSnap.data().photoURL,
+      }, { merge: true });
+    }
+
     return user;
   } catch (error) {
     console.error('Error signing in with Google', error);
@@ -37,7 +59,23 @@ export const signInWithGoogle = async () => {
 export const signInAsGuest = async () => {
   try {
     const result = await signInAnonymously(auth);
-    return result.user;
+    const user = result.user;
+
+    // Create public profile for guest
+    const profileRef = doc(db, 'profiles', user.uid);
+    const profileSnap = await getDoc(profileRef);
+    if (!profileSnap.exists()) {
+      const displayName = `Guest ${user.uid.slice(0, 5)}`;
+      await setDoc(profileRef, {
+        uid: user.uid,
+        displayName: displayName,
+        displayName_lowercase: displayName.toLowerCase(),
+        photoURL: '',
+        createdAt: serverTimestamp()
+      });
+    }
+
+    return user;
   } catch (error) {
     console.error('Error signing in anonymously', error);
     throw error;

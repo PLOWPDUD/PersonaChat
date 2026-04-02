@@ -43,6 +43,8 @@ export function Chat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
@@ -113,17 +115,130 @@ export function Chat() {
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
-    if (!chatId || !newContent.trim()) return;
+    if (!chatId || !newContent.trim() || !character || !user) return;
     
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+    
+    const originalMessage = messages[messageIndex];
+    const isUserMessage = originalMessage.role === 'user';
+
     try {
+      // 1. Update the message itself
       const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
       await setDoc(messageRef, {
         content: newContent.trim(),
         updatedAt: serverTimestamp()
       }, { merge: true });
+      
       setEditingMessageId(null);
+
+      // 2. If it's a user message, we should regenerate the AI response
+      if (isUserMessage) {
+        setIsTyping(true);
+        
+        // Delete subsequent messages to "rewind" the conversation
+        const subsequentMessages = messages.slice(messageIndex + 1);
+        for (const msg of subsequentMessages) {
+          try {
+            await deleteDoc(doc(db, `chats/${chatId}/messages`, msg.id));
+          } catch (e) {
+            console.error('Error deleting subsequent message:', e);
+          }
+        }
+
+        // Generate new AI response based on updated history
+        const updatedHistory = messages.slice(0, messageIndex).map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+        
+        const memoryList = memories.map(m => m.content);
+        const aiResponse = await generateCharacterResponse(character, updatedHistory, newContent.trim(), memoryList);
+
+        // Save new AI message
+        try {
+          await addDoc(collection(db, `chats/${chatId}/messages`), {
+            chatId,
+            role: 'model',
+            content: aiResponse,
+            createdAt: serverTimestamp()
+          });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        }
+
+        // Update chat timestamp
+        try {
+          await setDoc(doc(db, 'chats', chatId), {
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+        }
+        
+        setIsTyping(false);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const handleRegenerateMessage = async (messageId: string) => {
+    if (!chatId || !character || isTyping || isRegenerating) return;
+
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+
+    // We can only regenerate 'model' messages
+    if (messages[messageIndex].role !== 'model') return;
+
+    setIsRegenerating(true);
+    setIsTyping(true);
+
+    try {
+      // Find the user message that preceded this AI message
+      // If this is the first message (greeting), we can't really "regenerate" it from a prompt,
+      // but we could re-fetch the greeting. For now, let's assume it's a response to a user message.
+      
+      const historyUntilThis = messages.slice(0, messageIndex);
+      // The last message in historyUntilThis should be the user prompt
+      const lastUserMsgIndex = [...historyUntilThis].reverse().findIndex(m => m.role === 'user');
+      
+      let prompt = "";
+      let finalHistory: {role: 'user' | 'model', content: string}[] = [];
+
+      if (lastUserMsgIndex !== -1) {
+        const actualIndex = historyUntilThis.length - 1 - lastUserMsgIndex;
+        prompt = historyUntilThis[actualIndex].content;
+        finalHistory = historyUntilThis.slice(0, actualIndex).map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+      } else {
+        // If no user message found, it might be the initial greeting or a skip-response case
+        prompt = "(Continue the conversation)";
+        finalHistory = historyUntilThis.map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+      }
+
+      const memoryList = memories.map(m => m.content);
+      const aiResponse = await generateCharacterResponse(character, finalHistory, prompt, memoryList);
+
+      // Update the existing AI message
+      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+      await setDoc(messageRef, {
+        content: aiResponse,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+    } catch (error) {
+      console.error('Error regenerating message:', error);
+    } finally {
+      setIsRegenerating(false);
+      setIsTyping(false);
     }
   };
 
@@ -133,6 +248,7 @@ export function Chat() {
     try {
       const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
       await deleteDoc(messageRef);
+      setMessageToDelete(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/messages/${messageId}`);
     }
@@ -646,24 +762,52 @@ export function Chat() {
                           </div>
                           
                           {/* Message Actions */}
-                          <div className={`absolute top-0 ${isUser ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1`}>
+                          <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20`}>
                             <button
-                              onClick={() => {
-                                setEditingMessageId(msg.id);
-                                setEditInput(msg.content);
-                              }}
-                              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors"
-                              title="Edit"
+                              onClick={() => setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}
+                              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 shadow-xl"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <MoreVertical className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              className="p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-400 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            
+                            {activeMenuId === msg.id && (
+                              <div className="absolute top-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 w-32 z-30">
+                                {!isUser && (
+                                  <button
+                                    onClick={() => {
+                                      handleRegenerateMessage(msg.id);
+                                      setActiveMenuId(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-indigo-400 text-sm transition-colors"
+                                    disabled={isTyping || isRegenerating}
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    Regenerate
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    setEditingMessageId(msg.id);
+                                    setEditInput(msg.content);
+                                    setActiveMenuId(null);
+                                  }}
+                                  className="flex items-center gap-2 w-full p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setMessageToDelete(msg.id);
+                                    setActiveMenuId(null);
+                                  }}
+                                  className="flex items-center gap-2 w-full p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-red-400 text-sm transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -781,6 +925,29 @@ export function Chat() {
           </div>
         )}
       </div>
+      {/* Delete Confirmation Modal */}
+      {messageToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl shadow-2xl max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-white mb-2">Delete Message</h3>
+            <p className="text-zinc-400 mb-6">Are you sure you want to delete this message? This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setMessageToDelete(null)}
+                className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteMessage(messageToDelete)}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
