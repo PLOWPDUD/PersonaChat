@@ -820,6 +820,7 @@ export function Chat() {
             className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
             <option value="gemini-flash-latest">Gemini Flash</option>
+            <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
             <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
             <option value="gemini-3.1-pro-preview">Gemini Pro</option>
           </select>

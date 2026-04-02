@@ -11,11 +11,16 @@ const getApiKey = () => {
   if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
     return process.env.GEMINI_API_KEY;
   }
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-    return import.meta.env.VITE_GEMINI_API_KEY;
+  if (typeof (import.meta as any).env !== 'undefined' && (import.meta as any).env.VITE_GEMINI_API_KEY) {
+    return (import.meta as any).env.VITE_GEMINI_API_KEY;
   }
   return '';
 };
+
+function getMaskedKey(key: string) {
+  if (!key) return 'none';
+  return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
+}
 
 export async function generateCharacterResponse(
   character: { name: string; greeting: string; description: string; personality?: string },
@@ -25,6 +30,7 @@ export async function generateCharacterResponse(
   model: string = 'gemini-flash-latest'
 ) {
   const apiKey = getApiKey();
+  const maskedKey = getMaskedKey(apiKey);
   
   if (!apiKey || apiKey === 'missing-key') {
     console.error("GEMINI_API_KEY is missing. Please add your API key in Settings.");
@@ -129,15 +135,20 @@ Format your response as: [Character Name]: [Message]`;
     return response.text;
   } catch (error: any) {
     console.error('Error generating character response:', error);
+    
+    if (error.message?.includes('Failed to fetch')) {
+      throw new Error(`NETWORK_ERROR: The browser could not connect to Google's AI servers. This is usually caused by: 1. Your API key having "HTTP Referrer" restrictions (remove them in Google AI Studio), 2. An ad-blocker/VPN, or 3. A regional network block. (Key: ${maskedKey})`);
+    }
+
     if (error.message?.includes('safety')) {
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
     }
     if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-      throw new Error(`API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota for the model ${model}. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings.`);
+      throw new Error(`API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota for the model ${model}. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings. (Key: ${maskedKey})`);
     }
     if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
-      throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions at [Google AI Studio](https://aistudio.google.com/app/apikey) and update it in Settings.");
+      throw new Error(`API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key WITHOUT restrictions at [Google AI Studio](https://aistudio.google.com/app/apikey) and update it in Settings. (Key: ${maskedKey})`);
     }
-    throw error;
+    throw new Error(`${error.message} (Key: ${maskedKey})`);
   }
 }
