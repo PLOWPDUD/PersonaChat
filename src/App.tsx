@@ -14,6 +14,7 @@ import { CreateCharacter } from './pages/CreateCharacter';
 import { Personas } from './pages/Personas';
 import { Profile } from './pages/Profile';
 import { Chat } from './pages/Chat';
+import { Stats } from './pages/Stats';
 import { Search } from './pages/Search';
 import { NotFound } from './pages/NotFound';
 
@@ -55,6 +56,7 @@ export default function App() {
               <Route path="edit/:characterId" element={<CreateCharacter />} />
               <Route path="personas" element={<Personas />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="stats" element={<Stats />} />
               <Route path="chat/:characterId" element={<Chat />} />
               <Route path="chat/:characterId/:chatId" element={<Chat />} />
             </Route>

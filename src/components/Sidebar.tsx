@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
@@ -12,6 +12,7 @@ export function Sidebar() {
     { path: '/search', label: 'Search', icon: Search },
     { path: '/create', label: 'Create', icon: PlusCircle },
     { path: '/personas', label: 'Personas', icon: UserCircle },
+    { path: '/stats', label: 'Stats', icon: Users },
   ];
 
   return (
@@ -50,7 +51,9 @@ export function Sidebar() {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{user?.displayName || 'Guest'}</p>
+            <p className="text-sm font-medium text-white truncate">
+              {user?.isAnonymous ? 'Guest' : (user?.displayName || 'User')}
+            </p>
           </div>
         </Link>
       </div>
