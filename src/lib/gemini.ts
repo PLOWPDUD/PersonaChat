@@ -9,6 +9,11 @@ export async function generateCharacterResponse(
   memories: string[] = [],
   model: string = 'gemini-3.1-pro-preview'
 ) {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("GEMINI_API_KEY is missing or undefined. If you are on Vercel, ensure the environment variable is set to GEMINI_API_KEY and redeploy.");
+    throw new Error("API Key is missing.");
+  }
+
   try {
     const memoryContext = memories.length > 0 
       ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
