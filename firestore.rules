@@ -103,21 +103,26 @@ service cloud.firestore {
              request.resource.data.uid == request.auth.uid &&
              request.resource.data.email is string &&
              isValidOptionalString('displayName', 0, 100) &&
-             isValidOptionalString('photoURL', 0, 1000) &&
+             isValidOptionalString('photoURL', 0, 2000) &&
              request.resource.data.createdAt is timestamp;
     }
 
     function isValidCharacter() {
       return hasRequiredFields(['creatorId', 'name', 'greeting', 'description', 'visibility', 'createdAt']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt']) &&
+             hasOnlyAllowedFields(['creatorId', 'name', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
-             isValidOptionalString('avatarUrl', 0, 1000) &&
-             validStringLength('greeting', 1, 1000) &&
-             validStringLength('description', 1, 5000) &&
-             isValidOptionalString('personality', 0, 2000) &&
+             isValidOptionalString('avatarUrl', 0, 1000000) &&
+             validStringLength('greeting', 1, 5000) &&
+             validStringLength('description', 1, 10000) &&
+             isValidOptionalString('personality', 0, 5000) &&
              request.resource.data.visibility in ['public', 'private'] &&
-             request.resource.data.createdAt is timestamp;
+             request.resource.data.createdAt is timestamp &&
+             isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidOptionalTimestamp(field) {
+      return !(field in request.resource.data) || request.resource.data[field] is timestamp;
     }
 
     function isValidChat() {
@@ -125,6 +130,7 @@ service cloud.firestore {
              hasOnlyAllowedFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
              request.resource.data.userId == request.auth.uid &&
              request.resource.data.characterId is string &&
+             request.resource.data.characterId.size() > 0 &&
              request.resource.data.createdAt is timestamp &&
              request.resource.data.updatedAt is timestamp;
     }
@@ -142,7 +148,7 @@ service cloud.firestore {
              hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt']) &&
              request.resource.data.chatId == chatId &&
              request.resource.data.role in ['user', 'model'] &&
-             validStringLength('content', 1, 10000) &&
+             validStringLength('content', 1, 50000) &&
              request.resource.data.createdAt is timestamp;
     }
 
