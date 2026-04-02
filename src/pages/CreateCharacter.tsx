@@ -1,15 +1,17 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X } from 'lucide-react';
+import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3 } from 'lucide-react';
 
 export function CreateCharacter() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { characterId } = useParams<{ characterId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   
@@ -21,6 +23,49 @@ export function CreateCharacter() {
     personality: '',
     visibility: 'public' as 'public' | 'private'
   });
+
+  useEffect(() => {
+    if (!characterId || !user) return;
+
+    const fetchCharacter = async () => {
+      setFetching(true);
+      try {
+        const charRef = doc(db, 'characters', characterId);
+        const charSnap = await getDoc(charRef);
+        
+        if (charSnap.exists()) {
+          const data = charSnap.data();
+          // Security check: only creator can edit
+          if (data.creatorId !== user.uid) {
+            setError('You do not have permission to edit this character.');
+            return;
+          }
+          
+          setFormData({
+            name: data.name || '',
+            avatarUrl: data.avatarUrl || '',
+            greeting: data.greeting || '',
+            description: data.description || '',
+            personality: data.personality || '',
+            visibility: data.visibility || 'public'
+          });
+          
+          if (data.avatarUrl) {
+            setImagePreview(data.avatarUrl);
+          }
+        } else {
+          setError('Character not found.');
+        }
+      } catch (err: any) {
+        handleFirestoreError(err, OperationType.GET, `characters/${characterId}`);
+        setError('Failed to load character data.');
+      } finally {
+        setFetching(false);
+      }
+    };
+
+    fetchCharacter();
+  }, [characterId, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -95,31 +140,56 @@ export function CreateCharacter() {
     setError('');
 
     try {
-      const charData = {
-        ...formData,
-        creatorId: user.uid,
-        createdAt: serverTimestamp()
-      };
+      if (characterId) {
+        // Update existing character
+        const charRef = doc(db, 'characters', characterId);
+        await updateDoc(charRef, {
+          ...formData,
+          updatedAt: serverTimestamp()
+        });
+        navigate(`/chat/${characterId}`);
+      } else {
+        // Create new character
+        const charData = {
+          ...formData,
+          creatorId: user.uid,
+          createdAt: serverTimestamp()
+        };
 
-      const docRef = await addDoc(collection(db, 'characters'), charData);
-      navigate(`/chat/${docRef.id}`);
+        const docRef = await addDoc(collection(db, 'characters'), charData);
+        navigate(`/chat/${docRef.id}`);
+      }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to create character');
-      handleFirestoreError(err, OperationType.CREATE, 'characters');
+      setError(err.message || `Failed to ${characterId ? 'update' : 'create'} character`);
+      handleFirestoreError(err, characterId ? OperationType.UPDATE : OperationType.CREATE, 'characters');
     } finally {
       setLoading(false);
     }
   };
 
+  if (fetching) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-          <UserPlus className="w-8 h-8 text-indigo-500" />
-          Create Character
+          {characterId ? (
+            <Edit3 className="w-8 h-8 text-indigo-500" />
+          ) : (
+            <UserPlus className="w-8 h-8 text-indigo-500" />
+          )}
+          {characterId ? 'Edit Character' : 'Create Character'}
         </h1>
-        <p className="text-zinc-400 mt-2">Design a new AI personality to chat with.</p>
+        <p className="text-zinc-400 mt-2">
+          {characterId ? 'Update your character\'s details.' : 'Design a new AI personality to chat with.'}
+        </p>
       </div>
 
       {error && (
@@ -285,7 +355,7 @@ export function CreateCharacter() {
             disabled={loading}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {loading ? 'Creating...' : 'Create Character'}
+            {loading ? (characterId ? 'Updating...' : 'Creating...') : (characterId ? 'Update Character' : 'Create Character')}
           </button>
         </div>
       </form>

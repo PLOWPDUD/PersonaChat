@@ -4,6 +4,8 @@ import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTime
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus } from 'lucide-react';
 
 interface Character {
@@ -508,7 +510,11 @@ export function Chat() {
                             ? 'bg-indigo-600 text-white rounded-tr-sm' 
                             : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
                         }`}>
-                          <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.content}</p>
+                          <div className="markdown-body prose prose-invert max-w-none text-[15px] leading-relaxed">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
                           
                           {/* Message Actions */}
                           <div className={`absolute top-0 ${isUser ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1`}>

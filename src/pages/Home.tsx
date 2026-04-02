@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageCircle, User, Globe, Lock, Bot } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2 } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -214,39 +214,50 @@ export function Home() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {characters.map((char) => (
-            <Link 
+            <div 
               key={char.id} 
-              to={`/chat/${char.id}`}
-              className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col h-full"
+              className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col h-full relative"
             >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  {char.avatarUrl ? (
-                    <img src={char.avatarUrl} alt={char.name} className="w-14 h-14 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                      <User className="w-6 h-6 text-zinc-400" />
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
-                      {char.visibility === 'private' ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
-                      <span className="capitalize">{char.visibility}</span>
+              {char.creatorId === user?.uid && (
+                <Link
+                  to={`/edit/${char.id}`}
+                  className="absolute top-4 right-4 p-2 bg-zinc-800 hover:bg-indigo-600 text-zinc-400 hover:text-white rounded-xl transition-all z-10 border border-zinc-700"
+                  title="Edit Character"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </Link>
+              )}
+              
+              <Link to={`/chat/${char.id}`} className="flex-1 flex flex-col">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    {char.avatarUrl ? (
+                      <img src={char.avatarUrl} alt={char.name} className="w-14 h-14 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                        <User className="w-6 h-6 text-zinc-400" />
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
+                      <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
+                        {char.visibility === 'private' ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
+                        <span className="capitalize">{char.visibility}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              <p className="text-sm text-zinc-400 line-clamp-3 flex-1">
-                {char.greeting}
-              </p>
-              
-              <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center text-sm font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                <MessageCircle className="w-4 h-4 mr-2" />
-                Chat now
-              </div>
-            </Link>
+                
+                <p className="text-sm text-zinc-400 line-clamp-3 flex-1">
+                  {char.greeting}
+                </p>
+                
+                <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center text-sm font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors">
+                  <MessageCircle className="w-4 h-4 mr-2" />
+                  Chat now
+                </div>
+              </Link>
+            </div>
           ))}
         </div>
       )}

@@ -47,6 +47,7 @@ export default function App() {
             }>
               <Route index element={<Home />} />
               <Route path="create" element={<CreateCharacter />} />
+              <Route path="edit/:characterId" element={<CreateCharacter />} />
               <Route path="chat/:characterId" element={<Chat />} />
             </Route>
             
