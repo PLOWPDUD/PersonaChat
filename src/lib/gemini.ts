@@ -19,7 +19,7 @@ export async function generateCharacterResponse(
   chatHistory: { role: 'user' | 'model'; content: string }[],
   userMessage: string,
   memories: string[] = [],
-  model: string = 'gemini-3.1-pro-preview'
+  model: string = 'gemini-3-flash-preview'
 ) {
   if (!apiKey || apiKey === 'missing-key') {
     console.error("GEMINI_API_KEY is missing or empty. Please check your Vercel environment variables.");
@@ -124,6 +124,9 @@ Format your response as: [Character Name]: [Message]`;
     console.error('Error generating character response:', error);
     if (error.message?.includes('safety')) {
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
+    }
+    if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
+      throw new Error("API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota. You need to set up a billing account in Google AI Studio, or wait until your quota resets.");
     }
     if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
       throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions in Google AI Studio and update Vercel.");
