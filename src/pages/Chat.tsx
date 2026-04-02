@@ -354,13 +354,22 @@ export function Chat() {
         let charSnap;
         try {
           charSnap = await getDoc(charRef);
-        } catch (e) {
+        } catch (e: any) {
+          try {
+            const errInfo = JSON.parse(e.message);
+            if (errInfo.error.includes('Missing or insufficient permissions')) {
+              navigate('/404');
+              return;
+            }
+          } catch (parseErr) {
+            // Not a JSON error, handle normally
+          }
           handleFirestoreError(e, OperationType.GET, `characters/${characterId}`);
           return;
         }
         
         if (!charSnap.exists()) {
-          navigate('/');
+          navigate('/404');
           return;
         }
         

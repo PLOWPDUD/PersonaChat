@@ -51,17 +51,19 @@ export function Layout() {
               <div className="h-6 w-px bg-zinc-800 mx-2"></div>
               
               <div className="flex items-center gap-3">
-                <div className="hidden md:block text-right">
+                <Link to="/profile" className="hidden md:block text-right hover:opacity-80">
                   <p className="text-xs font-medium text-white">{user.displayName || 'Guest User'}</p>
                   <p className="text-[10px] text-zinc-500">{user.isAnonymous ? 'Temporary Account' : user.email}</p>
-                </div>
-                {user.photoURL ? (
-                  <img src={user.photoURL} alt={user.displayName || 'User'} className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                    <UserIcon className="w-4 h-4 text-zinc-400" />
-                  </div>
-                )}
+                </Link>
+                <Link to="/profile" className="hover:opacity-80">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName || 'User'} className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                      <UserIcon className="w-4 h-4 text-zinc-400" />
+                    </div>
+                  )}
+                </Link>
                 <button 
                   onClick={handleLogout}
                   className="text-zinc-400 hover:text-white transition-colors p-2 rounded-full hover:bg-zinc-800"

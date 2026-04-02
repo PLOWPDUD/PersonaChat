@@ -120,7 +120,14 @@ service cloud.firestore {
     }
 
     function isValidProfile() {
-      return true;
+      return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt']) &&
+             request.resource.data.uid == request.auth.uid &&
+             validStringLength('displayName', 1, 100) &&
+             request.resource.data.displayName_lowercase == request.resource.data.displayName.toLower() &&
+             isValidOptionalString('photoURL', 0, 2000) &&
+             request.resource.data.createdAt is timestamp &&
+             isValidOptionalTimestamp('updatedAt');
     }
 
     function isValidCharacter() {

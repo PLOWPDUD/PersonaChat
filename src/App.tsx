@@ -12,8 +12,10 @@ import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 import { CreateCharacter } from './pages/CreateCharacter';
 import { Personas } from './pages/Personas';
+import { Profile } from './pages/Profile';
 import { Chat } from './pages/Chat';
 import { Search } from './pages/Search';
+import { NotFound } from './pages/NotFound';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -52,11 +54,13 @@ export default function App() {
               <Route path="create" element={<CreateCharacter />} />
               <Route path="edit/:characterId" element={<CreateCharacter />} />
               <Route path="personas" element={<Personas />} />
+              <Route path="profile" element={<Profile />} />
               <Route path="chat/:characterId" element={<Chat />} />
               <Route path="chat/:characterId/:chatId" element={<Chat />} />
             </Route>
             
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/404" element={<NotFound />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Router>
       </AuthProvider>
