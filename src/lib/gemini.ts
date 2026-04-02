@@ -2,6 +2,12 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
 // Fallback to VITE_GEMINI_API_KEY if process.env.GEMINI_API_KEY is not set
 const getApiKey = () => {
+  // First check localStorage (Bring Your Own Key)
+  if (typeof window !== 'undefined') {
+    const storedKey = localStorage.getItem('user_gemini_api_key');
+    if (storedKey) return storedKey;
+  }
+  
   if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
     return process.env.GEMINI_API_KEY;
   }
@@ -11,9 +17,6 @@ const getApiKey = () => {
   return '';
 };
 
-const apiKey = getApiKey();
-const ai = new GoogleGenAI({ apiKey: apiKey || 'missing-key' });
-
 export async function generateCharacterResponse(
   character: { name: string; greeting: string; description: string; personality?: string },
   chatHistory: { role: 'user' | 'model'; content: string }[],
@@ -21,10 +24,14 @@ export async function generateCharacterResponse(
   memories: string[] = [],
   model: string = 'gemini-3-flash-preview'
 ) {
+  const apiKey = getApiKey();
+  
   if (!apiKey || apiKey === 'missing-key') {
-    console.error("GEMINI_API_KEY is missing or empty. Please check your Vercel environment variables.");
-    throw new Error("API_KEY_MISSING: The Gemini API key is not configured in Vercel. Please add GEMINI_API_KEY to your Vercel project settings and REDEPLOY.");
+    console.error("GEMINI_API_KEY is missing. Please add your API key in Settings.");
+    throw new Error("API_KEY_MISSING: Please click 'Settings' in the sidebar and enter your own Gemini API key to chat. You can get a free key instantly at [Google AI Studio](https://aistudio.google.com/app/apikey).");
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const memoryContext = memories.length > 0 
@@ -126,10 +133,10 @@ Format your response as: [Character Name]: [Message]`;
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
     }
     if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-      throw new Error("API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota. You need to set up a billing account in Google AI Studio, or wait until your quota resets.");
+      throw new Error("API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings.");
     }
     if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
-      throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions in Google AI Studio and update Vercel.");
+      throw new Error("API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key without restrictions at [Google AI Studio](https://aistudio.google.com/app/apikey) and update it in Settings.");
     }
     throw error;
   }
