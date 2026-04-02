@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle } from 'lucide-react';
+import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X } from 'lucide-react';
 
 export function CreateCharacter() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -23,6 +25,66 @@ export function CreateCharacter() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file.');
+      return;
+    }
+
+    // Limit to 2MB for initial selection, we will resize it anyway
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Image is too large. Please select an image under 2MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize image using canvas
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Convert to low-quality JPEG to save space
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setImagePreview(dataUrl);
+        setFormData(prev => ({ ...prev, avatarUrl: dataUrl }));
+        setError('');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, avatarUrl: '' }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,19 +149,65 @@ export function CreateCharacter() {
           </div>
 
           <div>
-            <label htmlFor="avatarUrl" className="block text-sm font-medium text-zinc-300 mb-1.5 flex items-center gap-2">
+            <label className="block text-sm font-medium text-zinc-300 mb-1.5 flex items-center gap-2">
               <ImageIcon className="w-4 h-4" />
-              Avatar URL (Optional)
+              Avatar
             </label>
+            
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="w-24 h-24 rounded-2xl bg-zinc-950 border-2 border-dashed border-zinc-800 hover:border-indigo-500/50 transition-colors cursor-pointer flex flex-col items-center justify-center gap-2 group overflow-hidden relative"
+              >
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5 text-zinc-500 group-hover:text-indigo-400" />
+                    <span className="text-[10px] text-zinc-600 group-hover:text-zinc-400 font-medium">Upload</span>
+                  </>
+                )}
+              </div>
+
+              <div className="flex-1 w-full space-y-3">
+                <div className="relative">
+                  <input
+                    type="url"
+                    id="avatarUrl"
+                    name="avatarUrl"
+                    maxLength={1000}
+                    value={formData.avatarUrl.startsWith('data:') ? '' : formData.avatarUrl}
+                    onChange={handleChange}
+                    placeholder="Or paste an image URL..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+                  />
+                  {imagePreview && (
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Recommended: Square image, max 2MB. URL will be ignored if you upload a file.
+                </p>
+              </div>
+            </div>
+
             <input
-              type="url"
-              id="avatarUrl"
-              name="avatarUrl"
-              maxLength={1000}
-              value={formData.avatarUrl}
-              onChange={handleChange}
-              placeholder="https://example.com/image.jpg"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              className="hidden"
             />
           </div>
 

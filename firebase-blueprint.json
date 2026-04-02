@@ -52,6 +52,17 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." }
       },
       "required": ["chatId", "role", "content", "createdAt"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "A specific detail or fact the AI should remember about the chat or characters.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "description": "The ID of the chat this memory belongs to." },
+        "content": { "type": "string", "description": "The fact or detail to remember." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the memory was added." }
+      },
+      "required": ["chatId", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -70,6 +81,10 @@
     "/chats/{chatId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/Message" },
       "description": "Stores messages within a chat."
+    },
+    "/chats/{chatId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/Memory" },
+      "description": "Stores specific details the AI should remember."
     }
   }
 }

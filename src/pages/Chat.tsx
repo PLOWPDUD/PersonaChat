@@ -4,7 +4,7 @@ import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTime
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -22,6 +22,12 @@ interface Message {
   createdAt: any;
 }
 
+interface Memory {
+  id: string;
+  content: string;
+  createdAt: any;
+}
+
 export function Chat() {
   const { characterId } = useParams<{ characterId: string }>();
   const { user } = useAuth();
@@ -34,13 +40,19 @@ export function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInput, setEditInput] = useState('');
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [newMemory, setNewMemory] = useState('');
+  const [isAddingMemory, setIsAddingMemory] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleClearHistory = async () => {
     if (!chatId || !character) return;
-    if (!window.confirm('Are you sure you want to clear the chat history? This cannot be undone.')) return;
-
+    
     setIsClearing(true);
     try {
       const messagesRef = collection(db, `chats/${chatId}/messages`);
@@ -58,9 +70,108 @@ export function Chat() {
         createdAt: serverTimestamp()
       });
     } catch (error) {
-      console.error('Error clearing history:', error);
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
     } finally {
       setIsClearing(false);
+    }
+  };
+
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!chatId || !newContent.trim()) return;
+    
+    try {
+      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+      await setDoc(messageRef, {
+        content: newContent.trim(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setEditingMessageId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!chatId) return;
+    
+    try {
+      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+      await deleteDoc(messageRef);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/messages/${messageId}`);
+    }
+  };
+
+  const handleSkipResponse = async () => {
+    if (!chatId || !character || isTyping || isRegenerating) return;
+
+    setIsRegenerating(true);
+    setIsTyping(true);
+
+    try {
+      // Use the existing history to generate a new AI response
+      const historyForGemini = messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      // Trigger AI response with a "continue" instruction
+      const memoryList = memories.map(m => m.content);
+      const aiResponse = await generateCharacterResponse(character, historyForGemini, "(Continue the story)", memoryList);
+
+      // Save AI message
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'model',
+          content: aiResponse,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      }
+
+      // Update chat timestamp
+      try {
+        await setDoc(doc(db, 'chats', chatId), {
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+      }
+    } catch (error) {
+      console.error('Error regenerating response:', error);
+    } finally {
+      setIsRegenerating(false);
+      setIsTyping(false);
+    }
+  };
+
+  const handleAddMemory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMemory.trim() || !chatId) return;
+
+    setIsAddingMemory(true);
+    try {
+      await addDoc(collection(db, `chats/${chatId}/memories`), {
+        chatId,
+        content: newMemory.trim(),
+        createdAt: serverTimestamp()
+      });
+      setNewMemory('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `chats/${chatId}/memories`);
+    } finally {
+      setIsAddingMemory(false);
+    }
+  };
+
+  const handleDeleteMemory = async (memoryId: string) => {
+    if (!chatId) return;
+    try {
+      await deleteDoc(doc(db, `chats/${chatId}/memories`, memoryId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/memories/${memoryId}`);
     }
   };
 
@@ -85,7 +196,13 @@ export function Chat() {
       try {
         // 1. Fetch character
         const charRef = doc(db, 'characters', characterId);
-        const charSnap = await getDoc(charRef);
+        let charSnap;
+        try {
+          charSnap = await getDoc(charRef);
+        } catch (e) {
+          handleFirestoreError(e, OperationType.GET, `characters/${characterId}`);
+          return;
+        }
         
         if (!charSnap.exists()) {
           navigate('/');
@@ -96,30 +213,44 @@ export function Chat() {
         setCharacter(charData);
 
         // 2. Find or create chat session
-        // For simplicity, we create a deterministic chat ID based on user and character
-        // In a real app, you might want multiple chats per character, but this is simpler
         const currentChatId = `${user.uid}_${characterId}`;
         setChatId(currentChatId);
         
         const chatRef = doc(db, 'chats', currentChatId);
-        const chatSnap = await getDoc(chatRef);
+        let chatSnap;
+        try {
+          chatSnap = await getDoc(chatRef);
+        } catch (e) {
+          handleFirestoreError(e, OperationType.GET, `chats/${currentChatId}`);
+          return;
+        }
         
         if (!chatSnap.exists()) {
           // Create chat
-          await setDoc(chatRef, {
-            userId: user.uid,
-            characterId: characterId,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          });
+          try {
+            await setDoc(chatRef, {
+              userId: user.uid,
+              characterId: characterId,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `chats/${currentChatId}`);
+            return;
+          }
           
           // Add initial greeting
-          await addDoc(collection(db, `chats/${currentChatId}/messages`), {
-            chatId: currentChatId,
-            role: 'model',
-            content: charData.greeting,
-            createdAt: serverTimestamp()
-          });
+          try {
+            await addDoc(collection(db, `chats/${currentChatId}/messages`), {
+              chatId: currentChatId,
+              role: 'model',
+              content: charData.greeting,
+              createdAt: serverTimestamp()
+            });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `chats/${currentChatId}/messages`);
+            return;
+          }
         }
 
         // 3. Listen to messages
@@ -129,7 +260,14 @@ export function Chat() {
         const unsubscribe = onSnapshot(q, (snapshot) => {
           const msgs: Message[] = [];
           snapshot.forEach((doc) => {
-            msgs.push({ id: doc.id, ...doc.data() } as Message);
+            const data = doc.data();
+            // Handle pending writes where createdAt might be null
+            if (data.createdAt || !doc.metadata.hasPendingWrites) {
+              msgs.push({ id: doc.id, ...data } as Message);
+            } else {
+              // If it's a pending write and createdAt is null, we can use a local timestamp for sorting
+              msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
+            }
           });
           setMessages(msgs);
           setLoading(false);
@@ -137,9 +275,26 @@ export function Chat() {
           handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/messages`);
         });
 
-        return () => unsubscribe();
+        // 4. Listen to memories
+        const memoriesRef = collection(db, `chats/${currentChatId}/memories`);
+        const mq = query(memoriesRef, orderBy('createdAt', 'desc'));
+        
+        const unsubscribeMemories = onSnapshot(mq, (snapshot) => {
+          const mems: Memory[] = [];
+          snapshot.forEach((doc) => {
+            mems.push({ id: doc.id, ...doc.data() } as Memory);
+          });
+          setMemories(mems);
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/memories`);
+        });
+
+        return () => {
+          unsubscribe();
+          unsubscribeMemories();
+        };
       } catch (error) {
-        handleFirestoreError(error, OperationType.GET, 'characters/chats');
+        console.error('Chat initialization error:', error);
         setLoading(false);
       }
     };
@@ -157,50 +312,71 @@ export function Chat() {
 
     try {
       // 1. Save user message
-      await addDoc(collection(db, `chats/${chatId}/messages`), {
-        chatId,
-        role: 'user',
-        content: userMessage,
-        createdAt: serverTimestamp()
-      });
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'user',
+          content: userMessage,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      }
 
       // Update chat timestamp
-      await setDoc(doc(db, 'chats', chatId), {
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'chats', chatId), {
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+      }
 
       // 2. Generate AI response
-      // We need to pass the history. We exclude the very last one we just added if it hasn't synced yet,
-      // but we can just use the local state `messages` which has the history up to now.
+      // Pass the history BEFORE the new message to avoid role alternation errors
+      // if the snapshot has already updated the messages state.
       const historyForGemini = messages.map(m => ({
         role: m.role,
         content: m.content
       }));
 
-      const aiResponse = await generateCharacterResponse(character, historyForGemini, userMessage);
+      const memoryList = memories.map(m => m.content);
+      const aiResponse = await generateCharacterResponse(character, historyForGemini, userMessage, memoryList);
 
       // 3. Save AI message
-      await addDoc(collection(db, `chats/${chatId}/messages`), {
-        chatId,
-        role: 'model',
-        content: aiResponse,
-        createdAt: serverTimestamp()
-      });
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'model',
+          content: aiResponse,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      }
 
       // Update chat timestamp again
-      await setDoc(doc(db, 'chats', chatId), {
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'chats', chatId), {
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
       // Fallback error message in chat
-      await addDoc(collection(db, `chats/${chatId}/messages`), {
-        chatId,
-        role: 'model',
-        content: "*OOC: Sorry, I'm having trouble connecting right now. Please try again later.*",
-        createdAt: serverTimestamp()
-      });
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'model',
+          content: "*OOC: Sorry, I'm having trouble connecting right now. Please try again later.*",
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error('Critical failure: Could not even send fallback message', e);
+      }
     } finally {
       setIsTyping(false);
     }
@@ -239,93 +415,236 @@ export function Chat() {
           </div>
         </div>
 
+        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'chat' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Chat
+          </button>
+          <button
+            onClick={() => setActiveTab('lore')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'lore' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            Lore
+          </button>
+        </div>
+
         <button
           onClick={handleClearHistory}
           disabled={isClearing}
-          className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors"
+          className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors ml-2"
           title="Clear History"
         >
           <Trash2 className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth">
-        {messages.map((msg) => {
-          const isUser = msg.role === 'user';
-          return (
-            <div key={msg.id} className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className="flex-shrink-0 mt-1">
-                {isUser ? (
-                  user?.photoURL ? (
-                    <img src={user.photoURL} alt="You" className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center">
-                      <User className="w-4 h-4 text-white" />
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {activeTab === 'chat' ? (
+          <>
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth">
+              {messages.map((msg) => {
+                const isUser = msg.role === 'user';
+                const isEditing = editingMessageId === msg.id;
+
+                return (
+                  <div key={msg.id} className={`flex gap-4 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className="flex-shrink-0 mt-1">
+                      {isUser ? (
+                        user?.photoURL ? (
+                          <img src={user.photoURL} alt="You" className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center">
+                            <User className="w-4 h-4 text-white" />
+                          </div>
+                        )
+                      ) : (
+                        character.avatarUrl ? (
+                          <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                            <Bot className="w-4 h-4 text-zinc-400" />
+                          </div>
+                        )
+                      )}
                     </div>
-                  )
-                ) : (
-                  character.avatarUrl ? (
-                    <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                      <Bot className="w-4 h-4 text-zinc-400" />
+                    
+                    <div className={`max-w-[80%] relative group ${isUser ? 'items-end' : 'items-start'}`}>
+                      {isEditing ? (
+                        <div className="flex flex-col gap-2 min-w-[200px]">
+                          <textarea
+                            value={editInput}
+                            onChange={(e) => setEditInput(e.target.value)}
+                            className="w-full bg-zinc-800 border border-indigo-500 rounded-xl p-3 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-h-[100px] resize-none"
+                            autoFocus
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => setEditingMessageId(null)}
+                              className="p-1.5 hover:bg-zinc-700 rounded-lg text-zinc-400 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleEditMessage(msg.id, editInput)}
+                              className="p-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white transition-colors"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`relative rounded-2xl p-4 ${
+                          isUser 
+                            ? 'bg-indigo-600 text-white rounded-tr-sm' 
+                            : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
+                        }`}>
+                          <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.content}</p>
+                          
+                          {/* Message Actions */}
+                          <div className={`absolute top-0 ${isUser ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1`}>
+                            <button
+                              onClick={() => {
+                                setEditingMessageId(msg.id);
+                                setEditInput(msg.content);
+                              }}
+                              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-400 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )
-                )}
-              </div>
+                  </div>
+                );
+              })}
               
-              <div className={`max-w-[80%] rounded-2xl p-4 ${
-                isUser 
-                  ? 'bg-indigo-600 text-white rounded-tr-sm' 
-                  : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
-              }`}>
-                <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.content}</p>
-              </div>
-            </div>
-          );
-        })}
-        
-        {isTyping && (
-          <div className="flex gap-4 flex-row">
-            <div className="flex-shrink-0 mt-1">
-              {character.avatarUrl ? (
-                <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                  <Bot className="w-4 h-4 text-zinc-400" />
+              {isTyping && (
+                <div className="flex gap-4 flex-row">
+                  <div className="flex-shrink-0 mt-1">
+                    {character.avatarUrl ? (
+                      <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                        <Bot className="w-4 h-4 text-zinc-400" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="bg-zinc-800 text-zinc-100 rounded-2xl rounded-tl-sm border border-zinc-700/50 p-4 flex items-center gap-1.5">
+                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
-            <div className="bg-zinc-800 text-zinc-100 rounded-2xl rounded-tl-sm border border-zinc-700/50 p-4 flex items-center gap-1.5">
-              <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+
+            {/* Input Area */}
+            <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+              <form onSubmit={handleSend} className="relative flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder={`Message ${character.name}...`}
+                    disabled={isTyping}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isTyping}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={handleSkipResponse}
+                  disabled={isTyping || isRegenerating}
+                  className="p-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-all disabled:opacity-50 border border-zinc-700"
+                  title="Skip response / Regenerate"
+                >
+                  <RefreshCw className={`w-5 h-5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950/30">
+            <div className="p-6 border-b border-zinc-800">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-indigo-500" />
+                Character Lore & Memories
+              </h3>
+              <p className="text-zinc-400 text-sm mt-1">
+                Add specific details, facts, or context that {character.name} should always remember.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <form onSubmit={handleAddMemory} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMemory}
+                  onChange={(e) => setNewMemory(e.target.value)}
+                  placeholder="e.g. The user's name is Alex, they are in a forest..."
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+                />
+                <button
+                  type="submit"
+                  disabled={!newMemory.trim() || isAddingMemory}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </form>
+
+              <div className="space-y-3">
+                {memories.length === 0 ? (
+                  <div className="text-center py-12">
+                    <BookOpen className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
+                    <p className="text-zinc-500">No memories added yet.</p>
+                  </div>
+                ) : (
+                  memories.map((mem) => (
+                    <div key={mem.id} className="group flex items-start justify-between gap-4 bg-zinc-900 border border-zinc-800 p-4 rounded-2xl hover:border-zinc-700 transition-colors">
+                      <p className="text-zinc-200 text-[15px] leading-relaxed">{mem.content}</p>
+                      <button
+                        onClick={() => handleDeleteMemory(mem.id)}
+                        className="p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete Memory"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Area */}
-      <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
-        <form onSubmit={handleSend} className="relative flex items-center">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Message ${character.name}...`}
-            disabled={isTyping}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isTyping}
-            className="absolute right-2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
       </div>
     </div>
   );

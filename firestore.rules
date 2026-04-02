@@ -129,12 +129,28 @@ service cloud.firestore {
              request.resource.data.updatedAt is timestamp;
     }
 
+    function isChatOwner(cid) {
+      return isAuthenticated() && (
+        cid.startsWith(request.auth.uid + "_") || 
+        (exists(/databases/$(database)/documents/chats/$(cid)) && 
+         get(/databases/$(database)/documents/chats/$(cid)).data.userId == request.auth.uid)
+      );
+    }
+
     function isValidMessage(chatId) {
       return hasRequiredFields(['chatId', 'role', 'content', 'createdAt']) &&
              hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt']) &&
              request.resource.data.chatId == chatId &&
              request.resource.data.role in ['user', 'model'] &&
              validStringLength('content', 1, 10000) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidMemory(chatId) {
+      return hasRequiredFields(['chatId', 'content', 'createdAt']) &&
+             hasOnlyAllowedFields(['chatId', 'content', 'createdAt']) &&
+             request.resource.data.chatId == chatId &&
+             validStringLength('content', 1, 1000) &&
              request.resource.data.createdAt is timestamp;
     }
 
@@ -152,7 +168,9 @@ service cloud.firestore {
 
     match /characters/{characterId} {
       // Anyone authenticated can read public characters, or their own private characters
-      allow read: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner());
+      // We allow 'get' even if the document doesn't exist so the app can handle 404s gracefully
+      allow get: if isAuthenticated() && (resource == null || resource.data.visibility == 'public' || isDocOwner());
+      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner());
       allow create: if isAuthenticated() && isValidCharacter();
       allow update: if isDocOwner() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']);
       allow delete: if isDocOwner();
@@ -160,17 +178,27 @@ service cloud.firestore {
 
     match /chats/{chatId} {
       // Users can only read and write their own chats
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // We allow 'get' even if the document doesn't exist so the app can handle initialization
+      allow get: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && isValidChat();
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt']);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
 
       match /messages/{messageId} {
         // Users can only read and write messages in their own chats
-        allow read: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid;
-        allow create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid && isValidMessage(chatId);
-        allow update: if false; // Messages should not be updated
-        allow delete: if false; // Messages should not be deleted
+        allow read: if isChatOwner(chatId);
+        allow create: if isChatOwner(chatId) && isValidMessage(chatId);
+        allow update: if isChatOwner(chatId) && isValidMessage(chatId) && areImmutableFieldsUnchanged(['chatId', 'role', 'createdAt']);
+        allow delete: if isChatOwner(chatId);
+      }
+
+      match /memories/{memoryId} {
+        // Users can only read and write memories in their own chats
+        allow read: if isChatOwner(chatId);
+        allow create: if isChatOwner(chatId) && isValidMemory(chatId);
+        allow update: if isChatOwner(chatId) && isValidMemory(chatId) && areImmutableFieldsUnchanged(['chatId', 'createdAt']);
+        allow delete: if isChatOwner(chatId);
       }
     }
   }
