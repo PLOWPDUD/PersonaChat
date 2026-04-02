@@ -665,14 +665,15 @@ export function Chat() {
         handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
       // Fallback error message in chat
       try {
+        const errorMessage = error?.message || "Unknown error occurred";
         await addDoc(collection(db, `chats/${chatId}/messages`), {
           chatId,
           role: 'model',
-          content: "*OOC: Sorry, I'm having trouble connecting right now. Please try again later.*",
+          content: `*OOC: Sorry, I'm having trouble connecting right now. Error details: ${errorMessage}*`,
           createdAt: serverTimestamp()
         });
       } catch (e) {

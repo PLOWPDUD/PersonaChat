@@ -1,6 +1,18 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Fallback to VITE_GEMINI_API_KEY if process.env.GEMINI_API_KEY is not set
+const getApiKey = () => {
+  if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+    return process.env.GEMINI_API_KEY;
+  }
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+    return import.meta.env.VITE_GEMINI_API_KEY;
+  }
+  return undefined;
+};
+
+const apiKey = getApiKey();
+const ai = new GoogleGenAI({ apiKey: apiKey || 'missing-key' });
 
 export async function generateCharacterResponse(
   character: { name: string; greeting: string; description: string; personality?: string },
@@ -9,9 +21,9 @@ export async function generateCharacterResponse(
   memories: string[] = [],
   model: string = 'gemini-3.1-pro-preview'
 ) {
-  if (!process.env.GEMINI_API_KEY) {
-    console.error("GEMINI_API_KEY is missing or undefined. If you are on Vercel, ensure the environment variable is set to GEMINI_API_KEY and redeploy.");
-    throw new Error("API Key is missing.");
+  if (!apiKey || apiKey === 'missing-key') {
+    console.error("GEMINI_API_KEY is missing or undefined. If you are on Vercel, ensure the environment variable is set to GEMINI_API_KEY or VITE_GEMINI_API_KEY and redeploy.");
+    throw new Error("API_KEY_MISSING: The Gemini API key is not configured in this environment.");
   }
 
   try {
