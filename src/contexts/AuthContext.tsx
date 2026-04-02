@@ -5,22 +5,28 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
+  profile: any | null;
   loading: boolean;
+  updateProfile: (newProfile: any) => void;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true, updateProfile: () => {} });
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const updateProfile = (newProfile: any) => {
+    setProfile((prev: any) => ({ ...prev, ...newProfile }));
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
-      // Sync profile if user is logged in
       if (currentUser) {
         try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
@@ -28,17 +34,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (!profileSnap.exists()) {
             const displayName = currentUser.displayName || (currentUser.isAnonymous ? `Guest ${currentUser.uid.slice(0, 5)}` : 'Anonymous User');
-            await setDoc(profileRef, {
+            const newProfile = {
               uid: currentUser.uid,
               displayName: displayName,
               displayName_lowercase: displayName.toLowerCase(),
               photoURL: currentUser.photoURL || '',
               createdAt: serverTimestamp()
-            });
+            };
+            await setDoc(profileRef, newProfile);
+            setProfile(newProfile);
+          } else {
+            const data = profileSnap.data();
+            setProfile(data);
+            
+            // Sync profile if changed
+            if (data.photoURL !== currentUser.photoURL || (currentUser.displayName && data.displayName !== currentUser.displayName)) {
+              await setDoc(profileRef, {
+                photoURL: currentUser.photoURL || data.photoURL,
+                displayName: currentUser.displayName || data.displayName
+              }, { merge: true });
+              setProfile(prev => ({ ...prev, photoURL: currentUser.photoURL || data.photoURL, displayName: currentUser.displayName || data.displayName }));
+            }
           }
         } catch (error) {
           console.error('Error syncing profile:', error);
         }
+      } else {
+        setProfile(null);
       }
       
       setLoading(false);
@@ -48,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, profile, loading, updateProfile }}>
       {!loading && children}
     </AuthContext.Provider>
   );

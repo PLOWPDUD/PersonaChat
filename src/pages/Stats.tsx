@@ -5,7 +5,7 @@ import { Users, Loader2, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Stats() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [stats, setStats] = useState<{ visitorCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,8 +53,8 @@ export function Stats() {
       </div>
 
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex items-center gap-4">
-        {user?.photoURL ? (
-          <img src={user.photoURL} alt="Profile" className="w-16 h-16 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+        {profile?.photoURL ? (
+          <img src={profile.photoURL} alt="Profile" className="w-16 h-16 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
         ) : (
           <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
             <User className="w-8 h-8 text-zinc-400" />
@@ -63,7 +63,7 @@ export function Stats() {
         <div>
           <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Current User</p>
           <p className="text-2xl font-bold text-white">
-            {user?.isAnonymous ? 'Guest' : (user?.displayName || 'User')}
+            {user?.isAnonymous ? 'Guest' : (profile?.displayName || 'User')}
           </p>
         </div>
       </div>

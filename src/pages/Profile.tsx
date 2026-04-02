@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { User, Save, AlertCircle, Camera, Upload } from 'lucide-react';
 
 export function Profile() {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -101,12 +101,14 @@ export function Profile() {
 
     try {
       const profileRef = doc(db, 'profiles', user.uid);
-      await updateDoc(profileRef, {
+      const updatedData = {
         displayName: formData.displayName,
         displayName_lowercase: formData.displayName.toLowerCase(),
         photoURL: formData.photoURL,
         updatedAt: serverTimestamp()
-      });
+      };
+      await updateDoc(profileRef, updatedData);
+      updateProfile(updatedData);
       setSuccess(true);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);

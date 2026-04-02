@@ -123,11 +123,14 @@ service cloud.firestore {
       return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
              hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt']) &&
              request.resource.data.uid == request.auth.uid &&
-             validStringLength('displayName', 1, 100) &&
-             request.resource.data.displayName_lowercase == request.resource.data.displayName.toLower() &&
-             isValidOptionalString('photoURL', 0, 2000) &&
+             request.resource.data.displayName is string &&
+             request.resource.data.displayName.size() >= 1 &&
+             request.resource.data.displayName.size() <= 100 &&
+             request.resource.data.displayName_lowercase is string &&
+             request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
+             (request.resource.data.photoURL is string || !('photoURL' in request.resource.data)) &&
              request.resource.data.createdAt is timestamp &&
-             isValidOptionalTimestamp('updatedAt');
+             (request.resource.data.updatedAt is timestamp || !('updatedAt' in request.resource.data));
     }
 
     function isValidCharacter() {
@@ -135,7 +138,7 @@ service cloud.firestore {
              hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
-             request.resource.data.name_lowercase == request.resource.data.name.toLower() &&
+             request.resource.data.name_lowercase == request.resource.data.name.lower() &&
              isValidOptionalString('avatarUrl', 0, 1000000) &&
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&

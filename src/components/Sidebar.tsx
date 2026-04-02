@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -43,8 +43,8 @@ export function Sidebar() {
 
       <div className="p-4 border-t border-zinc-800">
         <Link to="/profile" className="flex items-center gap-3 p-2 rounded-xl hover:bg-zinc-900 transition-colors">
-          {user?.photoURL ? (
-            <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+          {profile?.photoURL ? (
+            <img src={profile.photoURL} alt="Profile" className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
           ) : (
             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
               <User className="w-5 h-5 text-zinc-400" />
@@ -52,7 +52,7 @@ export function Sidebar() {
           )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">
-              {user?.isAnonymous ? 'Guest' : (user?.displayName || 'User')}
+              {user?.isAnonymous ? 'Guest' : (profile?.displayName || 'User')}
             </p>
           </div>
         </Link>
