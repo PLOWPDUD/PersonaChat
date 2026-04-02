@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -24,7 +24,7 @@ ${character.personality ? `PERSONALITY: ${character.personality}` : ''}
 ${memoryContext}
 
 ### CORE DIRECTIVES ###
-1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI.
+1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI. Never use OOC (Out of Character) notes or brackets.
 2. MULTI-CHARACTER FORMAT: ALWAYS use the format "[Character Name]: [Message]" for every character's speech.
 3. CHARACTER RECOGNITION: Pay close attention to the description above. If it mentions other people, creatures, or entities, you are responsible for playing them when appropriate.
 4. CHAIN REACTION: When the user speaks, you should often have multiple characters react in sequence. For example:
@@ -77,6 +77,24 @@ Format your response as: [Character Name]: [Message]`;
         systemInstruction,
         temperature: 0.9,
         topP: 0.95,
+        safetySettings: [
+          {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+        ],
       }
     });
 

@@ -46,23 +46,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             const data = profileSnap.data();
             setProfile(data);
-            
-            // Sync profile if changed
-            if (data.photoURL !== currentUser.photoURL || (currentUser.displayName && data.displayName !== currentUser.displayName)) {
-              const newDisplayName = currentUser.displayName || data.displayName;
-              await setDoc(profileRef, {
-                photoURL: currentUser.photoURL || data.photoURL,
-                displayName: newDisplayName,
-                displayName_lowercase: newDisplayName.toLowerCase(),
-                updatedAt: serverTimestamp()
-              }, { merge: true });
-              setProfile(prev => ({ 
-                ...prev, 
-                photoURL: currentUser.photoURL || data.photoURL, 
-                displayName: newDisplayName,
-                displayName_lowercase: newDisplayName.toLowerCase()
-              }));
-            }
           }
         } catch (error) {
           console.error('Error syncing profile:', error);

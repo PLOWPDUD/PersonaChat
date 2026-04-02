@@ -40,13 +40,6 @@ export const signInWithGoogle = async () => {
         photoURL: user.photoURL || '',
         createdAt: serverTimestamp()
       });
-    } else {
-      // Update if changed
-      await setDoc(profileRef, {
-        displayName: displayName,
-        displayName_lowercase: displayName.toLowerCase(),
-        photoURL: user.photoURL || profileSnap.data().photoURL,
-      }, { merge: true });
     }
 
     return user;
