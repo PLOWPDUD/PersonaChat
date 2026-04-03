@@ -166,13 +166,13 @@ export function Profile() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Avatar URL</label>
+          <label className="block text-sm font-medium text-zinc-300 mb-1">Avatar URL (or upload above)</label>
           <input
-            type="url"
+            type="text"
             value={formData.photoURL}
             onChange={e => setFormData({...formData, photoURL: e.target.value})}
             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
-            maxLength={2000}
+            placeholder="https://... or data:image/..."
           />
         </div>
 

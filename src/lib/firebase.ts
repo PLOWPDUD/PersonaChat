@@ -38,7 +38,8 @@ export const signInWithGoogle = async () => {
         displayName: displayName,
         displayName_lowercase: displayName.toLowerCase(),
         photoURL: user.photoURL || '',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        role: 'user'
       });
     }
 
@@ -64,7 +65,8 @@ export const signInAsGuest = async () => {
         displayName: displayName,
         displayName_lowercase: displayName.toLowerCase(),
         photoURL: '',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        role: 'user'
       });
     }
 

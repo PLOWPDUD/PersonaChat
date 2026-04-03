@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 
 interface AuthContextType {
@@ -52,13 +52,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               displayName: displayName,
               displayName_lowercase: displayName.toLowerCase(),
               photoURL: currentUser.photoURL || '',
-              createdAt: serverTimestamp()
+              createdAt: serverTimestamp(),
+              role: 'user'
             };
             await setDoc(profileRef, newProfile);
             setProfile(newProfile);
           } else {
             const data = profileSnap.data();
-            setProfile(data);
+            // Migration: Ensure displayName_lowercase exists for search
+            if (data.displayName && !data.displayName_lowercase) {
+              const updates = {
+                displayName_lowercase: data.displayName.toLowerCase()
+              };
+              await updateDoc(profileRef, updates);
+              setProfile({ ...data, ...updates });
+            } else {
+              setProfile(data);
+            }
           }
         } catch (error) {
           console.error('Error syncing profile:', error);
