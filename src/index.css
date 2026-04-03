@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
 @layer base {
+  html, body {
+    @apply bg-zinc-950 text-zinc-100 antialiased;
+  }
+  
   .markdown-body {
     @apply break-words;
   }
