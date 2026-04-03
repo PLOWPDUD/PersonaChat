@@ -29,6 +29,8 @@ export function Search() {
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isGroupMode, setIsGroupMode] = useState(false);
+  const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -94,19 +96,56 @@ export function Search() {
     }
   };
 
+  const handleCharacterClick = (charId: string) => {
+    if (isGroupMode) {
+      setSelectedCharIds(prev => 
+        prev.includes(charId) 
+          ? prev.filter(id => id !== charId) 
+          : [...prev, charId]
+      );
+    } else {
+      navigate(`/chat/${charId}`);
+    }
+  };
+
+  const startGroupChat = () => {
+    if (selectedCharIds.length === 0) return;
+    const charIdsParam = selectedCharIds.join(',');
+    navigate(`/chat/${selectedCharIds[0]}?chars=${charIdsParam}`);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-950">
       {/* Header */}
       <div className="p-4 sm:p-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto space-y-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-2xl font-bold text-white">Search</h1>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate(-1)}
+                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-2xl font-bold text-white">Search</h1>
+            </div>
+
+            {activeTab === 'characters' && (
+              <button
+                onClick={() => {
+                  setIsGroupMode(!isGroupMode);
+                  setSelectedCharIds([]);
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  isGroupMode 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
+                    : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                {isGroupMode ? 'Cancel Group' : 'Group Chat'}
+              </button>
+            )}
           </div>
 
           <div className="relative">
@@ -194,36 +233,49 @@ export function Search() {
                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                   </div>
                 ) : userCharacters.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {userCharacters.map((char) => (
-                      <button
-                        key={char.id}
-                        onClick={() => navigate(`/chat/${char.id}`)}
-                        className="flex items-center gap-4 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-indigo-500/50 transition-all text-left group"
-                      >
-                        {char.avatarUrl ? (
-                          <img src={char.avatarUrl} alt="" className="w-14 h-14 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-14 h-14 rounded-xl bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                            <Bot className="w-7 h-7 text-zinc-500" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
-                            {char.name}
-                            {char.averageRating && (
-                              <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
-                                <Star className="w-3 h-3 fill-current" />
-                                {char.averageRating.toFixed(1)}
-                              </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {userCharacters.map((char) => (
+                          <button
+                            key={char.id}
+                            onClick={() => handleCharacterClick(char.id)}
+                            className={`flex items-center gap-4 p-4 bg-zinc-900 border rounded-2xl transition-all text-left group relative ${
+                              selectedCharIds.includes(char.id) 
+                                ? 'border-indigo-500 bg-indigo-500/5' 
+                                : 'border-zinc-800 hover:border-indigo-500/50'
+                            }`}
+                          >
+                            {isGroupMode && (
+                              <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                                selectedCharIds.includes(char.id)
+                                  ? 'bg-indigo-600 border-indigo-600'
+                                  : 'border-zinc-700'
+                              }`}>
+                                {selectedCharIds.includes(char.id) && <ChevronRight className="w-3 h-3 text-white rotate-90" />}
+                              </div>
                             )}
-                          </h3>
-                          <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
-                      </button>
-                    ))}
-                  </div>
+                            {char.avatarUrl ? (
+                              <img src={char.avatarUrl} alt="" className="w-14 h-14 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-14 h-14 rounded-xl bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                                <Bot className="w-7 h-7 text-zinc-500" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                                {char.name}
+                                {char.averageRating && (
+                                  <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                                    <Star className="w-3 h-3 fill-current" />
+                                    {char.averageRating.toFixed(1)}
+                                  </span>
+                                )}
+                              </h3>
+                              <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
+                            </div>
+                            {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
+                          </button>
+                        ))}
+                      </div>
                 ) : (
                   <div className="text-center py-12 bg-zinc-900/30 rounded-3xl border border-zinc-800 border-dashed">
                     <Bot className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
@@ -244,9 +296,22 @@ export function Search() {
                       characters.map((char) => (
                         <button
                           key={char.id}
-                          onClick={() => navigate(`/chat/${char.id}`)}
-                          className="flex items-center gap-4 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-indigo-500/50 transition-all text-left group"
+                          onClick={() => handleCharacterClick(char.id)}
+                          className={`flex items-center gap-4 p-4 bg-zinc-900 border rounded-2xl transition-all text-left group relative ${
+                            selectedCharIds.includes(char.id) 
+                              ? 'border-indigo-500 bg-indigo-500/5' 
+                              : 'border-zinc-800 hover:border-indigo-500/50'
+                          }`}
                         >
+                          {isGroupMode && (
+                            <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                              selectedCharIds.includes(char.id)
+                                ? 'bg-indigo-600 border-indigo-600'
+                                : 'border-zinc-700'
+                            }`}>
+                              {selectedCharIds.includes(char.id) && <ChevronRight className="w-3 h-3 text-white rotate-90" />}
+                            </div>
+                          )}
                           {char.avatarUrl ? (
                             <img src={char.avatarUrl} alt="" className="w-14 h-14 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
                           ) : (
@@ -266,7 +331,7 @@ export function Search() {
                             </h3>
                             <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
+                          {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
                         </button>
                       ))
                     ) : searchQuery.trim() ? (
@@ -315,6 +380,21 @@ export function Search() {
                     )}
                   </div>
                 )}
+              </motion.div>
+            )}
+            {isGroupMode && selectedCharIds.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4"
+              >
+                <button
+                  onClick={startGroupChat}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold shadow-2xl shadow-indigo-900/40 flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <Users className="w-6 h-6" />
+                  Start Group Chat ({selectedCharIds.length})
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

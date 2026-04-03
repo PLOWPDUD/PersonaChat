@@ -175,11 +175,11 @@ service cloud.firestore {
     }
 
     function isValidChat() {
-      return hasRequiredFields(['userId', 'characterId', 'createdAt', 'updatedAt']) &&
-             hasOnlyAllowedFields(['userId', 'characterId', 'createdAt', 'updatedAt', 'title']) &&
+      return hasRequiredFields(['userId', 'characterIds', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(['userId', 'characterId', 'characterIds', 'createdAt', 'updatedAt', 'title']) &&
              request.resource.data.userId == request.auth.uid &&
-             request.resource.data.characterId is string &&
-             request.resource.data.characterId.size() > 0 &&
+             request.resource.data.characterIds is list &&
+             request.resource.data.characterIds.size() > 0 &&
              isValidOptionalString('title', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              request.resource.data.updatedAt is timestamp;
@@ -195,10 +195,12 @@ service cloud.firestore {
 
     function isValidMessage(chatId) {
       return hasRequiredFields(['chatId', 'role', 'content', 'createdAt']) &&
-             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt', 'updatedAt']) &&
+             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt', 'updatedAt', 'imageUrl', 'characterId']) &&
              request.resource.data.chatId == chatId &&
              request.resource.data.role in ['user', 'model'] &&
-             validStringLength('content', 1, 50000) &&
+             validStringLength('content', 0, 50000) &&
+             isValidOptionalString('imageUrl', 0, 1000000) &&
+             isValidOptionalString('characterId', 0, 100) &&
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt');
     }

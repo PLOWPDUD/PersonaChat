@@ -12,9 +12,10 @@ const getApiKey = () => {
 };
 
 export async function generateCharacterResponse(
-  character: { name: string; greeting: string; description: string; personality?: string },
-  chatHistory: { role: 'user' | 'model'; content: string }[],
+  characters: { name: string; greeting: string; description: string; personality?: string }[],
+  chatHistory: { role: 'user' | 'model'; content: string; imageUrl?: string; characterId?: string }[],
   userMessage: string,
+  userImageUrl?: string,
   memories: string[] = [],
   model: string = 'gemini-3-flash-preview'
 ) {
@@ -32,63 +33,90 @@ export async function generateCharacterResponse(
       ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
       : '';
 
-    const systemInstruction = `### AI CHARACTER ROLEPLAY PROTOCOL ###
-You are a master roleplay engine. You primarily play as ${character.name}, but you are also responsible for playing any other characters mentioned in the description or scene.
+    const charactersContext = characters.map((char, index) => `
+### CHARACTER ${index + 1}: ${char.name} ###
+DESCRIPTION: ${char.description}
+${char.personality ? `PERSONALITY: ${char.personality}` : ''}
+`).join('\n');
 
-### CHARACTER DEFINITION: ${character.name} ###
-DESCRIPTION: ${character.description}
-${character.personality ? `PERSONALITY: ${character.personality}` : ''}
+    const systemInstruction = `### AI MULTI-CHARACTER ROLEPLAY PROTOCOL ###
+You are a master roleplay engine. You are responsible for playing ALL characters listed below simultaneously.
+
+${charactersContext}
 
 ${memoryContext}
 
 ### CORE DIRECTIVES ###
-1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI. Never use OOC (Out of Character) notes or brackets.
-2. MULTI-CHARACTER FORMAT: ALWAYS use the format "name: message" for every character's speech (no brackets).
-3. CHARACTER RECOGNITION: Pay close attention to the description above. If it mentions other people, creatures, or entities, you are responsible for playing them when appropriate.
-4. CHAIN REACTION: When the user speaks, you should often have multiple characters react in sequence. For example:
-   char1: message
-   char2: message
-   ${character.name}: message
-5. USER-CONTROLLED CHARACTERS: If the user prefixes their message with "name:", they are taking control of that character. You should have other characters react to them.
-6. STORYTELLING: Be extremely brief. Only use actions (*nods*) or sensory details when absolutely necessary to the scene.
-7. CONTINUITY: Reference past events and maintain established relationships.
-8. CONCISENESS: STRICT BREVITY. Responses MUST be between 5 and 15 words maximum. Never exceed 15 words. Avoid flowery, overly dramatic, or "purple" prose.
-9. LANGUAGE: You are permitted to use vulgar, profane, or explicit language if it fits the character's personality, the intensity of the scene, or if the user prompts/encourages such language. Do not self-censor unless it violates core safety protocols (e.g., illegal acts).
-10. EXPRESSION: Keep it grounded and realistic. Avoid "over-acting" or excessive emotional descriptions. Keep the tone conversational and direct.
+1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI.
+2. MULTI-CHARACTER FORMAT: ALWAYS use the format "Name: Message" for every character's speech.
+3. INTERACTION: Characters should not only talk to the user but also to EACH OTHER. They have their own dynamics, conflicts, and relationships.
+4. DYNAMIC RESPONSE: When the user speaks, multiple characters should often react. Sometimes they might agree, sometimes they might argue.
+5. USER-CONTROLLED CHARACTERS: If the user prefixes their message with "Name:", they are taking control of that character. You should have other characters react to them.
+6. STORYTELLING: Be extremely brief. Only use actions (*nods*) or sensory details when absolutely necessary.
+7. CONCISENESS: STRICT BREVITY. Total response MUST be between 10 and 40 words. Never exceed 50 words.
+8. LANGUAGE: You are permitted to use vulgar, profane, or explicit language if it fits the character's personality or the scene.
+9. EXPRESSION: Keep it grounded and realistic. Avoid "over-acting".
 
 ### EXECUTION ###
-Respond to the user's latest message with extreme brevity (5-15 words total). Ensure the flow is natural and multi-character if the scene calls for it.
-Format your response as: name: message (multiple characters can respond in one turn, separated by new lines or periods)`;
+Respond to the user's latest message. Ensure the flow is natural and characters interact with each other.
+Format your response as:
+Name1: Message
+Name2: Message
+(Only include characters who would realistically speak in this moment)`;
 
     // Ensure roles alternate and remove any trailing user message if it matches the current one
     const contents: any[] = [];
     let lastRole: string | null = null;
 
     // Filter out empty messages and ensure role alternation
-    const filteredHistory = chatHistory.filter(msg => msg.content.trim() !== '');
+    const filteredHistory = chatHistory.filter(msg => msg.content.trim() !== '' || msg.imageUrl);
 
     for (const msg of filteredHistory) {
       if (msg.role !== lastRole) {
+        const parts: any[] = [{ text: msg.content }];
+        
+        if (msg.imageUrl && msg.imageUrl.startsWith('data:')) {
+          const [header, base64Data] = msg.imageUrl.split(',');
+          const mimeType = header.split(';')[0].split(':')[1];
+          parts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType
+            }
+          });
+        }
+
         contents.push({
           role: msg.role,
-          parts: [{ text: msg.content }]
+          parts: parts
         });
         lastRole = msg.role;
       }
     }
     
     // Add the new user message
-    const processedUserMessage = userMessage.trim() || "(Continue the story)";
+    const processedUserMessage = userMessage.trim() || (userImageUrl ? "" : "(Continue the story)");
     
+    const newUserParts: any[] = [{ text: processedUserMessage }];
+    if (userImageUrl && userImageUrl.startsWith('data:')) {
+      const [header, base64Data] = userImageUrl.split(',');
+      const mimeType = header.split(';')[0].split(':')[1];
+      newUserParts.push({
+        inlineData: {
+          data: base64Data,
+          mimeType: mimeType
+        }
+      });
+    }
+
     if (lastRole !== 'user') {
       contents.push({
         role: 'user',
-        parts: [{ text: processedUserMessage }]
+        parts: newUserParts
       });
     } else {
       // If the last message was a user message, we update it to include the new input
-      // This helps maintain history if multiple user messages were sent rapidly
-      contents[contents.length - 1].parts = [{ text: processedUserMessage }];
+      contents[contents.length - 1].parts = newUserParts;
     }
 
     const response = await ai.models.generateContent({

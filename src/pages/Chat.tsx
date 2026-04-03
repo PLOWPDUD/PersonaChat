@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -27,7 +27,9 @@ interface Character {
 interface Message {
   id: string;
   role: 'user' | 'model';
+  characterId?: string;
   content: string;
+  imageUrl?: string;
   createdAt: any;
 }
 
@@ -41,8 +43,9 @@ export function Chat() {
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
-  const [character, setCharacter] = useState<Character | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -69,21 +72,66 @@ export function Chat() {
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image size must be less than 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const maxDim = 800;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        setSelectedImage(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    // Reset input
+    e.target.value = '';
+  };
+
   const handleRateCharacter = async (score: number) => {
-    if (!user || !characterId || !character) return;
+    if (!user || characters.length === 0) return;
+    const primaryChar = characters[0];
     
     setIsSubmittingRating(true);
     try {
-      const ratingRef = doc(db, `characters/${characterId}/ratings`, user.uid);
+      const ratingRef = doc(db, `characters/${primaryChar.id}/ratings`, user.uid);
       const ratingSnap = await getDoc(ratingRef);
       
-      const charRef = doc(db, 'characters', characterId);
+      const charRef = doc(db, 'characters', primaryChar.id);
       
       if (ratingSnap.exists()) {
-        // Update existing rating
         const oldScore = ratingSnap.data().score;
         const scoreDiff = score - oldScore;
         
@@ -92,8 +140,8 @@ export function Chat() {
           updatedAt: serverTimestamp()
         }, { merge: true });
         
-        const newTotalScore = (character.totalRatingScore || 0) + scoreDiff;
-        const newAverage = newTotalScore / (character.ratingCount || 1);
+        const newTotalScore = (primaryChar.totalRatingScore || 0) + scoreDiff;
+        const newAverage = newTotalScore / (primaryChar.ratingCount || 1);
         
         await setDoc(charRef, {
           totalRatingScore: newTotalScore,
@@ -101,16 +149,15 @@ export function Chat() {
         }, { merge: true });
         
       } else {
-        // Create new rating
         await setDoc(ratingRef, {
           userId: user.uid,
-          characterId: characterId,
+          characterId: primaryChar.id,
           score,
           createdAt: serverTimestamp()
         });
         
-        const newCount = (character.ratingCount || 0) + 1;
-        const newTotalScore = (character.totalRatingScore || 0) + score;
+        const newCount = (primaryChar.ratingCount || 0) + 1;
+        const newTotalScore = (primaryChar.totalRatingScore || 0) + score;
         const newAverage = newTotalScore / newCount;
         
         await setDoc(charRef, {
@@ -123,21 +170,21 @@ export function Chat() {
       setUserRating(score);
       setIsRatingOpen(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `characters/${characterId}/ratings/${user.uid}`);
+      handleFirestoreError(error, OperationType.WRITE, `characters/${characters[0].id}/ratings/${user.uid}`);
     } finally {
       setIsSubmittingRating(false);
     }
   };
 
   const handleReport = async () => {
-    if (!user || !characterId || !reportReason.trim()) return;
+    if (!user || characters.length === 0 || !reportReason.trim()) return;
     
     setIsSubmittingReport(true);
     try {
       const reportRef = doc(collection(db, 'reports'));
       await setDoc(reportRef, {
         reporterId: user.uid,
-        targetId: characterId,
+        targetId: characters[0].id,
         type: 'character',
         reason: reportReason.trim(),
         status: 'pending',
@@ -154,15 +201,15 @@ export function Chat() {
   };
 
   const handleDeleteCharacter = async () => {
-    if (!isOwner || !characterId) return;
+    if (!isOwner || characters.length === 0) return;
     
     setIsDeletingCharacter(true);
     try {
-      const charRef = doc(db, 'characters', characterId);
+      const charRef = doc(db, 'characters', characters[0].id);
       await deleteDoc(charRef);
       navigate('/');
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `characters/${characterId}`);
+      handleFirestoreError(error, OperationType.DELETE, `characters/${characters[0].id}`);
     } finally {
       setIsDeletingCharacter(false);
       setIsDeleteModalOpen(false);
@@ -170,7 +217,9 @@ export function Chat() {
   };
 
   const handleNewChat = async () => {
-    if (!user || !characterId || !character) return;
+    if (!user || characters.length === 0) return;
+    const primaryChar = characters[0];
+    const charIds = characters.map(c => c.id);
     
     setLoading(true);
     try {
@@ -179,16 +228,18 @@ export function Chat() {
       
       await setDoc(newChatRef, {
         userId: user.uid,
-        characterId: characterId,
+        characterIds: charIds,
+        characterId: characterId, // legacy
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        title: `Chat with ${character.name}`
+        title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`
       });
       
       await addDoc(collection(db, `chats/${newChatId}/messages`), {
         chatId: newChatId,
         role: 'model',
-        content: character.greeting,
+        characterId: primaryChar.id,
+        content: primaryChar.greeting,
         createdAt: serverTimestamp()
       });
       
@@ -202,22 +253,22 @@ export function Chat() {
   };
 
   const handleClearHistory = async () => {
-    if (!chatId || !character) return;
+    if (!chatId || characters.length === 0) return;
+    const primaryChar = characters[0];
     
     setIsClearing(true);
     try {
       const messagesRef = collection(db, `chats/${chatId}/messages`);
       const snapshot = await getDocs(query(messagesRef));
       
-      // Delete all messages
       const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
       await Promise.all(deletePromises);
 
-      // Add back the greeting
       await addDoc(collection(db, `chats/${chatId}/messages`), {
         chatId,
         role: 'model',
-        content: character.greeting,
+        characterId: primaryChar.id,
+        content: primaryChar.greeting,
         createdAt: serverTimestamp()
       });
     } catch (error) {
@@ -228,7 +279,7 @@ export function Chat() {
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
-    if (!chatId || !newContent.trim() || !character || !user) return;
+    if (!chatId || !newContent.trim() || characters.length === 0 || !user) return;
     
     const messageIndex = messages.findIndex(m => m.id === messageId);
     if (messageIndex === -1) return;
@@ -263,22 +314,41 @@ export function Chat() {
         // Generate new AI response based on updated history
         const updatedHistory = messages.slice(0, messageIndex).map(m => ({
           role: m.role,
-          content: m.content
+          content: m.content,
+          imageUrl: m.imageUrl,
+          characterId: m.characterId
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(character, updatedHistory, newContent.trim(), memoryList, selectedModel);
+        const aiResponse = await generateCharacterResponse(characters, updatedHistory, newContent.trim(), originalMessage.imageUrl || undefined, memoryList, selectedModel);
 
-        // Save new AI message
-        try {
-          await addDoc(collection(db, `chats/${chatId}/messages`), {
-            chatId,
-            role: 'model',
-            content: aiResponse,
-            createdAt: serverTimestamp()
-          });
-        } catch (e) {
-          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        // Save new AI messages
+        const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
+        for (const line of lines) {
+          let charId: string | undefined;
+          let content = line;
+
+          const colonIndex = line.indexOf(':');
+          if (colonIndex !== -1) {
+            const name = line.substring(0, colonIndex).trim();
+            const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
+            if (char) {
+              charId = char.id;
+              content = line.substring(colonIndex + 1).trim();
+            }
+          }
+
+          try {
+            await addDoc(collection(db, `chats/${chatId}/messages`), {
+              chatId,
+              role: 'model',
+              characterId: charId || characters[0].id,
+              content: content,
+              createdAt: serverTimestamp()
+            });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+          }
         }
 
         // Update chat timestamp
@@ -298,54 +368,61 @@ export function Chat() {
   };
 
   const handleRegenerateMessage = async (messageId: string) => {
-    if (!chatId || !character || isTyping || isRegenerating) return;
+    if (!chatId || characters.length === 0 || isTyping || isRegenerating) return;
 
     const messageIndex = messages.findIndex(m => m.id === messageId);
     if (messageIndex === -1) return;
 
-    // We can only regenerate 'model' messages
     if (messages[messageIndex].role !== 'model') return;
 
     setIsRegenerating(true);
     setIsTyping(true);
 
     try {
-      // Find the user message that preceded this AI message
-      // If this is the first message (greeting), we can't really "regenerate" it from a prompt,
-      // but we could re-fetch the greeting. For now, let's assume it's a response to a user message.
-      
       const historyUntilThis = messages.slice(0, messageIndex);
-      // The last message in historyUntilThis should be the user prompt
       const lastUserMsgIndex = [...historyUntilThis].reverse().findIndex(m => m.role === 'user');
       
       let prompt = "";
-      let finalHistory: {role: 'user' | 'model', content: string}[] = [];
+      let finalHistory: any[] = [];
 
       if (lastUserMsgIndex !== -1) {
         const actualIndex = historyUntilThis.length - 1 - lastUserMsgIndex;
-        prompt = historyUntilThis[actualIndex].content;
+        const lastUserMsg = historyUntilThis[actualIndex];
+        prompt = lastUserMsg.content;
+        const userImageUrl = lastUserMsg.imageUrl;
         finalHistory = historyUntilThis.slice(0, actualIndex).map(m => ({
           role: m.role,
-          content: m.content
+          content: m.content,
+          imageUrl: m.imageUrl,
+          characterId: m.characterId
         }));
+        
+        const memoryList = memories.map(m => m.content);
+        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel);
+
+        const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+        await setDoc(messageRef, {
+          content: aiResponse,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       } else {
-        // If no user message found, it might be the initial greeting or a skip-response case
         prompt = "(Continue the conversation)";
         finalHistory = historyUntilThis.map(m => ({
           role: m.role,
-          content: m.content
+          content: m.content,
+          imageUrl: m.imageUrl,
+          characterId: m.characterId
         }));
+        
+        const memoryList = memories.map(m => m.content);
+        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, undefined, memoryList, selectedModel);
+
+        const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+        await setDoc(messageRef, {
+          content: aiResponse,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       }
-
-      const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, finalHistory, prompt, memoryList, selectedModel);
-
-      // Update the existing AI message
-      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
-      await setDoc(messageRef, {
-        content: aiResponse,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
 
     } catch (error) {
       console.error('Error regenerating message:', error);
@@ -368,35 +445,50 @@ export function Chat() {
   };
 
   const handleSkipResponse = async () => {
-    if (!chatId || !character || isTyping || isRegenerating) return;
+    if (!chatId || characters.length === 0 || isTyping || isRegenerating) return;
 
     setIsRegenerating(true);
     setIsTyping(true);
 
     try {
-      // Use the existing history to generate a new AI response
       const historyForGemini = messages.map(m => ({
         role: m.role,
-        content: m.content
+        content: m.content,
+        imageUrl: m.imageUrl,
+        characterId: m.characterId
       }));
 
-      // Trigger AI response with a "continue" instruction
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, historyForGemini, "(Continue the story)", memoryList, selectedModel);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, "(Continue the story)", undefined, memoryList, selectedModel);
 
-      // Save AI message
-      try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'model',
-          content: aiResponse,
-          createdAt: serverTimestamp()
-        });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
+      for (const line of lines) {
+        let charId: string | undefined;
+        let content = line;
+
+        const colonIndex = line.indexOf(':');
+        if (colonIndex !== -1) {
+          const name = line.substring(0, colonIndex).trim();
+          const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
+          if (char) {
+            charId = char.id;
+            content = line.substring(colonIndex + 1).trim();
+          }
+        }
+
+        try {
+          await addDoc(collection(db, `chats/${chatId}/messages`), {
+            chatId,
+            role: 'model',
+            characterId: charId || characters[0].id,
+            content: content,
+            createdAt: serverTimestamp()
+          });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        }
       }
 
-      // Update chat timestamp
       try {
         await setDoc(doc(db, 'chats', chatId), {
           updatedAt: serverTimestamp()
@@ -459,35 +551,46 @@ export function Chat() {
 
     const initChat = async () => {
       try {
-        // 1. Fetch character
-        const charRef = doc(db, 'characters', characterId);
-        let charSnap;
-        try {
-          charSnap = await getDoc(charRef);
-        } catch (e: any) {
-          try {
-            const errInfo = JSON.parse(e.message);
-            if (errInfo.error.includes('Missing or insufficient permissions')) {
-              navigate('/404');
-              return;
-            }
-          } catch (parseErr) {
-            // Not a JSON error, handle normally
+        let currentChatId = urlChatId;
+        let charIds: string[] = [];
+
+        // Check query params for group chat initialization
+        const charsParam = searchParams.get('chars');
+        if (charsParam) {
+          charIds = charsParam.split(',');
+        } else if (characterId) {
+          charIds = [characterId];
+        }
+
+        if (currentChatId) {
+          const chatSnap = await getDoc(doc(db, 'chats', currentChatId));
+          if (chatSnap.exists()) {
+            const chatData = chatSnap.data();
+            charIds = chatData.characterIds || (chatData.characterId ? [chatData.characterId] : []);
           }
-          handleFirestoreError(e, OperationType.GET, `characters/${characterId}`);
+        }
+
+        if (charIds.length === 0) {
+          navigate('/search');
           return;
         }
+
+        // 1. Fetch all characters
+        const charPromises = charIds.map(id => getDoc(doc(db, 'characters', id)));
+        const charSnaps = await Promise.all(charPromises);
+        const fetchedChars = charSnaps
+          .filter(s => s.exists())
+          .map(s => ({ id: s.id, ...s.data() } as Character));
         
-        if (!charSnap.exists()) {
+        if (fetchedChars.length === 0) {
           navigate('/404');
           return;
         }
-        
-        const charData = { id: charSnap.id, ...charSnap.data() } as Character;
-        setCharacter(charData);
+        setCharacters(fetchedChars);
+        const primaryChar = fetchedChars[0];
 
-        // 2. Fetch user's rating
-        const ratingRef = doc(db, `characters/${characterId}/ratings`, user.uid);
+        // 2. Fetch user's rating for primary character
+        const ratingRef = doc(db, `characters/${primaryChar.id}/ratings`, user.uid);
         try {
           const ratingSnap = await getDoc(ratingRef);
           if (ratingSnap.exists()) {
@@ -498,10 +601,8 @@ export function Chat() {
         }
 
         // 3. Find or create chat session
-        let currentChatId = urlChatId;
-        
         if (!currentChatId) {
-          // Try to find the latest chat for this character
+          // Try to find the latest chat for this character (single chat)
           const chatsRef = collection(db, 'chats');
           const q = query(
             chatsRef, 
@@ -512,7 +613,7 @@ export function Chat() {
           );
           const chatDocs = await getDocs(q);
           
-          if (!chatDocs.empty) {
+          if (!chatDocs.empty && !chatDocs.docs[0].data().characterIds) {
             currentChatId = chatDocs.docs[0].id;
             navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           } else {
@@ -521,29 +622,31 @@ export function Chat() {
             currentChatId = newChatRef.id;
             await setDoc(newChatRef, {
               userId: user.uid,
-              characterId: characterId,
+              characterIds: charIds,
+              characterId: characterId, // legacy
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-              title: `Chat with ${charData.name}`
+              title: `Chat with ${primaryChar.name}`
             });
             
             await addDoc(collection(db, `chats/${currentChatId}/messages`), {
               chatId: currentChatId,
               role: 'model',
-              content: charData.greeting,
+              characterId: primaryChar.id,
+              content: primaryChar.greeting,
               createdAt: serverTimestamp()
             });
             navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           }
         }
-
+        
         setChatId(currentChatId);
         
         // 3. Listen to messages
         const messagesRef = collection(db, `chats/${currentChatId}/messages`);
-        const q = query(messagesRef, orderBy('createdAt', 'asc'));
+        const mq = query(messagesRef, orderBy('createdAt', 'asc'));
         
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const unsubscribe = onSnapshot(mq, (snapshot) => {
           const msgs: Message[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
@@ -561,9 +664,9 @@ export function Chat() {
 
         // 4. Listen to memories
         const memoriesRef = collection(db, `chats/${currentChatId}/memories`);
-        const mq = query(memoriesRef, orderBy('createdAt', 'desc'));
+        const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
         
-        const unsubscribeMemories = onSnapshot(mq, (snapshot) => {
+        const unsubscribeMemories = onSnapshot(memQ, (snapshot) => {
           const mems: Memory[] = [];
           snapshot.forEach((doc) => {
             mems.push({ id: doc.id, ...doc.data() } as Memory);
@@ -606,10 +709,12 @@ export function Chat() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !user || !chatId || !character || isTyping) return;
+    if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
 
     const userMessage = input.trim();
+    const userImageUrl = selectedImage;
     setInput('');
+    setSelectedImage(null);
     setIsTyping(true);
 
     try {
@@ -619,6 +724,7 @@ export function Chat() {
           chatId,
           role: 'user',
           content: userMessage,
+          imageUrl: userImageUrl || null,
           createdAt: serverTimestamp()
         });
       } catch (e) {
@@ -635,26 +741,43 @@ export function Chat() {
       }
 
       // 2. Generate AI response
-      // Pass the history BEFORE the new message to avoid role alternation errors
-      // if the snapshot has already updated the messages state.
       const historyForGemini = messages.map(m => ({
         role: m.role,
-        content: m.content
+        content: m.content,
+        imageUrl: m.imageUrl,
+        characterId: m.characterId
       }));
 
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(character, historyForGemini, userMessage, memoryList, selectedModel);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, userMessage, userImageUrl || undefined, memoryList, selectedModel);
 
-      // 3. Save AI message
-      try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'model',
-          content: aiResponse,
-          createdAt: serverTimestamp()
-        });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      // 3. Save AI messages
+      const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
+      for (const line of lines) {
+        let charId: string | undefined;
+        let content = line;
+
+        const colonIndex = line.indexOf(':');
+        if (colonIndex !== -1) {
+          const name = line.substring(0, colonIndex).trim();
+          const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
+          if (char) {
+            charId = char.id;
+            content = line.substring(colonIndex + 1).trim();
+          }
+        }
+
+        try {
+          await addDoc(collection(db, `chats/${chatId}/messages`), {
+            chatId,
+            role: 'model',
+            characterId: charId || characters[0].id,
+            content: content,
+            createdAt: serverTimestamp()
+          });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        }
       }
 
       // Update chat timestamp again
@@ -668,12 +791,12 @@ export function Chat() {
 
     } catch (error: any) {
       console.error('Error sending message:', error);
-      // Fallback error message in chat
       try {
         const errorMessage = error?.message || "Unknown error occurred";
         await addDoc(collection(db, `chats/${chatId}/messages`), {
           chatId,
           role: 'model',
+          characterId: characters[0].id,
           content: `*OOC: Sorry, I'm having trouble connecting right now. Error details: ${errorMessage}*`,
           createdAt: serverTimestamp()
         });
@@ -685,7 +808,7 @@ export function Chat() {
     }
   };
 
-  if (loading || !character) {
+  if (loading || characters.length === 0) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
         <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
@@ -693,7 +816,7 @@ export function Chat() {
     );
   }
 
-  const isCharacterCreator = user && character && character.creatorId === user.uid;
+  const isCharacterCreator = user && characters.some(c => c.creatorId === user.uid);
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
@@ -747,7 +870,7 @@ export function Chat() {
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {chat.title || `Chat with ${character.name}`}
+                        {chat.title || `Chat with ${characters[0]?.name}`}
                       </p>
                       <p className="text-[10px] opacity-50 mt-1">
                         {chat.updatedAt?.toDate() ? new Date(chat.updatedAt.toDate()).toLocaleString() : 'Just now'}
@@ -772,24 +895,30 @@ export function Chat() {
         </button>
         
         <div className="flex items-center gap-3 flex-1">
-          {character.avatarUrl ? (
-            <img src={character.avatarUrl} alt={character.name} className="w-10 h-10 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-              <Bot className="w-5 h-5 text-zinc-400" />
-            </div>
-          )}
+          <div className="flex -space-x-3 overflow-hidden">
+            {characters.map((char) => (
+              char.avatarUrl ? (
+                <img key={char.id} src={char.avatarUrl} alt={char.name} className="w-10 h-10 rounded-full object-cover border-2 border-zinc-900 shadow-lg" referrerPolicy="no-referrer" />
+              ) : (
+                <div key={char.id} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border-2 border-zinc-900 shadow-lg">
+                  <Bot className="w-5 h-5 text-zinc-400" />
+                </div>
+              )
+            ))}
+          </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
-              {character.name}
-              {character.averageRating && (
+              {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
+              {characters.length === 1 && characters[0]?.averageRating && (
                 <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
                   <Star className="w-3 h-3 fill-current" />
-                  {character.averageRating.toFixed(1)}
+                  {characters[0].averageRating.toFixed(1)}
                 </span>
               )}
             </h2>
-            <p className="text-xs text-zinc-400">AI Character</p>
+            <p className="text-xs text-zinc-400">
+              {characters.length > 1 ? `${characters.length} characters` : 'AI Character'}
+            </p>
           </div>
         </div>
 
@@ -908,6 +1037,7 @@ export function Chat() {
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 const isEditing = editingMessageId === msg.id;
+                const msgCharacter = !isUser ? characters.find(c => c.id === msg.characterId) || characters[0] : null;
 
                 return (
                   <div key={msg.id} className={`flex gap-4 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -921,8 +1051,8 @@ export function Chat() {
                           </div>
                         )
                       ) : (
-                        character.avatarUrl ? (
-                          <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
+                        msgCharacter?.avatarUrl ? (
+                          <img src={msgCharacter.avatarUrl} alt={msgCharacter.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
                             <Bot className="w-4 h-4 text-zinc-400" />
@@ -931,8 +1061,12 @@ export function Chat() {
                       )}
                     </div>
                     
-                    <div className={`max-w-[80%] relative group ${isUser ? 'items-end' : 'items-start'}`}>
-                      {isEditing ? (
+                    <div className={`max-w-[80%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                      {!isUser && msgCharacter && (
+                        <span className="text-[11px] font-medium text-zinc-500 mb-1 ml-1 uppercase tracking-wider">{msgCharacter.name}</span>
+                      )}
+                      <div className="relative group w-full">
+                        {isEditing ? (
                         <div className="flex flex-col gap-2 min-w-[200px]">
                           <textarea
                             value={editInput}
@@ -961,6 +1095,11 @@ export function Chat() {
                             ? 'bg-indigo-600 text-white rounded-tr-sm' 
                             : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
                         }`}>
+                          {msg.imageUrl && (
+                            <div className="mb-3 rounded-lg overflow-hidden border border-white/10 shadow-lg">
+                              <img src={msg.imageUrl} alt="Attachment" className="max-w-full h-auto object-contain max-h-96" referrerPolicy="no-referrer" />
+                            </div>
+                          )}
                           <div className="markdown-body prose prose-invert max-w-none text-[15px] leading-relaxed">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {msg.content}
@@ -1019,19 +1158,16 @@ export function Chat() {
                       )}
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
               
               {isTyping && (
                 <div className="flex gap-4 flex-row">
                   <div className="flex-shrink-0 mt-1">
-                    {character.avatarUrl ? (
-                      <img src={character.avatarUrl} alt={character.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                        <Bot className="w-4 h-4 text-zinc-400" />
-                      </div>
-                    )}
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                      <Bot className="w-4 h-4 text-zinc-400" />
+                    </div>
                   </div>
                   <div className="bg-zinc-800 text-zinc-100 rounded-2xl rounded-tl-sm border border-zinc-700/50 p-4 flex items-center gap-1.5">
                     <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
@@ -1045,23 +1181,52 @@ export function Chat() {
 
             {/* Input Area */}
             <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+              {selectedImage && (
+                <div className="mb-3 relative inline-block">
+                  <img src={selectedImage} alt="Preview" className="w-20 h-20 object-cover rounded-xl border border-zinc-700" />
+                  <button
+                    onClick={() => setSelectedImage(null)}
+                    className="absolute -top-2 -right-2 p-1 bg-zinc-900 border border-zinc-700 rounded-full text-zinc-400 hover:text-white shadow-lg"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
               <form onSubmit={handleSend} className="relative flex items-center gap-2">
-                <div className="relative flex-1">
+                <div className="relative flex-1 flex items-center gap-2">
                   <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={`Message ${character.name}...`}
-                    disabled={isTyping}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageSelect}
+                    accept="image/*"
+                    className="hidden"
                   />
                   <button
-                    type="submit"
-                    disabled={!input.trim() || isTyping}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isTyping}
+                    className="p-3 bg-zinc-900 border border-zinc-700 rounded-full text-zinc-400 hover:text-white transition-all disabled:opacity-50"
+                    title="Upload Image"
                   >
-                    <Send className="w-4 h-4" />
+                    <ImageIcon className="w-5 h-5" />
                   </button>
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder={`Message ${characters[0]?.name || 'Character'}...`}
+                      disabled={isTyping}
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={(!input.trim() && !selectedImage) || isTyping}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 <button
@@ -1084,7 +1249,7 @@ export function Chat() {
                 Character Lore & Memories
               </h3>
               <p className="text-zinc-400 text-sm mt-1">
-                Add specific details, facts, or context that {character.name} should always remember.
+                Add specific details, facts, or context that {characters[0]?.name || 'the characters'} should always remember.
               </p>
             </div>
 

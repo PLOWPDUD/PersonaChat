@@ -49,15 +49,21 @@
     },
     "Chat": {
       "title": "Chat",
-      "description": "A chat session between a user and a character.",
+      "description": "A chat session between a user and one or more characters.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "The UID of the user." },
-        "characterId": { "type": "string", "description": "The ID of the character." },
+        "characterId": { "type": "string", "description": "The ID of the primary character (legacy)." },
+        "characterIds": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "The IDs of the characters in this chat." 
+        },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the chat was started." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." }
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." },
+        "title": { "type": "string", "description": "The title of the chat session." }
       },
-      "required": ["userId", "characterId", "createdAt", "updatedAt"]
+      "required": ["userId", "characterIds", "createdAt", "updatedAt"]
     },
     "Message": {
       "title": "Message",
@@ -66,7 +72,9 @@
       "properties": {
         "chatId": { "type": "string", "description": "The ID of the chat this message belongs to." },
         "role": { "type": "string", "enum": ["user", "model"], "description": "Who sent the message." },
+        "characterId": { "type": "string", "description": "The ID of the character who sent this message (if role is model)." },
         "content": { "type": "string", "description": "The content of the message." },
+        "imageUrl": { "type": "string", "description": "The URL of the image sent with the message." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." }
       },
       "required": ["chatId", "role", "content", "createdAt"]
