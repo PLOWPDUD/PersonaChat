@@ -16,7 +16,7 @@ export async function generateCharacterResponse(
   chatHistory: { role: 'user' | 'model'; content: string }[],
   userMessage: string,
   memories: string[] = [],
-  model: string = 'gemini-flash-latest'
+  model: string = 'gemini-3-flash-preview'
 ) {
   const apiKey = getApiKey();
   
