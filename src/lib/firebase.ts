@@ -32,15 +32,25 @@ export const signInWithGoogle = async () => {
     const profileRef = doc(db, 'profiles', user.uid);
     const profileSnap = await getDoc(profileRef);
     const displayName = user.displayName || 'Anonymous User';
+    
+    const profileData = {
+      uid: user.uid,
+      displayName: displayName,
+      displayName_lowercase: displayName.toLowerCase(),
+      photoURL: user.photoURL || '',
+      email: user.email || '',
+      updatedAt: serverTimestamp(),
+      role: 'user'
+    };
+
     if (!profileSnap.exists()) {
       await setDoc(profileRef, {
-        uid: user.uid,
-        displayName: displayName,
-        displayName_lowercase: displayName.toLowerCase(),
-        photoURL: user.photoURL || '',
-        createdAt: serverTimestamp(),
-        role: 'user'
+        ...profileData,
+        createdAt: serverTimestamp()
       });
+    } else {
+      // Ensure search fields and email exist
+      await setDoc(profileRef, profileData, { merge: true });
     }
 
     return user;
@@ -65,6 +75,7 @@ export const signInAsGuest = async () => {
         displayName: displayName,
         displayName_lowercase: displayName.toLowerCase(),
         photoURL: '',
+        email: '',
         createdAt: serverTimestamp(),
         role: 'user'
       });

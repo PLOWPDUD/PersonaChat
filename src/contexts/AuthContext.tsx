@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 
 interface AuthContextType {
@@ -45,31 +45,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const profileRef = doc(db, 'profiles', currentUser.uid);
           const profileSnap = await getDoc(profileRef);
           
+          const profileData = {
+            uid: currentUser.uid,
+            displayName: currentUser.displayName || (currentUser.isAnonymous ? `Guest ${currentUser.uid.slice(0, 5)}` : 'Anonymous User'),
+            photoURL: currentUser.photoURL || '',
+            email: currentUser.email || '',
+            updatedAt: serverTimestamp()
+          };
+
           if (!profileSnap.exists()) {
-            const displayName = currentUser.displayName || (currentUser.isAnonymous ? `Guest ${currentUser.uid.slice(0, 5)}` : 'Anonymous User');
             const newProfile = {
-              uid: currentUser.uid,
-              displayName: displayName,
-              displayName_lowercase: displayName.toLowerCase(),
-              photoURL: currentUser.photoURL || '',
+              ...profileData,
+              displayName_lowercase: profileData.displayName.toLowerCase(),
               createdAt: serverTimestamp(),
               role: 'user'
             };
             await setDoc(profileRef, newProfile);
             setProfile(newProfile);
+
+            // Increment user count
+            const statsRef = doc(db, 'siteStats', 'global');
+            await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
           } else {
             const data = profileSnap.data();
-            // Migration: Ensure displayName_lowercase exists for search
-            if (data.displayName && !data.displayName_lowercase) {
-              const updates = {
-                displayName_lowercase: data.displayName.toLowerCase()
+            // Migration: Ensure all required fields exist
+            const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
+            if (needsUpdate) {
+              const updates: any = {
+                uid: data.uid || profileData.uid,
+                displayName: data.displayName || profileData.displayName,
+                displayName_lowercase: (data.displayName || profileData.displayName).toLowerCase(),
+                email: data.email || profileData.email
               };
+              if (!data.createdAt) updates.createdAt = data.createdAt || serverTimestamp();
+              
               await updateDoc(profileRef, updates);
               setProfile({ ...data, ...updates });
             } else {
               setProfile(data);
             }
           }
+
+          // Increment visitor count on every session
+          const statsRef = doc(db, 'siteStats', 'global');
+          await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
+
         } catch (error) {
           console.error('Error syncing profile:', error);
         }

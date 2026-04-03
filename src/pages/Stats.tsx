@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function Stats() {
   const { user, profile } = useAuth();
-  const [stats, setStats] = useState<{ visitorCount: number } | null>(null);
+  const [stats, setStats] = useState<{ visitorCount: number; userCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export function Stats() {
         const statsRef = doc(db, 'siteStats', 'global');
         const statsSnap = await getDoc(statsRef);
         if (statsSnap.exists()) {
-          setStats(statsSnap.data() as { visitorCount: number });
+          setStats(statsSnap.data() as { visitorCount: number; userCount: number });
         }
       } catch (error) {
         console.error('Error fetching stats:', error);
@@ -43,13 +43,19 @@ export function Stats() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-white">Website Statistics</h1>
-          <p className="text-zinc-400">Total visitors to this site</p>
+          <p className="text-zinc-400">Total users and visitors to this site</p>
         </div>
       </div>
 
-      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
-        <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Total Visitors</p>
-        <p className="text-6xl font-bold text-white">{stats?.visitorCount || 0}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
+          <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Total Users</p>
+          <p className="text-5xl font-bold text-white tracking-tight">{stats?.userCount || 0}</p>
+        </div>
+        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
+          <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Total Visitors</p>
+          <p className="text-5xl font-bold text-white tracking-tight">{stats?.visitorCount || 0}</p>
+        </div>
       </div>
 
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex items-center gap-4">

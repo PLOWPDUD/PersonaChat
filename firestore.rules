@@ -139,11 +139,12 @@ service cloud.firestore {
 
     function isValidProfile(userId) {
       return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt', 'role']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt', 'role', 'email']) &&
              request.resource.data.uid == userId &&
              validStringLength('displayName', 1, 100) &&
-             request.resource.data.displayName_lowercase == request.resource.data.displayName.toLower() &&
+             request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
              isValidOptionalString('photoURL', 0, 1000000) &&
+             isValidOptionalString('email', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt') &&
              (!('role' in request.resource.data) || request.resource.data.role in ['user', 'moderator', 'owner']);
@@ -154,7 +155,7 @@ service cloud.firestore {
              hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
-             request.resource.data.name_lowercase == request.resource.data.name.toLower() &&
+             request.resource.data.name_lowercase == request.resource.data.name.lower() &&
              isValidOptionalString('avatarUrl', 0, 1000000) &&
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&
@@ -225,21 +226,24 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      // Users can only read and write their own profile
-      allow read: if isOwner(userId);
+      // Users can only read and write their own profile, admins can read all
+      allow read: if isOwner(userId) || isOwnerRole();
       allow create: if isOwner(userId) && isValidUser();
       allow update: if isOwner(userId) && isValidUser() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) || isOwnerRole();
     }
 
     match /profiles/{userId} {
       // Profiles are public for authenticated users
       allow read, list: if isAuthenticated();
       allow create: if isOwner(userId) && isValidProfile(userId) && (!('role' in request.resource.data) || request.resource.data.role == 'user' || isOwnerRole());
-      allow update: if isAuthenticated() && isValidProfile(userId) && areImmutableFieldsUnchanged(['uid', 'createdAt']) && (
-        (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
-        isOwnerRole()
-      );
+      allow update: if isAuthenticated() && isValidProfile(userId) && 
+                    (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid) &&
+                    (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+                    (
+                      (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
+                      isOwnerRole()
+                    );
       allow delete: if isOwner(userId) || isOwnerRole();
     }
 

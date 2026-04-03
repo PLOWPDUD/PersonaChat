@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Save, AlertCircle, Camera, Upload } from 'lucide-react';
@@ -105,9 +105,10 @@ export function Profile() {
         displayName: formData.displayName,
         displayName_lowercase: formData.displayName.toLowerCase(),
         photoURL: formData.photoURL,
+        email: user.email || '',
         updatedAt: serverTimestamp()
       };
-      await updateDoc(profileRef, updatedData);
+      await setDoc(profileRef, updatedData, { merge: true });
       updateProfile(updatedData);
       setSuccess(true);
     } catch (err: any) {
