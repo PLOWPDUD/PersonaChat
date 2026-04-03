@@ -1,13 +1,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
-// Fallback to VITE_GEMINI_API_KEY if process.env.GEMINI_API_KEY is not set
+// Get API key from environment variables
 const getApiKey = () => {
-  // First check localStorage (Bring Your Own Key)
-  if (typeof window !== 'undefined') {
-    const storedKey = localStorage.getItem('user_gemini_api_key');
-    if (storedKey) return storedKey;
-  }
-  
   if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
     return process.env.GEMINI_API_KEY;
   }
@@ -17,11 +11,6 @@ const getApiKey = () => {
   return '';
 };
 
-function getMaskedKey(key: string) {
-  if (!key) return 'none';
-  return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
-}
-
 export async function generateCharacterResponse(
   character: { name: string; greeting: string; description: string; personality?: string },
   chatHistory: { role: 'user' | 'model'; content: string }[],
@@ -30,11 +19,10 @@ export async function generateCharacterResponse(
   model: string = 'gemini-flash-latest'
 ) {
   const apiKey = getApiKey();
-  const maskedKey = getMaskedKey(apiKey);
   
   if (!apiKey || apiKey === 'missing-key') {
-    console.error("GEMINI_API_KEY is missing. Please add your API key in Settings.");
-    throw new Error("API_KEY_MISSING: Please click 'Settings' in the sidebar and enter your own Gemini API key to chat. You can get a free key instantly at [Google AI Studio](https://aistudio.google.com/app/apikey).");
+    console.error("GEMINI_API_KEY is missing. Please ensure it is set in the environment variables.");
+    throw new Error("API_KEY_MISSING: The application's Gemini API key is not configured. Please contact the administrator.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -137,18 +125,18 @@ Format your response as: [Character Name]: [Message]`;
     console.error('Error generating character response:', error);
     
     if (error.message?.includes('Failed to fetch')) {
-      throw new Error(`NETWORK_ERROR: The browser could not connect to Google's AI servers. This is usually caused by: 1. Your API key having "HTTP Referrer" restrictions (remove them in Google AI Studio), 2. An ad-blocker/VPN, or 3. A regional network block. (Key: ${maskedKey})`);
+      throw new Error(`NETWORK_ERROR: The application could not connect to Google's AI servers. This might be a temporary issue or a regional block.`);
     }
 
     if (error.message?.includes('safety')) {
       return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
     }
     if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-      throw new Error(`API_QUOTA_EXCEEDED: Your Gemini API key has run out of free quota for the model ${model}. You can either wait until your quota resets, or get a new free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and add it in Settings. (Key: ${maskedKey})`);
+      throw new Error(`API_QUOTA_EXCEEDED: The application's API quota has been exceeded. Please try again later.`);
     }
     if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
-      throw new Error(`API_KEY_INVALID: Your Gemini API key is invalid or has HTTP Referrer restrictions. Please create a new key WITHOUT restrictions at [Google AI Studio](https://aistudio.google.com/app/apikey) and update it in Settings. (Key: ${maskedKey})`);
+      throw new Error(`API_KEY_INVALID: The application's API key is invalid or restricted. Please contact the administrator.`);
     }
-    throw new Error(`${error.message} (Key: ${maskedKey})`);
+    throw new Error(`${error.message}`);
   }
 }

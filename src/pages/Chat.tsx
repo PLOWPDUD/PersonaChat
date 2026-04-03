@@ -18,6 +18,7 @@ interface Character {
   visibility: 'public' | 'private' | 'unlisted';
   likesCount: number;
   interactionsCount: number;
+  creatorId: string;
   ratingCount?: number;
   totalRatingScore?: number;
   averageRating?: number;
@@ -692,6 +693,8 @@ export function Chat() {
     );
   }
 
+  const isCharacterCreator = user && character && character.creatorId === user.uid;
+
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
       {/* History Sidebar Overlay */}
@@ -844,7 +847,17 @@ export function Chat() {
             <Flag className="w-5 h-5" />
           </button>
 
-          {isOwner && (
+          {(isCharacterCreator || isOwner) && (
+            <button
+              onClick={() => navigate(`/edit/${characterId}`)}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-indigo-400 transition-all flex items-center gap-2"
+              title="Edit Character"
+            >
+              <Edit2 className="w-5 h-5" />
+            </button>
+          )}
+
+          {(isCharacterCreator || isOwner) && (
             <button
               onClick={() => setIsDeleteModalOpen(true)}
               className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-all flex items-center gap-2"

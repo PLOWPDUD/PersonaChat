@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, Settings } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { SettingsModal } from './SettingsModal';
 
 export function Sidebar() {
   const location = useLocation();
   const { user, profile, isModerator } = useAuth();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -46,14 +44,6 @@ export function Sidebar() {
               <span className="font-medium">{item.label}</span>
             </Link>
           ))}
-          
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-zinc-400 hover:bg-zinc-900 hover:text-white"
-          >
-            <Settings className="w-5 h-5" />
-            <span className="font-medium">Settings</span>
-          </button>
         </nav>
 
         <div className="p-4 border-t border-zinc-800">
@@ -73,8 +63,6 @@ export function Sidebar() {
           </Link>
         </div>
       </div>
-      
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </>
   );
 }

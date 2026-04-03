@@ -194,27 +194,38 @@ export function Home() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {characters.map((char) => (
-            <Link 
-              key={char.id} 
-              to={`/chat/${char.id}`}
-              className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col items-center text-center relative"
-            >
-              {char.avatarUrl ? (
-                <img src={char.avatarUrl} alt={char.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
-                  <User className="w-10 h-10 text-zinc-400" />
-                </div>
+            <div key={char.id} className="relative group">
+              <Link 
+                to={`/chat/${char.id}`}
+                className="flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 h-full"
+              >
+                {char.avatarUrl ? (
+                  <img src={char.avatarUrl} alt={char.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
+                    <User className="w-10 h-10 text-zinc-400" />
+                  </div>
+                )}
+                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
+                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
+                {char.averageRating && (
+                  <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                    <Star className="w-3 h-3 fill-current" />
+                    {char.averageRating.toFixed(1)}
+                  </div>
+                )}
+              </Link>
+              
+              {tab === 'mine' && (
+                <Link
+                  to={`/edit/${char.id}`}
+                  className="absolute top-2 right-2 p-2 bg-zinc-800/80 backdrop-blur-sm hover:bg-indigo-600 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                  title="Edit Character"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </Link>
               )}
-              <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
-              <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
-              {char.averageRating && (
-                <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
-                  <Star className="w-3 h-3 fill-current" />
-                  {char.averageRating.toFixed(1)}
-                </div>
-              )}
-            </Link>
+            </div>
           ))}
         </div>
       )}
