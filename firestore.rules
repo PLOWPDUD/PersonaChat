@@ -87,7 +87,7 @@ service cloud.firestore {
     }
 
     function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.creatorId;
+      return isAuthenticated() && resource.data.creatorId == request.auth.uid;
     }
 
     function uidUnchanged(field) {
@@ -114,6 +114,7 @@ service cloud.firestore {
 
     function isValidOptionalString(field, minLen, maxLen) {
       return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
              (request.resource.data[field] is string &&
               request.resource.data[field].size() >= minLen &&
               request.resource.data[field].size() <= maxLen);
@@ -171,15 +172,19 @@ service cloud.firestore {
     }
 
     function isValidOptionalTimestamp(field) {
-      return !(field in request.resource.data) || request.resource.data[field] is timestamp;
+      return !(field in request.resource.data) || 
+             request.resource.data[field] == null || 
+             request.resource.data[field] is timestamp;
     }
 
     function isValidChat() {
-      return hasRequiredFields(['userId', 'characterIds', 'createdAt', 'updatedAt']) &&
+      return hasRequiredFields(['userId', 'createdAt', 'updatedAt']) &&
              hasOnlyAllowedFields(['userId', 'characterId', 'characterIds', 'createdAt', 'updatedAt', 'title']) &&
              request.resource.data.userId == request.auth.uid &&
-             request.resource.data.characterIds is list &&
-             request.resource.data.characterIds.size() > 0 &&
+             (
+               ('characterIds' in request.resource.data && request.resource.data.characterIds is list && request.resource.data.characterIds.size() > 0) ||
+               ('characterId' in request.resource.data && request.resource.data.characterId is string)
+             ) &&
              isValidOptionalString('title', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              request.resource.data.updatedAt is timestamp;
@@ -189,7 +194,8 @@ service cloud.firestore {
       return isAuthenticated() && (
         cid.startsWith(request.auth.uid + "_") || 
         (exists(/databases/$(database)/documents/chats/$(cid)) && 
-         get(/databases/$(database)/documents/chats/$(cid)).data.userId == request.auth.uid)
+         get(/databases/$(database)/documents/chats/$(cid)).data.userId == request.auth.uid) ||
+        isOwnerRole()
       );
     }
 
@@ -284,11 +290,14 @@ service cloud.firestore {
     match /chats/{chatId} {
       // Users can only read and write their own chats
       // We allow 'get' even if the document doesn't exist so the app can handle initialization
-      allow get: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
-      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow get: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isOwnerRole());
+      allow list: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());
       allow create: if isAuthenticated() && isValidChat();
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt']);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'characterIds', 'createdAt'])) ||
+        isOwnerRole()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());
 
       match /messages/{messageId} {
         // Users can only read and write messages in their own chats
