@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -73,16 +73,24 @@ export function Chat() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (notification && notification.type === 'success') {
+      const timer = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image size must be less than 5MB');
+      setNotification({ message: 'Image size must be less than 5MB', type: 'error' });
       return;
     }
 
@@ -192,7 +200,7 @@ export function Chat() {
       });
       setIsReportModalOpen(false);
       setReportReason('');
-      alert('Report submitted successfully.');
+      setNotification({ message: 'Report submitted successfully.', type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'reports');
     } finally {
@@ -208,8 +216,9 @@ export function Chat() {
       const charRef = doc(db, 'characters', characters[0].id);
       await deleteDoc(charRef);
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `characters/${characters[0].id}`);
+      setNotification({ message: `Failed to delete character: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setIsDeletingCharacter(false);
       setIsDeleteModalOpen(false);
@@ -245,8 +254,9 @@ export function Chat() {
       
       navigate(`/chat/${characterId}/${newChatId}`);
       setIsHistoryOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, 'chats');
+      setNotification({ message: `Failed to create new chat: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -271,8 +281,9 @@ export function Chat() {
         content: primaryChar.greeting,
         createdAt: serverTimestamp()
       });
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
+      setNotification({ message: `Failed to clear history: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setIsClearing(false);
     }
@@ -424,8 +435,9 @@ export function Chat() {
         }, { merge: true });
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error regenerating message:', error);
+      setNotification({ message: `Failed to regenerate message: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setIsRegenerating(false);
       setIsTyping(false);
@@ -439,8 +451,9 @@ export function Chat() {
       const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
       await deleteDoc(messageRef);
       setMessageToDelete(null);
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/messages/${messageId}`);
+      setNotification({ message: `Failed to delete message: ${error.message || 'Unknown error'}`, type: 'error' });
     }
   };
 
@@ -496,8 +509,9 @@ export function Chat() {
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error regenerating response:', error);
+      setNotification({ message: `Failed to skip response: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setIsRegenerating(false);
       setIsTyping(false);
@@ -516,8 +530,9 @@ export function Chat() {
         createdAt: serverTimestamp()
       });
       setNewMemory('');
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, `chats/${chatId}/memories`);
+      setNotification({ message: `Failed to add memory: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setIsAddingMemory(false);
     }
@@ -527,8 +542,9 @@ export function Chat() {
     if (!chatId) return;
     try {
       await deleteDoc(doc(db, `chats/${chatId}/memories`, memoryId));
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/memories/${memoryId}`);
+      setNotification({ message: `Failed to delete memory: ${error.message || 'Unknown error'}`, type: 'error' });
     }
   };
 
@@ -698,8 +714,12 @@ export function Chat() {
           unsubscribeMemories();
           unsubscribeHistory();
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error('Chat initialization error:', error);
+        setNotification({ 
+          message: `Failed to load chat: ${error.message || 'Unknown error'}. Please try refreshing.`, 
+          type: 'error' 
+        });
         setLoading(false);
       }
     };
@@ -791,8 +811,10 @@ export function Chat() {
 
     } catch (error: any) {
       console.error('Error sending message:', error);
+      const errorMessage = error?.message || "Unknown error occurred";
+      setNotification({ message: `Error: ${errorMessage}`, type: 'error' });
+      
       try {
-        const errorMessage = error?.message || "Unknown error occurred";
         await addDoc(collection(db, `chats/${chatId}/messages`), {
           chatId,
           role: 'model',
@@ -881,6 +903,35 @@ export function Chat() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-6 py-4 rounded-2xl shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-md w-[90%] ${
+          notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          <div className="flex items-start gap-3">
+            {notification.type === 'success' ? <Check className="w-5 h-5 mt-0.5" /> : <AlertCircle className="w-5 h-5 mt-0.5" />}
+            <div className="flex-1">
+              <span className="font-medium block">{notification.message}</span>
+              {notification.type === 'error' && (
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(notification.message);
+                    setNotification(prev => prev ? { ...prev, message: 'Copied to clipboard!' } : null);
+                    setTimeout(() => setNotification(null), 2000);
+                  }}
+                  className="mt-2 text-xs bg-black/20 hover:bg-black/30 px-2 py-1 rounded-lg transition-colors"
+                >
+                  Copy Error Details
+                </button>
+              )}
+            </div>
+            <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@ interface AuthContextType {
   isOwner: boolean;
   isModerator: boolean;
   updateProfile: (newProfile: any) => void;
+  logOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({ 
@@ -19,7 +20,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true, 
   isOwner: false,
   isModerator: false,
-  updateProfile: () => {} 
+  updateProfile: () => {},
+  logOut: async () => {}
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -34,6 +36,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfile = (newProfile: any) => {
     setProfile((prev: any) => ({ ...prev, ...newProfile }));
+  };
+
+  const logOut = async () => {
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   useEffect(() => {
@@ -97,14 +107,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(null);
       }
       
-      setLoading(false);
+      // Small delay to prevent transient null states from triggering redirects
+      setTimeout(() => {
+        setLoading(false);
+      }, 200);
     });
 
     return () => unsubscribe();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, updateProfile, logOut }}>
       {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );

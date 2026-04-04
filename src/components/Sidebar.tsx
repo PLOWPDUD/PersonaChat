@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
   const location = useLocation();
-  const { user, profile, isModerator } = useAuth();
+  const { user, profile, isModerator, logOut } = useAuth();
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -21,7 +21,7 @@ export function Sidebar() {
 
   return (
     <>
-      <div className="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-screen fixed left-0 top-0">
+      <div className="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-screen fixed left-0 top-0 overflow-y-auto">
         <div className="p-6">
           <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
             <MessageSquare className="w-8 h-8 text-indigo-500" />
@@ -29,7 +29,7 @@ export function Sidebar() {
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => (
             <Link
               key={item.path}
@@ -46,7 +46,7 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-zinc-800">
+        <div className="p-4 border-t border-zinc-800 space-y-2">
           <Link to="/profile" className="flex items-center gap-3 p-2 rounded-xl hover:bg-zinc-900 transition-colors">
             {profile?.photoURL ? (
               <img src={profile.photoURL} alt="Profile" className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
@@ -61,6 +61,13 @@ export function Sidebar() {
               </p>
             </div>
           </Link>
+          <button
+            onClick={() => logOut()}
+            className="w-full flex items-center gap-3 p-2 rounded-xl text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors text-sm font-medium"
+          >
+            <LogOut className="w-5 h-5" />
+            <span>Log Out</span>
+          </button>
         </div>
       </div>
     </>
