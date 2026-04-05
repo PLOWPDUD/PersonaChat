@@ -84,9 +84,22 @@ export function Chat() {
   const [searchResults, setSearchResults] = useState<Character[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
+  const [userPersona, setUserPersona] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUserPersona = async () => {
+      const profileRef = doc(db, 'profiles', user.uid);
+      const profileSnap = await getDoc(profileRef);
+      if (profileSnap.exists()) {
+        setUserPersona(profileSnap.data().userPersona || '');
+      }
+    };
+    fetchUserPersona();
+  }, [user]);
 
   useEffect(() => {
     if (notification && notification.type === 'success') {
@@ -550,7 +563,7 @@ export function Chat() {
           }
         }
         
-        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel);
+        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel, userPersona);
 
         // Save new AI messages
         if (aiResponse) {
@@ -604,7 +617,7 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel);
+        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel, userPersona);
 
         const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
@@ -698,7 +711,7 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel, userPersona);
 
       if (aiResponse) {
         await saveSplitMessages(chatId, aiResponse, targetCharId);
@@ -1000,7 +1013,7 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel, userPersona);
 
       // 3. Save AI message (split into multiple if needed)
       if (aiResponse) {

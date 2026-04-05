@@ -53,6 +53,7 @@ service cloud.firestore {
     //   - displayName: string (required) - The user's display name
     //   - displayName_lowercase: string (required) - Lowercase version for search
     //   - photoURL: string (optional) - The user's profile picture URL
+    //   - userPersona: string (optional) - The user's persona
     //   - createdAt: timestamp (required) - When the profile was created
     //
     // ===============================================================
@@ -140,11 +141,12 @@ service cloud.firestore {
 
     function isValidProfile(userId) {
       return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'createdAt', 'updatedAt', 'role', 'email']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'userPersona', 'createdAt', 'updatedAt', 'role', 'email']) &&
              request.resource.data.uid == userId &&
              validStringLength('displayName', 1, 100) &&
              request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
              isValidOptionalString('photoURL', 0, 1000000) &&
+             isValidOptionalString('userPersona', 0, 5000) &&
              isValidOptionalString('email', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt') &&

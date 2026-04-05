@@ -17,7 +17,8 @@ export async function generateCharacterResponse(
   userMessage: string,
   userImageUrl?: string,
   memories: string[] = [],
-  model: string = 'gemini-3-flash-preview'
+  model: string = 'gemini-3-flash-preview',
+  userPersona?: string
 ) {
   const apiKey = getApiKey();
   
@@ -38,6 +39,10 @@ export async function generateCharacterResponse(
         ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
         : '';
 
+      const userPersonaContext = userPersona
+        ? `\n### USER PERSONA ###\n${userPersona}\n`
+        : '';
+
       const charactersContext = characters.map((char, index) => `
 ### CHARACTER ${index + 1}: ${char.name} ###
 GREETING: ${char.greeting}
@@ -51,6 +56,7 @@ You are a master roleplay engine. You are responsible for playing ALL characters
 ${charactersContext}
 
 ${memoryContext}
+${userPersonaContext}
 
 ### CORE DIRECTIVES ###
 1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI.

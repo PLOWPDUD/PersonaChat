@@ -13,7 +13,8 @@ export function Profile() {
   const [success, setSuccess] = useState(false);
   const [formData, setFormData] = useState({
     displayName: '',
-    photoURL: ''
+    photoURL: '',
+    userPersona: ''
   });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,7 +78,8 @@ export function Profile() {
           const data = profileSnap.data();
           setFormData({
             displayName: data.displayName || '',
-            photoURL: data.photoURL || ''
+            photoURL: data.photoURL || '',
+            userPersona: data.userPersona || ''
           });
         }
       } catch (err: any) {
@@ -105,6 +107,7 @@ export function Profile() {
         displayName: formData.displayName,
         displayName_lowercase: formData.displayName.toLowerCase(),
         photoURL: formData.photoURL,
+        userPersona: formData.userPersona,
         email: user.email || '',
         updatedAt: serverTimestamp()
       };
@@ -174,6 +177,17 @@ export function Profile() {
             onChange={e => setFormData({...formData, photoURL: e.target.value})}
             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
             placeholder="https://... or data:image/..."
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-1">Your Persona (Describe yourself for the bots)</label>
+          <textarea
+            value={formData.userPersona}
+            onChange={e => setFormData({...formData, userPersona: e.target.value})}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
+            placeholder="I am a..."
+            rows={4}
           />
         </div>
 

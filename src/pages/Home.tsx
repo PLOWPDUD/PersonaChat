@@ -81,11 +81,20 @@ export function Home() {
                 const charRef = doc(db, 'characters', charId);
                 const charSnap = await getDoc(charRef);
                 if (charSnap.exists()) {
+                  const charData = charSnap.data();
+                  let creatorName = 'Unknown';
+                  if (charData.creatorId) {
+                    const profileRef = doc(db, 'profiles', charData.creatorId);
+                    const profileSnap = await getDoc(profileRef);
+                    if (profileSnap.exists()) {
+                      creatorName = profileSnap.data().displayName || 'Unknown';
+                    }
+                  }
                   chats.push({
                     id: chatDoc.id,
                     ...chatData,
                     characterId: charId,
-                    character: { id: charSnap.id, ...charSnap.data() }
+                    character: { id: charSnap.id, ...charData, creatorName }
                   });
                 } else {
                   chats.push({
@@ -127,9 +136,34 @@ export function Home() {
 
           const snapshot = await getDocs(q);
           const chars: Character[] = [];
+          const creatorIds = new Set<string>();
+          
           snapshot.forEach((doc) => {
             const data = doc.data() as Record<string, any>;
             chars.push({ id: doc.id, ...data } as Character);
+            if (data.creatorId) creatorIds.add(data.creatorId);
+          });
+
+          // Fetch creator names
+          const creatorMap = new Map<string, string>();
+          for (const creatorId of creatorIds) {
+            try {
+              const profileRef = doc(db, 'profiles', creatorId);
+              const profileSnap = await getDoc(profileRef);
+              if (profileSnap.exists()) {
+                creatorMap.set(creatorId, profileSnap.data().displayName || 'Unknown');
+              } else {
+                creatorMap.set(creatorId, 'Unknown');
+              }
+            } catch (e) {
+              console.error('Error fetching creator profile:', e);
+              creatorMap.set(creatorId, 'Unknown');
+            }
+          }
+
+          // Populate creatorName
+          chars.forEach(char => {
+            char.creatorName = creatorMap.get(char.creatorId) || 'Unknown';
           });
           
           setCharacters(chars);
@@ -371,12 +405,23 @@ export function Home() {
                       ? `${chat.characterIds.length} characters` 
                       : `By ${chat.character.creatorName || 'Unknown'}`}
                   </p>
-                  {chat.character.averageRating && !chat.characterIds && (
-                    <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
-                      <Star className="w-3 h-3 fill-current" />
-                      {chat.character.averageRating.toFixed(1)}
+                  
+                  <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
+                    {chat.character.averageRating && (
+                      <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                        <Star className="w-3 h-3 fill-current" />
+                        {chat.character.averageRating.toFixed(1)}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1 text-zinc-400 text-[10px]">
+                      <Users className="w-3 h-3" />
+                      {chat.character.interactionsCount || 0}
                     </div>
-                  )}
+                    <div className="flex items-center gap-1 text-zinc-400 text-[10px]">
+                      <span className="text-[10px]">♥</span>
+                      {chat.character.likesCount || 0}
+                    </div>
+                  </div>
                 </div>
                 
                 <button
@@ -430,12 +475,23 @@ export function Home() {
                 )}
                 <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
                 <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
-                {char.averageRating && (
-                  <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
-                    <Star className="w-3 h-3 fill-current" />
-                    {char.averageRating.toFixed(1)}
+                
+                <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
+                  {char.averageRating && (
+                    <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                      <Star className="w-3 h-3 fill-current" />
+                      {char.averageRating.toFixed(1)}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1 text-zinc-400 text-[10px]">
+                    <Users className="w-3 h-3" />
+                    {char.interactionsCount || 0}
                   </div>
-                )}
+                  <div className="flex items-center gap-1 text-zinc-400 text-[10px]">
+                    <span className="text-[10px]">♥</span>
+                    {char.likesCount || 0}
+                  </div>
+                </div>
               </Link>
               
               {tab === 'mine' && (
