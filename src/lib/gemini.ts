@@ -179,7 +179,7 @@ Name2: Message
       console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}):`, error);
 
       const errorMsg = error.message || String(error);
-      const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch');
+      const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch') || errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota');
 
       if (isRetryable && attempts < maxAttempts) {
         // Exponential backoff

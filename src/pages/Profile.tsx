@@ -14,6 +14,7 @@ export function Profile() {
   const [formData, setFormData] = useState({
     displayName: '',
     photoURL: '',
+    userPersona: '',
     personas: [] as { id: string; name: string; description: string }[]
   });
   const [newPersona, setNewPersona] = useState({ name: '', description: '' });
@@ -106,6 +107,7 @@ export function Profile() {
           setFormData({
             displayName: data.displayName || '',
             photoURL: data.photoURL || '',
+            userPersona: data.userPersona || '',
             personas: data.personas || []
           });
         }
@@ -135,6 +137,7 @@ export function Profile() {
         displayName_lowercase: formData.displayName.toLowerCase(),
         photoURL: formData.photoURL,
         userPersona: formData.userPersona,
+        personas: formData.personas,
         email: user.email || '',
         updatedAt: serverTimestamp()
       };
@@ -216,6 +219,78 @@ export function Profile() {
             placeholder="I am a..."
             rows={4}
           />
+        </div>
+
+        <div className="space-y-4 pt-4 border-t border-zinc-800">
+          <h2 className="text-xl font-bold text-white">Manage Personas</h2>
+          <div className="space-y-3">
+            {formData.personas.map(p => (
+              <div key={p.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex justify-between items-start gap-4">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-white font-bold truncate">{p.name}</h3>
+                  <p className="text-zinc-400 text-sm line-clamp-2">{p.description}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setEditingPersonaId(p.id);
+                      setNewPersona({ name: p.name, description: p.description });
+                    }}
+                    className="text-indigo-400 hover:text-indigo-300"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => handleDeletePersona(p.id)} 
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl space-y-3">
+            <h3 className="text-white font-medium">{editingPersonaId ? 'Edit Persona' : 'Add New Persona'}</h3>
+            <input 
+              type="text" 
+              placeholder="Persona Name (e.g., Adventurer)" 
+              value={newPersona.name} 
+              onChange={e => setNewPersona({...newPersona, name: e.target.value})} 
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm" 
+            />
+            <textarea 
+              placeholder="Description (How you want to be perceived)" 
+              value={newPersona.description} 
+              onChange={e => setNewPersona({...newPersona, description: e.target.value})} 
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm" 
+              rows={3}
+            />
+            <div className="flex gap-2">
+              <button 
+                type="button"
+                onClick={editingPersonaId ? () => handleUpdatePersona(editingPersonaId) : handleAddPersona} 
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {editingPersonaId ? 'Update' : 'Add'}
+              </button>
+              {editingPersonaId && (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setEditingPersonaId(null);
+                    setNewPersona({ name: '', description: '' });
+                  }}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2">

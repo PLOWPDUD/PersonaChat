@@ -269,7 +269,15 @@ service cloud.firestore {
       allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
       allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
       allow create: if isAuthenticated() && isValidCharacter();
-      allow update: if isAuthenticated() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']) && (isDocOwner() || isOwnerRole());
+      allow update: if isAuthenticated() && (
+        ((isDocOwner() || isOwnerRole()) && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt'])) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['interactionsCount']) &&
+         request.resource.data.interactionsCount == resource.data.interactionsCount + 1) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
+         request.resource.data.likesCount == resource.data.likesCount + 1) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
+         request.resource.data.likesCount == resource.data.likesCount - 1)
+      );
       allow delete: if isDocOwner() || isOwnerRole();
       
       match /ratings/{userId} {

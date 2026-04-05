@@ -85,6 +85,8 @@ export function Chat() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
   const [userPersona, setUserPersona] = useState('');
+  const [personas, setPersonas] = useState<{ id: string; name: string; description: string }[]>([]);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>('default');
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -96,7 +98,9 @@ export function Chat() {
       const profileRef = doc(db, 'profiles', user.uid);
       const profileSnap = await getDoc(profileRef);
       if (profileSnap.exists()) {
-        setUserPersona(profileSnap.data().userPersona || '');
+        const data = profileSnap.data();
+        setUserPersona(data.userPersona || '');
+        setPersonas(data.personas || []);
       }
     };
     fetchUserPersona();
@@ -564,7 +568,7 @@ export function Chat() {
           }
         }
         
-        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel, userPersona);
+        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
 
         // Save new AI messages
         if (aiResponse) {
@@ -618,7 +622,7 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel, userPersona);
+        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
 
         const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
@@ -646,7 +650,11 @@ export function Chat() {
 
     } catch (error: any) {
       console.error('Error regenerating message:', error);
-      setNotification({ message: `Failed to regenerate message: ${error.message || 'Unknown error'}`, type: 'error' });
+      const isQuotaError = error.message?.includes('API_QUOTA_EXCEEDED');
+      const message = isQuotaError 
+        ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 3.1 Lite) or wait a moment."
+        : `Failed to regenerate message: ${error.message || 'Unknown error'}`;
+      setNotification({ message, type: 'error' });
     } finally {
       setIsRegenerating(false);
       setIsTyping(false);
@@ -712,7 +720,7 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel, userPersona);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel, getCurrentPersona());
 
       if (aiResponse) {
         await saveSplitMessages(chatId, aiResponse, targetCharId);
@@ -727,7 +735,11 @@ export function Chat() {
       }
     } catch (error: any) {
       console.error('Error regenerating response:', error);
-      setNotification({ message: `Failed to skip response: ${error.message || 'Unknown error'}`, type: 'error' });
+      const isQuotaError = error.message?.includes('API_QUOTA_EXCEEDED');
+      const message = isQuotaError 
+        ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 3.1 Lite) or wait a moment."
+        : `Failed to skip response: ${error.message || 'Unknown error'}`;
+      setNotification({ message, type: 'error' });
     } finally {
       setIsRegenerating(false);
       setIsTyping(false);
@@ -943,6 +955,12 @@ export function Chat() {
     initChat();
   }, [user, characterId, urlChatId, navigate]);
 
+  const getCurrentPersona = () => {
+    if (selectedPersonaId === 'default') return userPersona;
+    const persona = personas.find(p => p.id === selectedPersonaId);
+    return persona ? persona.description : userPersona;
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
@@ -1014,7 +1032,7 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel, userPersona);
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
 
       // 3. Save AI message (split into multiple if needed)
       if (aiResponse) {
@@ -1039,8 +1057,11 @@ export function Chat() {
 
     } catch (error: any) {
       console.error('Error sending message:', error);
-      const errorMessage = error?.message || "Unknown error occurred";
-      setNotification({ message: `Error: ${errorMessage}`, type: 'error' });
+      const isQuotaError = error.message?.includes('API_QUOTA_EXCEEDED');
+      const errorMessage = isQuotaError 
+        ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 3.1 Lite) or wait a moment."
+        : (error?.message || "Unknown error occurred");
+      setNotification({ message: isQuotaError ? errorMessage : `Error: ${errorMessage}`, type: 'error' });
       
       try {
         await addDoc(collection(db, `chats/${chatId}/messages`), {
@@ -1332,6 +1353,18 @@ export function Chat() {
                 ))}
               </div>
             )}
+
+            <select
+              value={selectedPersonaId}
+              onChange={(e) => setSelectedPersonaId(e.target.value)}
+              className="bg-zinc-800 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[120px] sm:max-w-none"
+              title="Select your persona"
+            >
+              <option value="default">Default Persona</option>
+              {personas.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
 
             <select
               value={selectedModel}
