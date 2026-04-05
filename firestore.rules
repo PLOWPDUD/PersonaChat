@@ -161,7 +161,7 @@ service cloud.firestore {
 
     function isValidCharacter() {
       return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt', 'likesCount', 'interactionsCount']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
+             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'category', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
              request.resource.data.name_lowercase == request.resource.data.name.lower() &&
@@ -169,6 +169,7 @@ service cloud.firestore {
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&
              isValidOptionalString('personality', 0, 5000) &&
+             isValidOptionalString('category', 0, 100) &&
              request.resource.data.visibility in ['public', 'private', 'unlisted'] &&
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt') &&
