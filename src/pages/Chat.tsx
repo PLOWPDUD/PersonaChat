@@ -57,6 +57,7 @@ export function Chat() {
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [lastInput, setLastInput] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
   const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -934,6 +935,7 @@ export function Chat() {
 
     const userMessage = input.trim();
     const userImageUrl = selectedImage;
+    setLastInput(userMessage);
     setInput('');
     setSelectedImage(null);
     setIsTyping(true);
@@ -1032,6 +1034,13 @@ export function Chat() {
       }
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (lastInput) {
+      setInput(lastInput);
+      setNotification(null);
     }
   };
 
@@ -1190,16 +1199,26 @@ export function Chat() {
             <div className="flex-1">
               <span className="font-medium block">{notification.message}</span>
               {notification.type === 'error' && (
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(notification.message);
-                    setNotification(prev => prev ? { ...prev, message: 'Copied to clipboard!' } : null);
-                    setTimeout(() => setNotification(null), 2000);
-                  }}
-                  className="mt-2 text-xs bg-black/20 hover:bg-black/30 px-2 py-1 rounded-lg transition-colors"
-                >
-                  Copy Error Details
-                </button>
+                <div className="flex gap-2 mt-2">
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(notification.message);
+                      setNotification(prev => prev ? { ...prev, message: 'Copied to clipboard!' } : null);
+                      setTimeout(() => setNotification(null), 2000);
+                    }}
+                    className="text-xs bg-black/20 hover:bg-black/30 px-2 py-1 rounded-lg transition-colors"
+                  >
+                    Copy Error Details
+                  </button>
+                  {notification.message.includes('API_HIGH_DEMAND') && (
+                    <button 
+                      onClick={handleRetry}
+                      className="text-xs bg-white text-red-600 hover:bg-zinc-100 px-2 py-1 rounded-lg transition-colors font-bold"
+                    >
+                      Retry Now
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70">

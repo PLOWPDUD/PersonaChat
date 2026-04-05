@@ -28,19 +28,24 @@ export async function generateCharacterResponse(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  try {
-    const memoryContext = memories.length > 0 
-      ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
-      : '';
+  let attempts = 0;
+  const maxAttempts = 3;
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    const charactersContext = characters.map((char, index) => `
+  while (attempts < maxAttempts) {
+    try {
+      const memoryContext = memories.length > 0 
+        ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
+        : '';
+
+      const charactersContext = characters.map((char, index) => `
 ### CHARACTER ${index + 1}: ${char.name} ###
 GREETING: ${char.greeting}
 DESCRIPTION: ${char.description}
 ${char.personality ? `PERSONALITY: ${char.personality}` : ''}
 `).join('\n');
 
-    const systemInstruction = `### AI MULTI-CHARACTER ROLEPLAY PROTOCOL ###
+      const systemInstruction = `### AI MULTI-CHARACTER ROLEPLAY PROTOCOL ###
 You are a master roleplay engine. You are responsible for playing ALL characters listed below simultaneously.
 
 ${charactersContext}
@@ -75,110 +80,136 @@ Name1: Message
 Name2: Message
 (Or just the message if only one character speaks)`;
 
-    // Ensure roles alternate and remove any trailing user message if it matches the current one
-    const contents: any[] = [];
-    let lastRole: string | null = null;
+      // Ensure roles alternate and remove any trailing user message if it matches the current one
+      const contents: any[] = [];
+      let lastRole: string | null = null;
 
-    // Filter out empty messages and ensure role alternation
-    const filteredHistory = chatHistory.filter(msg => msg.content.trim() !== '' || msg.imageUrl);
+      // Filter out empty messages and ensure role alternation
+      const filteredHistory = chatHistory.filter(msg => msg.content.trim() !== '' || msg.imageUrl);
 
-    for (const msg of filteredHistory) {
-      if (msg.role !== lastRole) {
-        const parts: any[] = [{ text: msg.content }];
-        
-        if (msg.imageUrl && msg.imageUrl.startsWith('data:')) {
-          const [header, base64Data] = msg.imageUrl.split(',');
-          const mimeType = header.split(';')[0].split(':')[1];
-          parts.push({
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType
-            }
+      for (const msg of filteredHistory) {
+        if (msg.role !== lastRole) {
+          const parts: any[] = [{ text: msg.content }];
+          
+          if (msg.imageUrl && msg.imageUrl.startsWith('data:')) {
+            const [header, base64Data] = msg.imageUrl.split(',');
+            const mimeType = header.split(';')[0].split(':')[1];
+            parts.push({
+              inlineData: {
+                data: base64Data,
+                mimeType: mimeType
+              }
+            });
+          }
+
+          contents.push({
+            role: msg.role,
+            parts: parts
           });
+          lastRole = msg.role;
         }
-
-        contents.push({
-          role: msg.role,
-          parts: parts
+      }
+      
+      // Add the new user message
+      const processedUserMessage = userMessage.trim() || (userImageUrl ? "" : "(Continue the story)");
+      
+      const newUserParts: any[] = [{ text: processedUserMessage }];
+      if (userImageUrl && userImageUrl.startsWith('data:')) {
+        const [header, base64Data] = userImageUrl.split(',');
+        const mimeType = header.split(';')[0].split(':')[1];
+        newUserParts.push({
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+          }
         });
-        lastRole = msg.role;
       }
-    }
-    
-    // Add the new user message
-    const processedUserMessage = userMessage.trim() || (userImageUrl ? "" : "(Continue the story)");
-    
-    const newUserParts: any[] = [{ text: processedUserMessage }];
-    if (userImageUrl && userImageUrl.startsWith('data:')) {
-      const [header, base64Data] = userImageUrl.split(',');
-      const mimeType = header.split(';')[0].split(':')[1];
-      newUserParts.push({
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType
+
+      if (lastRole !== 'user') {
+        contents.push({
+          role: 'user',
+          parts: newUserParts
+        });
+      } else {
+        // If the last message was a user message, we update it to include the new input
+        contents[contents.length - 1].parts = newUserParts;
+      }
+
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          temperature: 0.9,
+          topP: 0.95,
+          safetySettings: [
+            {
+              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+              threshold: HarmBlockThreshold.BLOCK_NONE,
+            },
+            {
+              category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+              threshold: HarmBlockThreshold.BLOCK_NONE,
+            },
+            {
+              category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+              threshold: HarmBlockThreshold.BLOCK_NONE,
+            },
+            {
+              category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+              threshold: HarmBlockThreshold.BLOCK_NONE,
+            },
+          ],
         }
       });
-    }
 
-    if (lastRole !== 'user') {
-      contents.push({
-        role: 'user',
-        parts: newUserParts
-      });
-    } else {
-      // If the last message was a user message, we update it to include the new input
-      contents[contents.length - 1].parts = newUserParts;
-    }
-
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction,
-        temperature: 0.9,
-        topP: 0.95,
-        safetySettings: [
-          {
-            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-          },
-        ],
+      if (!response.text) {
+        throw new Error('Empty response from AI');
       }
-    });
 
-    if (!response.text) {
-      throw new Error('Empty response from AI');
-    }
+      return response.text;
+    } catch (error: any) {
+      attempts++;
+      console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}):`, error);
 
-    return response.text;
-  } catch (error: any) {
-    console.error('Error generating character response:', error);
-    
-    if (error.message?.includes('Failed to fetch')) {
-      throw new Error(`NETWORK_ERROR: The application could not connect to Google's AI servers. This might be a temporary issue or a regional block.`);
-    }
+      const errorMsg = error.message || String(error);
+      const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch');
 
-    if (error.message?.includes('safety')) {
-      return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
+      if (isRetryable && attempts < maxAttempts) {
+        // Exponential backoff
+        await delay(Math.pow(2, attempts) * 1000);
+        continue;
+      }
+      
+      if (errorMsg.includes('Failed to fetch')) {
+        throw new Error(`NETWORK_ERROR: The application could not connect to Google's AI servers. This might be a temporary issue or a regional block.`);
+      }
+
+      if (errorMsg.includes('safety')) {
+        return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
+      }
+      if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) {
+        throw new Error(`API_QUOTA_EXCEEDED: The application's API quota has been exceeded. Please try again later.`);
+      }
+      if (errorMsg.includes('403') || errorMsg.includes('Forbidden') || errorMsg.includes('API key not valid')) {
+        throw new Error(`API_KEY_INVALID: The application's API key is invalid or restricted. Please contact the administrator.`);
+      }
+      if (errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE')) {
+        throw new Error(`API_HIGH_DEMAND: Google's AI servers are currently experiencing high demand. Please try again in a few moments.`);
+      }
+      
+      // Try to parse JSON error if it exists
+      try {
+        const parsed = JSON.parse(errorMsg);
+        if (parsed.error?.message) {
+          throw new Error(`API_ERROR: ${parsed.error.message}`);
+        }
+      } catch (e) {
+        // Not JSON, ignore
+      }
+
+      throw new Error(`${errorMsg}`);
     }
-    if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-      throw new Error(`API_QUOTA_EXCEEDED: The application's API quota has been exceeded. Please try again later.`);
-    }
-    if (error.message?.includes('403') || error.message?.includes('Forbidden') || error.message?.includes('API key not valid')) {
-      throw new Error(`API_KEY_INVALID: The application's API key is invalid or restricted. Please contact the administrator.`);
-    }
-    throw new Error(`${error.message}`);
   }
+  throw new Error('MAX_ATTEMPTS_REACHED: Failed to get a response from AI after multiple attempts.');
 }
