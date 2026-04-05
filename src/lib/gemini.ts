@@ -29,6 +29,7 @@ export async function generateCharacterResponse(
 
   const ai = new GoogleGenAI({ apiKey });
 
+  let currentModel = model;
   let attempts = 0;
   const maxAttempts = 3;
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -142,7 +143,7 @@ Name2: Message
       }
 
       const response = await ai.models.generateContent({
-        model,
+        model: currentModel,
         contents,
         config: {
           systemInstruction,
@@ -176,10 +177,21 @@ Name2: Message
       return response.text;
     } catch (error: any) {
       attempts++;
-      console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}):`, error);
-
       const errorMsg = error.message || String(error);
-      const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch') || errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota');
+      console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}, Model: ${currentModel}):`, errorMsg);
+
+      const isQuotaError = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota');
+      
+      // Fallback logic for quota errors
+      if (isQuotaError && attempts < maxAttempts) {
+        if (currentModel === 'gemini-3-flash-preview' || currentModel === 'gemini-flash-latest') {
+          console.warn(`Quota exceeded for ${currentModel}. Falling back to gemini-3.1-flash-lite-preview.`);
+          currentModel = 'gemini-3.1-flash-lite-preview';
+          continue;
+        }
+      }
+
+      const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch') || isQuotaError;
 
       if (isRetryable && attempts < maxAttempts) {
         // Exponential backoff
