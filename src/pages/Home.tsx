@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2 } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Character {
@@ -34,6 +34,29 @@ export function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Character[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeletingChat, setIsDeletingChat] = useState<string | null>(null);
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete) return;
+    setIsDeletingChat(chatToDelete);
+    try {
+      await deleteDoc(doc(db, 'chats', chatToDelete));
+      setRecentChats(prev => prev.filter(c => c.id !== chatToDelete));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatToDelete}`);
+    } finally {
+      setIsDeletingChat(null);
+      setChatToDelete(null);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, chatId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setChatToDelete(chatId);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -276,6 +299,20 @@ export function Home() {
             <Users className="w-4 h-4" />
             Create Group Chat
           </button>
+
+          {tab === 'recent' && recentChats.length > 0 && (
+            <button
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-medium transition-all shadow-lg ${
+                isEditMode 
+                  ? 'bg-red-600 text-white shadow-red-900/20' 
+                  : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:bg-zinc-800'
+              }`}
+            >
+              {isEditMode ? <Check className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+              {isEditMode ? 'Done' : 'Delete Chats'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -305,40 +342,58 @@ export function Home() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {recentChats.map((chat) => (
-              <Link 
-                key={chat.id} 
-                to={`/chat/${chat.characterId}/${chat.id}`}
-                className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col items-center text-center"
-              >
-                <div className="relative">
-                  {chat.character.avatarUrl ? (
-                    <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
-                      <Bot className="w-10 h-10 text-zinc-400" />
-                    </div>
-                  )}
-                  {chat.characterIds && chat.characterIds.length > 1 && (
-                    <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1 rounded-full border-2 border-zinc-900 shadow-lg" title="Group Chat">
-                      <Users className="w-4 h-4" />
+              <div key={chat.id} className="relative group">
+                <div 
+                  onClick={() => !isEditMode && navigate(`/chat/${chat.characterId}/${chat.id}`)}
+                  className={`flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 rounded-2xl p-4 transition-all h-full ${
+                    !isEditMode ? 'hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 cursor-pointer' : 'opacity-75 cursor-default'
+                  }`}
+                >
+                  <div className="relative">
+                    {chat.character.avatarUrl ? (
+                      <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
+                        <Bot className="w-10 h-10 text-zinc-400" />
+                      </div>
+                    )}
+                    {chat.characterIds && chat.characterIds.length > 1 && (
+                      <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1 rounded-full border-2 border-zinc-900 shadow-lg" title="Group Chat">
+                        <Users className="w-4 h-4" />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-semibold text-white line-clamp-1">
+                    {chat.title || chat.character.name}
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
+                    {chat.characterIds && chat.characterIds.length > 1 
+                      ? `${chat.characterIds.length} characters` 
+                      : `By ${chat.character.creatorName || 'Unknown'}`}
+                  </p>
+                  {chat.character.averageRating && !chat.characterIds && (
+                    <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                      <Star className="w-3 h-3 fill-current" />
+                      {chat.character.averageRating.toFixed(1)}
                     </div>
                   )}
                 </div>
-                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">
-                  {chat.title || chat.character.name}
-                </h3>
-                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
-                  {chat.characterIds && chat.characterIds.length > 1 
-                    ? `${chat.characterIds.length} characters` 
-                    : `By ${chat.character.creatorName || 'Unknown'}`}
-                </p>
-                {chat.character.averageRating && !chat.characterIds && (
-                  <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
-                    <Star className="w-3 h-3 fill-current" />
-                    {chat.character.averageRating.toFixed(1)}
-                  </div>
-                )}
-              </Link>
+                
+                <button
+                  onClick={(e) => handleDeleteClick(e, chat.id)}
+                  disabled={isDeletingChat === chat.id}
+                  className={`absolute -top-3 -right-3 p-4 bg-red-600 text-white rounded-full shadow-2xl transition-all z-50 ${
+                    isEditMode ? 'opacity-100 scale-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-90 hover:scale-100'
+                  }`}
+                  title="Delete Chat"
+                >
+                  {isDeletingChat === chat.id ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-6 h-6" />
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         )
@@ -397,6 +452,40 @@ export function Home() {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {chatToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Delete Chat?</h3>
+            <p className="text-zinc-400 mb-6">
+              Are you sure you want to delete this chat history? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setChatToDelete(null)}
+                className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteChat}
+                disabled={isDeletingChat !== null}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {isDeletingChat !== null ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Group Chat Modal */}
       {isGroupChatModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -433,8 +522,12 @@ export function Home() {
                           </div>
                         )}
                         <span className="text-xs font-medium text-indigo-200">{char.name}</span>
-                        <button onClick={() => toggleCharacterSelection(char)} className="hover:text-white text-indigo-400 transition-colors">
-                          <X className="w-3 h-3" />
+                        <button 
+                          onClick={() => toggleCharacterSelection(char)} 
+                          className="p-2 -mr-2 hover:text-white text-indigo-400 transition-colors"
+                          aria-label="Remove character"
+                        >
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     ))}

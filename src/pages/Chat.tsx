@@ -63,6 +63,9 @@ export function Chat() {
   const [newMemory, setNewMemory] = useState('');
   const [isAddingMemory, setIsAddingMemory] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryEditMode, setIsHistoryEditMode] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
   const [userRating, setUserRating] = useState<number | null>(null);
   const [isRatingOpen, setIsRatingOpen] = useState(false);
@@ -398,6 +401,32 @@ export function Chat() {
     } finally {
       setIsClearing(false);
     }
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete) return;
+    
+    setIsDeletingChat(true);
+    try {
+      await deleteDoc(doc(db, 'chats', chatToDelete));
+      if (chatId === chatToDelete) {
+        navigate('/');
+      } else {
+        setChatHistory(prev => prev.filter(c => c.id !== chatToDelete));
+      }
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatToDelete}`);
+      setNotification({ message: `Failed to delete chat: ${error.message || 'Unknown error'}`, type: 'error' });
+    } finally {
+      setIsDeletingChat(false);
+      setChatToDelete(null);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, targetChatId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setChatToDelete(targetChatId);
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
@@ -1025,12 +1054,26 @@ export function Chat() {
                 <History className="w-5 h-5 text-indigo-500" />
                 Chat History
               </h3>
-              <button 
-                onClick={() => setIsHistoryOpen(false)}
-                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {chatHistory.length > 0 && (
+                  <button
+                    onClick={() => setIsHistoryEditMode(!isHistoryEditMode)}
+                    className={`p-2 rounded-full transition-colors ${isHistoryEditMode ? 'bg-red-600/20 text-red-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+                    title={isHistoryEditMode ? "Done" : "Delete Chats"}
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
+                <button 
+                  onClick={() => {
+                    setIsHistoryOpen(false);
+                    setIsHistoryEditMode(false);
+                  }}
+                  className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             
             <div className="p-4">
@@ -1045,21 +1088,26 @@ export function Chat() {
             
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {chatHistory.map((chat) => (
-                <button
+                <div
                   key={chat.id}
-                  onClick={() => {
-                    const targetCharId = chat.characterId || (chat.characterIds && chat.characterIds[0]) || characterId;
-                    navigate(`/chat/${targetCharId}/${chat.id}`);
-                    setIsHistoryOpen(false);
-                  }}
-                  className={`w-full text-left p-3 rounded-xl transition-all group ${
-                    chatId === chat.id 
-                      ? 'bg-zinc-800 text-white border border-zinc-700' 
-                      : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
-                  }`}
+                  className="relative group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
+                  <div
+                    onClick={() => {
+                      if (isHistoryEditMode) return;
+                      const targetCharId = chat.characterId || (chat.characterIds && chat.characterIds[0]) || characterId;
+                      navigate(`/chat/${targetCharId}/${chat.id}`);
+                      setIsHistoryOpen(false);
+                    }}
+                    className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between ${
+                      isHistoryEditMode ? 'opacity-75 cursor-default' : 'cursor-pointer'
+                    } ${
+                      chatId === chat.id 
+                        ? 'bg-zinc-800 text-white border border-zinc-700' 
+                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0 pr-8">
                       <p className="text-sm font-medium truncate">
                         {chat.title || `Chat with ${characters[0]?.name}`}
                       </p>
@@ -1067,10 +1115,58 @@ export function Chat() {
                         {chat.updatedAt?.toDate() ? new Date(chat.updatedAt.toDate()).toLocaleString() : 'Just now'}
                       </p>
                     </div>
-                    <ChevronRight className={`w-4 h-4 transition-transform ${chatId === chat.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`} />
+                    {!isHistoryEditMode && (
+                      <ChevronRight className={`w-4 h-4 transition-transform ${chatId === chat.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`} />
+                    )}
                   </div>
-                </button>
+                  
+                  <button
+                    onClick={(e) => handleDeleteClick(e, chat.id)}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-4 rounded-lg transition-all z-10 ${
+                      isHistoryEditMode 
+                        ? 'bg-red-600 text-white opacity-100 scale-100 shadow-lg' 
+                        : 'text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Delete Chat"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {chatToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Delete Chat?</h3>
+            <p className="text-zinc-400 mb-6">
+              Are you sure you want to delete this chat history? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setChatToDelete(null)}
+                className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteChat}
+                disabled={isDeletingChat}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {isDeletingChat ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5" />
+                    Delete
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
