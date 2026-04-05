@@ -79,6 +79,7 @@ export function Chat() {
   const [characterSearchQuery, setCharacterSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Character[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -589,7 +590,13 @@ export function Chat() {
       
       let skipPrompt = "(The user has skipped their turn. Exactly ONE character should respond now to continue the conversation or address another character. Do not include multiple characters in your response.)";
       
-      if (lastCharId && characters.length > 1) {
+      if (respondingCharacterId) {
+        const targetChar = characters.find(c => c.id === respondingCharacterId);
+        if (targetChar) {
+          skipPrompt = `(The user has skipped their turn. ${targetChar.name} should respond now.)`;
+        }
+        setRespondingCharacterId(null);
+      } else if (lastCharId && characters.length > 1) {
         const lastChar = characters.find(c => c.id === lastCharId);
         const otherChars = characters.filter(c => c.id !== lastCharId);
         if (lastChar && otherChars.length > 0) {
@@ -941,7 +948,14 @@ export function Chat() {
           userMessage.toLowerCase().includes(c.name.split(' ')[0].toLowerCase())
         );
         
-        if (mentionedChars.length > 0) {
+        if (respondingCharacterId) {
+          const targetChar = characters.find(c => c.id === respondingCharacterId);
+          if (targetChar) {
+            const mentionGuidance = `(STRICT: Only ${targetChar.name} should respond to this message. Other characters MUST remain silent.)`;
+            enhancedPrompt = `${userMessage}\n\n${mentionGuidance}`;
+          }
+          setRespondingCharacterId(null);
+        } else if (mentionedChars.length > 0) {
           const mentionGuidance = `(STRICT: Only ${mentionedChars.map(c => c.name).join(' and ')} should respond to this message. Other characters MUST remain silent.)`;
           enhancedPrompt = `${userMessage}\n\n${mentionGuidance}`;
         }
@@ -1415,6 +1429,37 @@ export function Chat() {
                     accept="image/*"
                     className="hidden"
                   />
+                  
+                  {characters.length > 1 && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-900/50 border border-zinc-800 rounded-full">
+                      {characters.map(char => (
+                        <button
+                          key={char.id}
+                          type="button"
+                          onClick={() => setRespondingCharacterId(respondingCharacterId === char.id ? null : char.id)}
+                          className={`relative transition-all duration-200 ${respondingCharacterId === char.id ? 'scale-110' : 'opacity-40 hover:opacity-80 hover:scale-105'}`}
+                          title={`Make ${char.name} respond`}
+                        >
+                          {char.avatarUrl ? (
+                            <img 
+                              src={char.avatarUrl} 
+                              alt={char.name} 
+                              className={`w-7 h-7 rounded-full object-cover border-2 ${respondingCharacterId === char.id ? 'border-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]' : 'border-transparent'}`}
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className={`w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center border-2 ${respondingCharacterId === char.id ? 'border-indigo-500' : 'border-transparent'}`}>
+                              <Bot className="w-3.5 h-3.5 text-zinc-400" />
+                            </div>
+                          )}
+                          {respondingCharacterId === char.id && (
+                            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-indigo-500 rounded-full border border-zinc-950 shadow-sm" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -1429,7 +1474,10 @@ export function Chat() {
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder={`Message ${characters[0]?.name || 'Character'}...`}
+                      placeholder={respondingCharacterId 
+                        ? `Message ${characters.find(c => c.id === respondingCharacterId)?.name}...` 
+                        : `Message ${characters.length > 1 ? 'Group' : characters[0]?.name || 'Character'}...`
+                      }
                       disabled={isTyping}
                       className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
                     />
