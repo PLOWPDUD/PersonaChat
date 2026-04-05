@@ -85,6 +85,7 @@ export function Chat() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
   const [userPersona, setUserPersona] = useState('');
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1018,6 +1019,13 @@ export function Chat() {
       // 3. Save AI message (split into multiple if needed)
       if (aiResponse) {
         await saveSplitMessages(chatId, aiResponse, targetCharId);
+        
+        // Update interactionsCount for all characters in the chat
+        for (const char of characters) {
+          await updateDoc(doc(db, 'characters', char.id), {
+            interactionsCount: (char.interactionsCount || 0) + 1
+          });
+        }
       }
 
       // Update chat timestamp again
@@ -1242,154 +1250,170 @@ export function Chat() {
       )}
 
       {/* Chat Header */}
-      <div className="flex items-center gap-4 p-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm z-10">
-        <button 
-          onClick={() => navigate('/')}
-          className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        
-        <div className="flex items-center gap-3 flex-1">
-          <div className="flex -space-x-3 overflow-hidden">
-            {characters.map((char) => (
-              char.avatarUrl ? (
-                <img key={char.id} src={char.avatarUrl} alt={char.name} className="w-10 h-10 rounded-full object-cover border-2 border-zinc-900 shadow-lg" referrerPolicy="no-referrer" />
-              ) : (
-                <div key={char.id} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border-2 border-zinc-900 shadow-lg">
-                  <Bot className="w-5 h-5 text-zinc-400" />
-                </div>
-              )
-            ))}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
-              {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
-              {characters.length === 1 && characters[0]?.averageRating && (
-                <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
-                  <Star className="w-3 h-3 fill-current" />
-                  {characters[0].averageRating.toFixed(1)}
-                </span>
-              )}
-            </h2>
-            <p className="text-xs text-zinc-400">
-              {characters.length > 1 ? `${characters.length} characters` : 'AI Character'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 relative">
+      <div className="h-auto lg:h-20 bg-zinc-900 border-b border-zinc-800 flex flex-col sm:flex-row items-center gap-4 px-4 py-3 sm:py-0 z-30 sticky top-0">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
           <button
-            onClick={() => setIsAddCharacterModalOpen(true)}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
-            title="Add Character to Chat"
+            onClick={() => navigate('/')}
+            className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
           >
-            <UserPlus className="w-5 h-5" />
-          </button>
-
-          <button
-            onClick={() => setIsRatingOpen(!isRatingOpen)}
-            className={`p-2 rounded-lg transition-all flex items-center gap-2 ${userRating ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-            title="Rate Character"
-          >
-            <Star className={`w-5 h-5 ${userRating ? 'fill-current' : ''}`} />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           
-          {isRatingOpen && (
-            <div className="absolute top-full right-0 mt-2 p-3 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-50 flex gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  onClick={() => handleRateCharacter(star)}
-                  disabled={isSubmittingRating}
-                  className={`p-1 hover:scale-110 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <Star className={`w-6 h-6 ${(userRating || 0) >= star ? 'text-yellow-500 fill-current' : 'text-zinc-500'}`} />
-                </button>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex -space-x-3 overflow-hidden flex-shrink-0">
+              {characters.map((char) => (
+                char.avatarUrl ? (
+                  <img key={char.id} src={char.avatarUrl} alt={char.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-zinc-900 shadow-lg" referrerPolicy="no-referrer" />
+                ) : (
+                  <div key={char.id} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-zinc-800 flex items-center justify-center border-2 border-zinc-900 shadow-lg">
+                    <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-400" />
+                  </div>
+                )
               ))}
             </div>
-          )}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm sm:text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
+                {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
+                {characters.length === 1 && characters[0]?.averageRating && (
+                  <span className="flex items-center gap-1 text-[10px] sm:text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                    <Star className="w-3 h-3 fill-current" />
+                    {characters[0].averageRating.toFixed(1)}
+                  </span>
+                )}
+              </h2>
+              <p className="text-[10px] sm:text-xs text-zinc-400">
+                {characters.length > 1 ? `${characters.length} characters` : 'AI Character'}
+              </p>
+            </div>
+          </div>
 
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="gemini-3-flash-preview">Gemini 3 Flash (Recommended)</option>
-            <option value="gemini-flash-latest">Gemini Flash (High Demand)</option>
-            <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
-            <option value="gemini-3.1-pro-preview">Gemini Pro</option>
-          </select>
-          
-          <button
-            onClick={() => setIsHistoryOpen(true)}
-            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all flex items-center gap-2"
-            title="Chat History"
-          >
-            <History className="w-5 h-5" />
-            <span className="hidden sm:inline text-sm font-medium">History</span>
-          </button>
-          
-          <div className="w-px h-6 bg-zinc-800 mx-1" />
-
-          <button
-            onClick={() => setIsReportModalOpen(true)}
-            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-yellow-500 transition-all flex items-center gap-2"
-            title="Report Character"
-          >
-            <Flag className="w-5 h-5" />
-          </button>
-
-          {(isCharacterCreator || isOwner) && (
+          <div className="flex items-center gap-1 sm:hidden">
             <button
-              onClick={() => navigate(`/edit/${characterId}`)}
-              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-indigo-400 transition-all flex items-center gap-2"
-              title="Edit Character"
+              onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+              className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
             >
-              <Edit2 className="w-5 h-5" />
+              <MoreVertical className="w-5 h-5" />
             </button>
-          )}
-
-          {(isCharacterCreator || isOwner) && (
-            <button
-              onClick={() => setIsDeleteModalOpen(true)}
-              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-all flex items-center gap-2"
-              title="Delete Character (Admin)"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-          )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+        <div className={`
+          flex-1 flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto
+          ${isMoreMenuOpen ? 'flex' : 'hidden sm:flex'}
+        `}>
+          <div className="flex items-center gap-1 relative">
+            <button
+              onClick={() => setIsAddCharacterModalOpen(true)}
+              className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
+              title="Add Character to Chat"
+            >
+              <UserPlus className="w-5 h-5" />
+            </button>
+
+            <button
+              onClick={() => setIsRatingOpen(!isRatingOpen)}
+              className={`p-2 rounded-lg transition-all flex items-center gap-2 ${userRating ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+              title="Rate Character"
+            >
+              <Star className={`w-5 h-5 ${userRating ? 'fill-current' : ''}`} />
+            </button>
+            
+            {isRatingOpen && (
+              <div className="absolute top-full right-0 mt-2 p-3 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-50 flex gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => handleRateCharacter(star)}
+                    disabled={isSubmittingRating}
+                    className={`p-1 hover:scale-110 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <Star className={`w-6 h-6 ${(userRating || 0) >= star ? 'text-yellow-500 fill-current' : 'text-zinc-500'}`} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="bg-zinc-800 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[120px] sm:max-w-none"
+            >
+              <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+              <option value="gemini-flash-latest">Gemini Flash</option>
+              <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Lite</option>
+              <option value="gemini-3.1-pro-preview">Gemini Pro</option>
+            </select>
+            
+            <button
+              onClick={() => setIsHistoryOpen(true)}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all flex items-center gap-2"
+              title="Chat History"
+            >
+              <History className="w-5 h-5" />
+              <span className="hidden md:inline text-sm font-medium">History</span>
+            </button>
+            
+            <div className="hidden sm:block w-px h-6 bg-zinc-800 mx-1" />
+
+            <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-yellow-500 transition-all flex items-center gap-2"
+              title="Report Character"
+            >
+              <Flag className="w-5 h-5" />
+            </button>
+
+            {(isCharacterCreator || isOwner) && (
+              <button
+                onClick={() => navigate(`/edit/${characterId}`)}
+                className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-indigo-400 transition-all flex items-center gap-2"
+                title="Edit Character"
+              >
+                <Edit2 className="w-5 h-5" />
+              </button>
+            )}
+
+            {(isCharacterCreator || isOwner) && (
+              <button
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-all flex items-center gap-2"
+                title="Delete Character (Admin)"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-sm font-medium transition-all ${
+                activeTab === 'chat' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <MessageSquare className="w-3 h-3 sm:w-4 h-4" />
+              Chat
+            </button>
+            <button
+              onClick={() => setActiveTab('lore')}
+              className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-sm font-medium transition-all ${
+                activeTab === 'lore' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <BookOpen className="w-3 h-3 sm:w-4 h-4" />
+              Lore
+            </button>
+          </div>
+
           <button
-            onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'chat' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
+            onClick={handleClearHistory}
+            disabled={isClearing}
+            className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors ml-1"
+            title="Clear History"
           >
-            <MessageSquare className="w-4 h-4" />
-            Chat
-          </button>
-          <button
-            onClick={() => setActiveTab('lore')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'lore' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            Lore
+            <Trash2 className="w-5 h-5" />
           </button>
         </div>
-
-        <button
-          onClick={handleClearHistory}
-          disabled={isClearing}
-          className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors ml-2"
-          title="Clear History"
-        >
-          <Trash2 className="w-5 h-5" />
-        </button>
       </div>
 
       {/* Main Content Area */}

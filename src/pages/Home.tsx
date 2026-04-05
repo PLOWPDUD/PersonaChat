@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2 } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Character {
@@ -13,6 +13,7 @@ interface Character {
   greeting: string;
   description: string;
   visibility: 'public' | 'private' | 'unlisted';
+  category?: string;
   creatorId: string;
   creatorName?: string;
   likesCount: number;
@@ -24,6 +25,7 @@ export function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [recentChats, setRecentChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'public' | 'mine' | 'recent'>('public');
@@ -37,6 +39,47 @@ export function Home() {
   const [isDeletingChat, setIsDeletingChat] = useState<string | null>(null);
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+
+  const toggleFavorite = async (e: React.MouseEvent, charId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) return;
+
+    const isFavorite = favorites.has(charId);
+    const newFavorites = new Set(favorites);
+    
+    if (isFavorite) {
+      newFavorites.delete(charId);
+      setFavorites(newFavorites);
+      try {
+        const q = query(collection(db, 'favorites'), where('userId', '==', user.uid), where('characterId', '==', charId));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => deleteDoc(doc.ref));
+        await updateDoc(doc(db, 'characters', charId), {
+          likesCount: Math.max(0, (characters.find(c => c.id === charId)?.likesCount || 0) - 1)
+        });
+      } catch (error) {
+        console.error('Error removing favorite:', error);
+        setFavorites(favorites); // Revert
+      }
+    } else {
+      newFavorites.add(charId);
+      setFavorites(newFavorites);
+      try {
+        await addDoc(collection(db, 'favorites'), {
+          userId: user.uid,
+          characterId: charId,
+          createdAt: serverTimestamp()
+        });
+        await updateDoc(doc(db, 'characters', charId), {
+          likesCount: (characters.find(c => c.id === charId)?.likesCount || 0) + 1
+        });
+      } catch (error) {
+        console.error('Error adding favorite:', error);
+        setFavorites(favorites); // Revert
+      }
+    }
+  };
 
   const confirmDeleteChat = async () => {
     if (!chatToDelete) return;
@@ -64,6 +107,14 @@ export function Home() {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // Fetch favorites
+        const favsRef = collection(db, 'favorites');
+        const favsQ = query(favsRef, where('userId', '==', user.uid));
+        const favsSnapshot = await getDocs(favsQ);
+        const favIds = new Set<string>();
+        favsSnapshot.forEach(doc => favIds.add(doc.data().characterId));
+        setFavorites(favIds);
+
         if (tab === 'recent') {
           const chatsRef = collection(db, 'chats');
           const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'));
@@ -293,10 +344,10 @@ export function Home() {
         </p>
         
         <div className="flex flex-wrap items-center gap-4 mt-4">
-          <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit">
+          <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-full sm:w-fit overflow-x-auto no-scrollbar">
             <button
               onClick={() => setTab('public')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                 tab === 'public' 
                   ? 'bg-zinc-800 text-white shadow-sm' 
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -306,7 +357,7 @@ export function Home() {
             </button>
             <button
               onClick={() => setTab('recent')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                 tab === 'recent' 
                   ? 'bg-zinc-800 text-white shadow-sm' 
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -316,7 +367,7 @@ export function Home() {
             </button>
             <button
               onClick={() => setTab('mine')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                 tab === 'mine' 
                   ? 'bg-zinc-800 text-white shadow-sm' 
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -328,7 +379,7 @@ export function Home() {
 
           <button
             onClick={() => setIsGroupChatModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-900/20"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-900/20"
           >
             <Users className="w-4 h-4" />
             Create Group Chat
@@ -462,6 +513,12 @@ export function Home() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {characters.map((char) => (
             <div key={char.id} className="relative group">
+              <button
+                  onClick={(e) => toggleFavorite(e, char.id)}
+                  className="absolute top-2 left-2 p-2 rounded-full bg-zinc-800/80 backdrop-blur-sm hover:bg-zinc-700 transition-colors z-10"
+                >
+                  <Heart className={`w-4 h-4 ${favorites.has(char.id) ? 'fill-red-500 text-red-500' : 'text-zinc-400'}`} />
+                </button>
               <Link 
                 to={`/chat/${char.id}`}
                 className="flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 h-full"

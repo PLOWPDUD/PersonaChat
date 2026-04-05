@@ -21,7 +21,8 @@ export function CreateCharacter() {
     greeting: '',
     description: '',
     personality: '',
-    visibility: 'public' as 'public' | 'private' | 'unlisted'
+    visibility: 'public' as 'public' | 'private' | 'unlisted',
+    category: ''
   });
 
   useEffect(() => {
@@ -47,7 +48,8 @@ export function CreateCharacter() {
             greeting: data.greeting || '',
             description: data.description || '',
             personality: data.personality || '',
-            visibility: data.visibility || 'public'
+            visibility: data.visibility || 'public',
+            category: data.category || ''
           });
           
           if (data.avatarUrl) {
@@ -286,6 +288,26 @@ export function CreateCharacter() {
             />
           </div>
 
+          <div>
+            <label htmlFor="category" className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Category
+            </label>
+            <select
+              id="category"
+              name="category"
+              value={formData.category || ''}
+              onChange={handleChange}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+            >
+              <option value="">Categoryless</option>
+              <option value="test">Test</option>
+              <option value="anime">Anime</option>
+              <option value="funny">Funny</option>
+              <option value="original character">Original Character</option>
+              <option value="horror">Horror</option>
+            </select>
+          </div>
+          
           <div>
             <label htmlFor="greeting" className="block text-sm font-medium text-zinc-300 mb-1.5">
               Greeting <span className="text-red-400">*</span>

@@ -23,6 +23,7 @@ interface Character {
 export function Search() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'characters' | 'users'>('characters');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
@@ -35,7 +36,7 @@ export function Search() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      if (searchQuery.trim()) {
+      if (searchQuery.trim() || selectedCategory) {
         handleSearch();
       } else {
         setCharacters([]);
@@ -44,20 +45,27 @@ export function Search() {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, activeTab]);
+  }, [searchQuery, activeTab, selectedCategory]);
 
   const handleSearch = async () => {
     setIsSearching(true);
     const lowerQuery = searchQuery.toLowerCase();
     try {
       if (activeTab === 'characters') {
-        const q = query(
+        let q = query(
           collection(db, 'characters'),
           where('visibility', '==', 'public'),
-          where('name_lowercase', '>=', lowerQuery),
-          where('name_lowercase', '<=', lowerQuery + '\uf8ff'),
           limit(20)
         );
+        
+        if (searchQuery.trim()) {
+          q = query(q, where('name_lowercase', '>=', lowerQuery), where('name_lowercase', '<=', lowerQuery + '\uf8ff'));
+        }
+        
+        if (selectedCategory) {
+          q = query(q, where('category', '==', selectedCategory));
+        }
+        
         const snap = await getDocs(q);
         setCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character)));
       } else {
@@ -148,20 +156,36 @@ export function Search() {
             )}
           </div>
 
-          <div className="relative">
-            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search ${activeTab}...`}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              autoFocus
-            />
-            {isSearching && (
-              <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-              </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`Search ${activeTab}...`}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                autoFocus
+              />
+              {isSearching && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                </div>
+              )}
+            </div>
+            {activeTab === 'characters' && (
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              >
+                <option value="">All</option>
+                <option value="test">Test</option>
+                <option value="anime">Anime</option>
+                <option value="funny">Funny</option>
+                <option value="original character">Original Character</option>
+                <option value="horror">Horror</option>
+              </select>
             )}
           </div>
 
