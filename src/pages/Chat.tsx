@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit } from 'firebase/firestore';
+import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -73,6 +73,11 @@ export function Chat() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isAddCharacterModalOpen, setIsAddCharacterModalOpen] = useState(false);
+  const [recentCharacters, setRecentCharacters] = useState<Character[]>([]);
+  const [isFetchingRecent, setIsFetchingRecent] = useState(false);
+  const [characterSearchQuery, setCharacterSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Character[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -84,6 +89,12 @@ export function Chat() {
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  useEffect(() => {
+    if (isAddCharacterModalOpen) {
+      fetchRecentCharacters();
+    }
+  }, [isAddCharacterModalOpen]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,6 +137,105 @@ export function Chat() {
     reader.readAsDataURL(file);
     // Reset input
     e.target.value = '';
+  };
+
+  const fetchRecentCharacters = async () => {
+    if (!user) return;
+    setIsFetchingRecent(true);
+    try {
+      // Get recent chats to find characters the user has talked with
+      const chatsRef = collection(db, 'chats');
+      const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(20));
+      const snapshot = await getDocs(q);
+      
+      const charIds = new Set<string>();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.characterId) charIds.add(data.characterId);
+        if (data.characterIds) {
+          data.characterIds.forEach((id: string) => charIds.add(id));
+        }
+      });
+
+      // Remove characters already in the current chat
+      characters.forEach(c => charIds.delete(c.id));
+
+      if (charIds.size === 0) {
+        setRecentCharacters([]);
+        return;
+      }
+
+      // Fetch character details
+      const chars: Character[] = [];
+      const charIdsArray = Array.from(charIds).slice(0, 10); // Limit to 10 for now
+      
+      for (const id of charIdsArray) {
+        const charDoc = await getDoc(doc(db, 'characters', id));
+        if (charDoc.exists()) {
+          chars.push({ id: charDoc.id, ...charDoc.data() } as Character);
+        }
+      }
+      setRecentCharacters(chars);
+    } catch (error) {
+      console.error('Error fetching recent characters:', error);
+    } finally {
+      setIsFetchingRecent(false);
+    }
+  };
+
+  const handleCharacterSearch = async (queryStr: string) => {
+    setCharacterSearchQuery(queryStr);
+    if (queryStr.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const charsRef = collection(db, 'characters');
+      // Simple search by name (case-sensitive in Firestore, but we can do a prefix search)
+      const q = query(
+        charsRef, 
+        where('visibility', '==', 'public'),
+        where('name_lowercase', '>=', queryStr.toLowerCase()),
+        where('name_lowercase', '<=', queryStr.toLowerCase() + '\uf8ff'),
+        limit(5)
+      );
+      const snapshot = await getDocs(q);
+      const results: Character[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data() as Character;
+        if (!characters.some(c => c.id === doc.id)) {
+          results.push({ id: doc.id, ...data });
+        }
+      });
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching characters:', error);
+    }
+  };
+
+  const handleAddCharacterToChat = async (char: Character) => {
+    if (!chatId) return;
+    
+    try {
+      const chatRef = doc(db, 'chats', chatId);
+      const currentIds = characters.map(c => c.id);
+      if (currentIds.includes(char.id)) return;
+
+      const newIds = [...currentIds, char.id];
+      await updateDoc(chatRef, {
+        characterIds: newIds,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local state
+      setCharacters(prev => [...prev, char]);
+      setIsAddCharacterModalOpen(false);
+      setNotification({ message: `${char.name} added to the chat!`, type: 'success' });
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+      setNotification({ message: `Failed to add character: ${error.message}`, type: 'error' });
+    }
   };
 
   const handleRateCharacter = async (score: number) => {
@@ -472,34 +582,32 @@ export function Chat() {
       }));
 
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, "(Continue the story)", undefined, memoryList, selectedModel);
-
-      const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
-      for (const line of lines) {
-        let charId: string | undefined;
-        let content = line;
-
-        const colonIndex = line.indexOf(':');
-        if (colonIndex !== -1) {
-          const name = line.substring(0, colonIndex).trim();
-          const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
-          if (char) {
-            charId = char.id;
-            content = line.substring(colonIndex + 1).trim();
-          }
+      
+      // Find the last character who spoke
+      const lastModelMessage = [...messages].reverse().find(m => m.role === 'model');
+      const lastCharId = lastModelMessage?.characterId;
+      
+      let skipPrompt = "(The user has skipped their turn. Exactly ONE character should respond now to continue the conversation or address another character. Do not include multiple characters in your response.)";
+      
+      if (lastCharId && characters.length > 1) {
+        const lastChar = characters.find(c => c.id === lastCharId);
+        const otherChars = characters.filter(c => c.id !== lastCharId);
+        if (lastChar && otherChars.length > 0) {
+          // Choose the next character in the list
+          const lastIndex = characters.findIndex(c => c.id === lastCharId);
+          const nextIndex = (lastIndex + 1) % characters.length;
+          const nextChar = characters[nextIndex];
+          
+          const lastFirstName = lastChar.name.split(' ')[0];
+          const nextFirstName = nextChar.name.split(' ')[0];
+          skipPrompt = `(The user has skipped their turn. ${lastFirstName}, speak with ${nextFirstName}. ${nextFirstName} should respond now.)`;
         }
+      }
 
-        try {
-          await addDoc(collection(db, `chats/${chatId}/messages`), {
-            chatId,
-            role: 'model',
-            characterId: charId || characters[0].id,
-            content: content,
-            createdAt: serverTimestamp()
-          });
-        } catch (e) {
-          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
-        }
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel);
+
+      if (aiResponse) {
+        await saveSplitMessages(chatId, aiResponse);
       }
 
       try {
@@ -697,7 +805,7 @@ export function Chat() {
         const hq = query(
           chatsRef, 
           where('userId', '==', user.uid), 
-          where('characterId', '==', characterId),
+          where('characterIds', 'array-contains', characterId),
           orderBy('updatedAt', 'desc')
         );
         
@@ -726,6 +834,61 @@ export function Chat() {
 
     initChat();
   }, [user, characterId, urlChatId, navigate]);
+
+  const saveSplitMessages = async (chatId: string, aiResponse: string) => {
+    // Split by "Name: " at the beginning of a line
+    const lines = aiResponse.split('\n');
+    let currentMessages: { charId: string | null, name: string | null, content: string }[] = [];
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      const colonIndex = trimmedLine.indexOf(':');
+      if (colonIndex !== -1 && colonIndex < 50) {
+        const name = trimmedLine.substring(0, colonIndex).trim();
+        const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
+        
+        if (char) {
+          currentMessages.push({
+            charId: char.id,
+            name: char.name,
+            content: trimmedLine.substring(colonIndex + 1).trim()
+          });
+          continue;
+        }
+      }
+      
+      // If no name found or it's a continuation line
+      if (currentMessages.length > 0) {
+        currentMessages[currentMessages.length - 1].content += '\n' + trimmedLine;
+      } else {
+        // Fallback for first line if no name found
+        currentMessages.push({
+          charId: characters[0].id,
+          name: characters[0].name,
+          content: trimmedLine
+        });
+      }
+    }
+
+    // Save each message sequentially to help with ordering
+    for (const msg of currentMessages) {
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'model',
+          characterId: msg.charId || characters[0].id,
+          content: msg.content,
+          createdAt: serverTimestamp()
+        });
+        // Small delay to ensure distinct timestamps
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      }
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -769,35 +932,26 @@ export function Chat() {
       }));
 
       const memoryList = memories.map(m => m.content);
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, userMessage, userImageUrl || undefined, memoryList, selectedModel);
-
-      // 3. Save AI messages
-      const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
-      for (const line of lines) {
-        let charId: string | undefined;
-        let content = line;
-
-        const colonIndex = line.indexOf(':');
-        if (colonIndex !== -1) {
-          const name = line.substring(0, colonIndex).trim();
-          const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
-          if (char) {
-            charId = char.id;
-            content = line.substring(colonIndex + 1).trim();
-          }
+      
+      // Enhance user message with explicit mention guidance if needed
+      let enhancedPrompt = userMessage;
+      if (characters.length > 1) {
+        const mentionedChars = characters.filter(c => 
+          userMessage.toLowerCase().includes(c.name.toLowerCase()) || 
+          userMessage.toLowerCase().includes(c.name.split(' ')[0].toLowerCase())
+        );
+        
+        if (mentionedChars.length > 0) {
+          const mentionGuidance = `(STRICT: Only ${mentionedChars.map(c => c.name).join(' and ')} should respond to this message. Other characters MUST remain silent.)`;
+          enhancedPrompt = `${userMessage}\n\n${mentionGuidance}`;
         }
+      }
 
-        try {
-          await addDoc(collection(db, `chats/${chatId}/messages`), {
-            chatId,
-            role: 'model',
-            characterId: charId || characters[0].id,
-            content: content,
-            createdAt: serverTimestamp()
-          });
-        } catch (e) {
-          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
-        }
+      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel);
+
+      // 3. Save AI message (split into multiple if needed)
+      if (aiResponse) {
+        await saveSplitMessages(chatId, aiResponse);
       }
 
       // Update chat timestamp again
@@ -880,7 +1034,8 @@ export function Chat() {
                 <button
                   key={chat.id}
                   onClick={() => {
-                    navigate(`/chat/${characterId}/${chat.id}`);
+                    const targetCharId = chat.characterId || (chat.characterIds && chat.characterIds[0]) || characterId;
+                    navigate(`/chat/${targetCharId}/${chat.id}`);
                     setIsHistoryOpen(false);
                   }}
                   className={`w-full text-left p-3 rounded-xl transition-all group ${
@@ -974,6 +1129,14 @@ export function Chat() {
         </div>
 
         <div className="flex items-center gap-1 relative">
+          <button
+            onClick={() => setIsAddCharacterModalOpen(true)}
+            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
+            title="Add Character to Chat"
+          >
+            <UserPlus className="w-5 h-5" />
+          </button>
+
           <button
             onClick={() => setIsRatingOpen(!isRatingOpen)}
             className={`p-2 rounded-lg transition-all flex items-center gap-2 ${userRating ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
@@ -1404,6 +1567,110 @@ export function Chat() {
                 {isSubmittingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Submit Report
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Character Modal */}
+      {isAddCharacterModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+              <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                <UserPlus className="w-6 h-6 text-indigo-500" />
+                Add Character
+              </h3>
+              <button 
+                onClick={() => setIsAddCharacterModalOpen(false)}
+                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search characters by name..."
+                  value={characterSearchQuery}
+                  onChange={(e) => handleCharacterSearch(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-3 pl-12 pr-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                />
+              </div>
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Search Results</h4>
+                  <div className="grid grid-cols-1 gap-2">
+                    {searchResults.map((char) => (
+                      <button
+                        key={char.id}
+                        onClick={() => handleAddCharacterToChat(char)}
+                        className="flex items-center gap-4 p-3 bg-zinc-800/50 hover:bg-indigo-600/20 border border-zinc-700 hover:border-indigo-500/50 rounded-2xl transition-all group text-left"
+                      >
+                        {char.avatarUrl ? (
+                          <img src={char.avatarUrl} alt={char.name} className="w-12 h-12 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center border border-zinc-600">
+                            <User className="w-6 h-6 text-zinc-400" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{char.name}</p>
+                          <p className="text-xs text-zinc-500 line-clamp-1">{char.description}</p>
+                        </div>
+                        <Plus className="w-5 h-5 text-zinc-500 group-hover:text-indigo-400" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Characters */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Recent Characters</h4>
+                {isFetchingRecent ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                  </div>
+                ) : recentCharacters.length === 0 ? (
+                  <p className="text-sm text-zinc-500 text-center py-4 italic">No other recent characters found.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2">
+                    {recentCharacters.map((char) => (
+                      <button
+                        key={char.id}
+                        onClick={() => handleAddCharacterToChat(char)}
+                        className="flex items-center gap-4 p-3 bg-zinc-800/50 hover:bg-indigo-600/20 border border-zinc-700 hover:border-indigo-500/50 rounded-2xl transition-all group text-left"
+                      >
+                        {char.avatarUrl ? (
+                          <img src={char.avatarUrl} alt={char.name} className="w-12 h-12 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center border border-zinc-600">
+                            <User className="w-6 h-6 text-zinc-400" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{char.name}</p>
+                          <p className="text-xs text-zinc-500 line-clamp-1">{char.description}</p>
+                        </div>
+                        <Plus className="w-5 h-5 text-zinc-500 group-hover:text-indigo-400" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-6 bg-zinc-900/80 border-t border-zinc-800">
+              <p className="text-xs text-zinc-500 text-center">
+                Characters you've previously talked with will appear here. You can also search for public characters.
+              </p>
             </div>
           </div>
         </div>

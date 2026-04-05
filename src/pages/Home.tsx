@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Character {
   id: string;
@@ -21,10 +22,18 @@ interface Character {
 
 export function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [recentChats, setRecentChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'public' | 'mine' | 'recent'>('public');
+  const [isGroupChatModalOpen, setIsGroupChatModalOpen] = useState(false);
+  const [selectedCharacters, setSelectedCharacters] = useState<Character[]>([]);
+  const [recentCharacters, setRecentCharacters] = useState<Character[]>([]);
+  const [isFetchingRecent, setIsFetchingRecent] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Character[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -41,13 +50,44 @@ export function Home() {
           for (const chatDoc of snapshot.docs) {
             const chatData = chatDoc.data();
             // Fetch character info for each chat
-            const charRef = doc(db, 'characters', chatData.characterId);
-            const charSnap = await getDoc(charRef);
-            if (charSnap.exists()) {
+            // For group chats, use the first character in characterIds
+            const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
+            
+            if (charId) {
+              try {
+                const charRef = doc(db, 'characters', charId);
+                const charSnap = await getDoc(charRef);
+                if (charSnap.exists()) {
+                  chats.push({
+                    id: chatDoc.id,
+                    ...chatData,
+                    characterId: charId,
+                    character: { id: charSnap.id, ...charSnap.data() }
+                  });
+                } else {
+                  chats.push({
+                    id: chatDoc.id,
+                    ...chatData,
+                    characterId: charId,
+                    character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
+                  });
+                }
+              } catch (e) {
+                console.error('Error fetching character for recent chat:', e);
+                chats.push({
+                  id: chatDoc.id,
+                  ...chatData,
+                  characterId: charId,
+                  character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
+                });
+              }
+            } else {
+              // Fallback if no character info found
               chats.push({
                 id: chatDoc.id,
                 ...chatData,
-                character: { id: charSnap.id, ...charSnap.data() }
+                characterId: 'unknown',
+                character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
               });
             }
           }
@@ -81,6 +121,110 @@ export function Home() {
     fetchData();
   }, [user, tab]);
 
+  const fetchRecentCharacters = async () => {
+    if (!user) return;
+    setIsFetchingRecent(true);
+    try {
+      const chatsRef = collection(db, 'chats');
+      const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(20));
+      const snapshot = await getDocs(q);
+      
+      const charIds = new Set<string>();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.characterId) charIds.add(data.characterId);
+        if (data.characterIds) {
+          data.characterIds.forEach((id: string) => charIds.add(id));
+        }
+      });
+
+      if (charIds.size === 0) {
+        setRecentCharacters([]);
+        return;
+      }
+
+      const chars: Character[] = [];
+      const charIdsArray = Array.from(charIds).slice(0, 15);
+      
+      for (const id of charIdsArray) {
+        const charDoc = await getDoc(doc(db, 'characters', id));
+        if (charDoc.exists()) {
+          chars.push({ id: charDoc.id, ...charDoc.data() } as Character);
+        }
+      }
+      setRecentCharacters(chars);
+    } catch (error) {
+      console.error('Error fetching recent characters:', error);
+    } finally {
+      setIsFetchingRecent(false);
+    }
+  };
+
+  const handleSearch = async (queryStr: string) => {
+    setSearchQuery(queryStr);
+    if (queryStr.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const charsRef = collection(db, 'characters');
+      const q = query(
+        charsRef, 
+        where('visibility', '==', 'public'),
+        where('name_lowercase', '>=', queryStr.toLowerCase()),
+        where('name_lowercase', '<=', queryStr.toLowerCase() + '\uf8ff'),
+        limit(5)
+      );
+      const snapshot = await getDocs(q);
+      const results: Character[] = [];
+      snapshot.forEach(doc => {
+        results.push({ id: doc.id, ...doc.data() } as Character);
+      });
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching characters:', error);
+    }
+  };
+
+  const toggleCharacterSelection = (char: Character) => {
+    setSelectedCharacters(prev => {
+      if (prev.find(c => c.id === char.id)) {
+        return prev.filter(c => c.id !== char.id);
+      }
+      return [...prev, char];
+    });
+  };
+
+  const handleCreateGroupChat = async () => {
+    if (!user || selectedCharacters.length < 1) return;
+    
+    setIsCreating(true);
+    try {
+      const charIds = selectedCharacters.map(c => c.id);
+      const chatRef = await addDoc(collection(db, 'chats'), {
+        userId: user.uid,
+        characterIds: charIds,
+        characterId: charIds[0], // legacy support for single-character views
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        title: selectedCharacters.length > 1 ? `Group Chat with ${selectedCharacters.map(c => c.name).join(', ')}` : `Chat with ${selectedCharacters[0].name}`
+      });
+      
+      navigate(`/chat/${charIds[0]}/${chatRef.id}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'chats');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isGroupChatModalOpen) {
+      fetchRecentCharacters();
+    }
+  }, [isGroupChatModalOpen]);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-2">
@@ -91,36 +235,46 @@ export function Home() {
           {tab === 'recent' ? 'Continue your conversations.' : 'Find your next favorite character.'}
         </p>
         
-        <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit mt-4">
+        <div className="flex flex-wrap items-center gap-4 mt-4">
+          <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit">
+            <button
+              onClick={() => setTab('public')}
+              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+                tab === 'public' 
+                  ? 'bg-zinc-800 text-white shadow-sm' 
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              For You
+            </button>
+            <button
+              onClick={() => setTab('recent')}
+              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+                tab === 'recent' 
+                  ? 'bg-zinc-800 text-white shadow-sm' 
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Recent
+            </button>
+            <button
+              onClick={() => setTab('mine')}
+              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+                tab === 'mine' 
+                  ? 'bg-zinc-800 text-white shadow-sm' 
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              My Characters
+            </button>
+          </div>
+
           <button
-            onClick={() => setTab('public')}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === 'public' 
-                ? 'bg-zinc-800 text-white shadow-sm' 
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+            onClick={() => setIsGroupChatModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-900/20"
           >
-            For You
-          </button>
-          <button
-            onClick={() => setTab('recent')}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === 'recent' 
-                ? 'bg-zinc-800 text-white shadow-sm' 
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            Recent
-          </button>
-          <button
-            onClick={() => setTab('mine')}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === 'mine' 
-                ? 'bg-zinc-800 text-white shadow-sm' 
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            My Characters
+            <Users className="w-4 h-4" />
+            Create Group Chat
           </button>
         </div>
       </div>
@@ -156,16 +310,29 @@ export function Home() {
                 to={`/chat/${chat.characterId}/${chat.id}`}
                 className="group bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col items-center text-center"
               >
-                {chat.character.avatarUrl ? (
-                  <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
-                    <Bot className="w-10 h-10 text-zinc-400" />
-                  </div>
-                )}
-                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{chat.character.name}</h3>
-                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {chat.character.creatorName || 'Unknown'}</p>
-                {chat.character.averageRating && (
+                <div className="relative">
+                  {chat.character.avatarUrl ? (
+                    <img src={chat.character.avatarUrl} alt={chat.character.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 mb-3">
+                      <Bot className="w-10 h-10 text-zinc-400" />
+                    </div>
+                  )}
+                  {chat.characterIds && chat.characterIds.length > 1 && (
+                    <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1 rounded-full border-2 border-zinc-900 shadow-lg" title="Group Chat">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">
+                  {chat.title || chat.character.name}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
+                  {chat.characterIds && chat.characterIds.length > 1 
+                    ? `${chat.characterIds.length} characters` 
+                    : `By ${chat.character.creatorName || 'Unknown'}`}
+                </p>
+                {chat.character.averageRating && !chat.characterIds && (
                   <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full text-[10px] font-medium">
                     <Star className="w-3 h-3 fill-current" />
                     {chat.character.averageRating.toFixed(1)}
@@ -227,6 +394,169 @@ export function Home() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Group Chat Modal */}
+      {isGroupChatModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                  <Users className="w-6 h-6 text-indigo-500" />
+                  Create Group Chat
+                </h3>
+                <p className="text-sm text-zinc-400 mt-1">Select characters to start a conversation.</p>
+              </div>
+              <button 
+                onClick={() => setIsGroupChatModalOpen(false)}
+                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              {/* Selected Characters Bar */}
+              {selectedCharacters.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Selected ({selectedCharacters.length})</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCharacters.map(char => (
+                      <div key={char.id} className="flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/50 rounded-full py-1.5 pl-1.5 pr-3">
+                        {char.avatarUrl ? (
+                          <img src={char.avatarUrl} alt={char.name} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center">
+                            <User className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                        <span className="text-xs font-medium text-indigo-200">{char.name}</span>
+                        <button onClick={() => toggleCharacterSelection(char)} className="hover:text-white text-indigo-400 transition-colors">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search public characters..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-3 pl-12 pr-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                />
+              </div>
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Search Results</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {searchResults.map((char) => {
+                      const isSelected = selectedCharacters.find(c => c.id === char.id);
+                      return (
+                        <button
+                          key={char.id}
+                          onClick={() => toggleCharacterSelection(char)}
+                          className={`flex flex-col items-center text-center p-4 rounded-2xl border transition-all relative group ${
+                            isSelected 
+                              ? 'bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/10' 
+                              : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-500'
+                          }`}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 bg-indigo-500 rounded-full p-1 shadow-lg">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          )}
+                          {char.avatarUrl ? (
+                            <img src={char.avatarUrl} alt={char.name} className="w-16 h-16 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center border border-zinc-600 mb-3">
+                              <User className="w-8 h-8 text-zinc-400" />
+                            </div>
+                          )}
+                          <p className="text-sm font-bold text-white line-clamp-1">{char.name}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Characters */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Recent Characters</h4>
+                {isFetchingRecent ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                  </div>
+                ) : recentCharacters.length === 0 ? (
+                  <p className="text-sm text-zinc-500 text-center py-8 italic">No recent characters found. Try searching for public ones!</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {recentCharacters.map((char) => {
+                      const isSelected = selectedCharacters.find(c => c.id === char.id);
+                      return (
+                        <button
+                          key={char.id}
+                          onClick={() => toggleCharacterSelection(char)}
+                          className={`flex flex-col items-center text-center p-4 rounded-2xl border transition-all relative group ${
+                            isSelected 
+                              ? 'bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/10' 
+                              : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-500'
+                          }`}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 bg-indigo-500 rounded-full p-1 shadow-lg">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          )}
+                          {char.avatarUrl ? (
+                            <img src={char.avatarUrl} alt={char.name} className="w-16 h-16 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center border border-zinc-600 mb-3">
+                              <User className="w-8 h-8 text-zinc-400" />
+                            </div>
+                          )}
+                          <p className="text-sm font-bold text-white line-clamp-1">{char.name}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-6 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between">
+              <p className="text-xs text-zinc-500">
+                You can add as many characters as you want to a group chat.
+              </p>
+              <button
+                onClick={handleCreateGroupChat}
+                disabled={selectedCharacters.length === 0 || isCreating}
+                className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white rounded-2xl font-bold transition-all shadow-xl shadow-indigo-900/20"
+              >
+                {isCreating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    Start {selectedCharacters.length > 1 ? 'Group Chat' : 'Chat'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

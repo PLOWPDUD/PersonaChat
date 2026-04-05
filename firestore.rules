@@ -294,7 +294,7 @@ service cloud.firestore {
       allow list: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());
       allow create: if isAuthenticated() && isValidChat();
       allow update: if isAuthenticated() && (
-        (resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'characterIds', 'createdAt'])) ||
+        (resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt'])) ||
         isOwnerRole()
       );
       allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());

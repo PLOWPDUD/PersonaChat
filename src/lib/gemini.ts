@@ -35,6 +35,7 @@ export async function generateCharacterResponse(
 
     const charactersContext = characters.map((char, index) => `
 ### CHARACTER ${index + 1}: ${char.name} ###
+GREETING: ${char.greeting}
 DESCRIPTION: ${char.description}
 ${char.personality ? `PERSONALITY: ${char.personality}` : ''}
 `).join('\n');
@@ -48,21 +49,31 @@ ${memoryContext}
 
 ### CORE DIRECTIVES ###
 1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI.
-2. MULTI-CHARACTER FORMAT: ALWAYS use the format "Name: Message" for every character's speech.
-3. INTERACTION: Characters should not only talk to the user but also to EACH OTHER. They have their own dynamics, conflicts, and relationships.
-4. DYNAMIC RESPONSE: When the user speaks, multiple characters should often react. Sometimes they might agree, sometimes they might argue.
-5. USER-CONTROLLED CHARACTERS: If the user prefixes their message with "Name:", they are taking control of that character. You should have other characters react to them.
-6. STORYTELLING: Be extremely brief. Only use actions (*nods*) or sensory details when absolutely necessary.
-7. CONCISENESS: STRICT BREVITY. Total response MUST be between 10 and 40 words. Never exceed 50 words.
-8. LANGUAGE: You are permitted to use vulgar, profane, or explicit language if it fits the character's personality or the scene.
-9. EXPRESSION: Keep it grounded and realistic. Avoid "over-acting".
+2. STYLE MATCHING: You MUST closely mirror the linguistic style, tone, capitalization, and punctuation of each character's GREETING.
+3. FORMATTING: 
+   - Use the format "Name: Message" with each character on a NEW LINE.
+   - PREFER ONE CHARACTER PER TURN: Unless the user mentions multiple characters or the scene absolutely requires it, only ONE character should speak in this turn.
+   - Choose the most relevant character to respond.
+   - Always respond with a single cohesive block of text that can be split by "Name: " if needed.
+4. MENTIONS & TURN-TAKING: 
+   - STRICT MENTIONS: If the user mentions specific characters by name (e.g., "Hey Character1"), ONLY those characters should respond. Other characters MUST remain silent. This is a HARD constraint.
+   - CHARACTER-TO-CHARACTER: When a character addresses another, they should use their name. To facilitate turn-taking, a character may end their message by inviting another character to speak using the format: "(FirstName, speak with NextName)".
+   - If the user does NOT mention any names, the most appropriate character should react. Do NOT have everyone speak at once.
+   - If the user "skips" their turn, exactly ONE character should speak to continue the conversation or address another character.
+   - NO MONOPOLIZING: A character should not speak twice in a row if there are other characters who can contribute.
+5. INTERACTION: Characters should talk to EACH OTHER. They have their own dynamics, conflicts, and relationships.
+6. DYNAMIC RESPONSE: Maintain a natural flow. Characters should take turns rather than all speaking at once.
+7. STORYTELLING: Be extremely brief. Only use actions (*nods*) or sensory details when absolutely necessary.
+8. CONCISENESS: STRICT BREVITY. Total response MUST be between 10 and 40 words. Never exceed 50 words.
+9. LANGUAGE: You are permitted to use vulgar, profane, or explicit language if it fits the character's personality or the scene.
+10. EXPRESSION: Keep it grounded and realistic. Avoid "over-acting".
 
 ### EXECUTION ###
 Respond to the user's latest message. Ensure the flow is natural and characters interact with each other.
-Format your response as:
+Format your response as a single block with newlines (if multiple characters speak), e.g.:
 Name1: Message
 Name2: Message
-(Only include characters who would realistically speak in this moment)`;
+(Or just the message if only one character speaks)`;
 
     // Ensure roles alternate and remove any trailing user message if it matches the current one
     const contents: any[] = [];
