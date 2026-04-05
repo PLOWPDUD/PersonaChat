@@ -403,6 +403,65 @@ export function Chat() {
     }
   };
 
+  const saveSplitMessages = async (chatId: string, aiResponse: string, targetCharId?: string | null) => {
+    // Split by "Name: " at the beginning of a line
+    const lines = aiResponse.split('\n');
+    let currentMessages: { charId: string | null, name: string | null, content: string }[] = [];
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      const colonIndex = trimmedLine.indexOf(':');
+      if (colonIndex !== -1 && colonIndex < 50) {
+        const name = trimmedLine.substring(0, colonIndex).trim();
+        const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase() || c.name.split(' ')[0].toLowerCase() === name.toLowerCase());
+        
+        if (char) {
+          currentMessages.push({
+            charId: char.id,
+            name: char.name,
+            content: trimmedLine.substring(colonIndex + 1).trim()
+          });
+          continue;
+        }
+      }
+      
+      // If no name found or it's a continuation line
+      if (currentMessages.length > 0) {
+        currentMessages[currentMessages.length - 1].content += '\n' + trimmedLine;
+      } else {
+        // Fallback for first line if no name found
+        const fallbackChar = targetCharId 
+          ? characters.find(c => c.id === targetCharId) || characters[0]
+          : characters[0];
+          
+        currentMessages.push({
+          charId: fallbackChar.id,
+          name: fallbackChar.name,
+          content: trimmedLine
+        });
+      }
+    }
+
+    // Save each message sequentially to help with ordering
+    for (const msg of currentMessages) {
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'model',
+          characterId: msg.charId || characters[0].id,
+          content: msg.content,
+          createdAt: serverTimestamp()
+        });
+        // Small delay to ensure distinct timestamps
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+      }
+    }
+  };
+
   const confirmDeleteChat = async () => {
     if (!chatToDelete) return;
     
@@ -471,35 +530,30 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(characters, updatedHistory, newContent.trim(), originalMessage.imageUrl || undefined, memoryList, selectedModel);
+        
+        let enhancedPrompt = newContent.trim();
+        let targetCharId: string | null = null;
+        
+        if (characters.length > 1) {
+          const mentionedChars = characters.filter(c => 
+            enhancedPrompt.toLowerCase().includes(c.name.toLowerCase()) || 
+            enhancedPrompt.toLowerCase().includes(c.name.split(' ')[0].toLowerCase())
+          );
+          
+          if (mentionedChars.length > 0) {
+            if (mentionedChars.length === 1) {
+              targetCharId = mentionedChars[0].id;
+            }
+            const mentionGuidance = `(STRICT: Only ${mentionedChars.map(c => c.name).join(' and ')} should respond to this message. Other characters MUST remain silent.)`;
+            enhancedPrompt = `${enhancedPrompt}\n\n${mentionGuidance}`;
+          }
+        }
+        
+        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel);
 
         // Save new AI messages
-        const lines = aiResponse.split('\n').filter(l => l.trim() !== '');
-        for (const line of lines) {
-          let charId: string | undefined;
-          let content = line;
-
-          const colonIndex = line.indexOf(':');
-          if (colonIndex !== -1) {
-            const name = line.substring(0, colonIndex).trim();
-            const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
-            if (char) {
-              charId = char.id;
-              content = line.substring(colonIndex + 1).trim();
-            }
-          }
-
-          try {
-            await addDoc(collection(db, `chats/${chatId}/messages`), {
-              chatId,
-              role: 'model',
-              characterId: charId || characters[0].id,
-              content: content,
-              createdAt: serverTimestamp()
-            });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
-          }
+        if (aiResponse) {
+          await saveSplitMessages(chatId, aiResponse, targetCharId);
         }
 
         // Update chat timestamp
@@ -618,10 +672,12 @@ export function Chat() {
       const lastCharId = lastModelMessage?.characterId;
       
       let skipPrompt = "(The user has skipped their turn. Exactly ONE character should respond now to continue the conversation or address another character. Do not include multiple characters in your response.)";
+      let targetCharId: string | null = null;
       
       if (respondingCharacterId) {
         const targetChar = characters.find(c => c.id === respondingCharacterId);
         if (targetChar) {
+          targetCharId = targetChar.id;
           skipPrompt = `(The user has skipped their turn. ${targetChar.name} should respond now.)`;
         }
         setRespondingCharacterId(null);
@@ -633,6 +689,7 @@ export function Chat() {
           const lastIndex = characters.findIndex(c => c.id === lastCharId);
           const nextIndex = (lastIndex + 1) % characters.length;
           const nextChar = characters[nextIndex];
+          targetCharId = nextChar.id;
           
           const lastFirstName = lastChar.name.split(' ')[0];
           const nextFirstName = nextChar.name.split(' ')[0];
@@ -643,7 +700,7 @@ export function Chat() {
       const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel);
 
       if (aiResponse) {
-        await saveSplitMessages(chatId, aiResponse);
+        await saveSplitMessages(chatId, aiResponse, targetCharId);
       }
 
       try {
@@ -871,61 +928,6 @@ export function Chat() {
     initChat();
   }, [user, characterId, urlChatId, navigate]);
 
-  const saveSplitMessages = async (chatId: string, aiResponse: string) => {
-    // Split by "Name: " at the beginning of a line
-    const lines = aiResponse.split('\n');
-    let currentMessages: { charId: string | null, name: string | null, content: string }[] = [];
-    
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-      
-      const colonIndex = trimmedLine.indexOf(':');
-      if (colonIndex !== -1 && colonIndex < 50) {
-        const name = trimmedLine.substring(0, colonIndex).trim();
-        const char = characters.find(c => c.name.toLowerCase() === name.toLowerCase());
-        
-        if (char) {
-          currentMessages.push({
-            charId: char.id,
-            name: char.name,
-            content: trimmedLine.substring(colonIndex + 1).trim()
-          });
-          continue;
-        }
-      }
-      
-      // If no name found or it's a continuation line
-      if (currentMessages.length > 0) {
-        currentMessages[currentMessages.length - 1].content += '\n' + trimmedLine;
-      } else {
-        // Fallback for first line if no name found
-        currentMessages.push({
-          charId: characters[0].id,
-          name: characters[0].name,
-          content: trimmedLine
-        });
-      }
-    }
-
-    // Save each message sequentially to help with ordering
-    for (const msg of currentMessages) {
-      try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'model',
-          characterId: msg.charId || characters[0].id,
-          content: msg.content,
-          createdAt: serverTimestamp()
-        });
-        // Small delay to ensure distinct timestamps
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
-      }
-    }
-  };
-
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
@@ -971,6 +973,8 @@ export function Chat() {
       
       // Enhance user message with explicit mention guidance if needed
       let enhancedPrompt = userMessage;
+      let targetCharId: string | null = null;
+      
       if (characters.length > 1) {
         const mentionedChars = characters.filter(c => 
           userMessage.toLowerCase().includes(c.name.toLowerCase()) || 
@@ -980,11 +984,15 @@ export function Chat() {
         if (respondingCharacterId) {
           const targetChar = characters.find(c => c.id === respondingCharacterId);
           if (targetChar) {
+            targetCharId = targetChar.id;
             const mentionGuidance = `(STRICT: Only ${targetChar.name} should respond to this message. Other characters MUST remain silent.)`;
             enhancedPrompt = `${userMessage}\n\n${mentionGuidance}`;
           }
           setRespondingCharacterId(null);
         } else if (mentionedChars.length > 0) {
+          if (mentionedChars.length === 1) {
+            targetCharId = mentionedChars[0].id;
+          }
           const mentionGuidance = `(STRICT: Only ${mentionedChars.map(c => c.name).join(' and ')} should respond to this message. Other characters MUST remain silent.)`;
           enhancedPrompt = `${userMessage}\n\n${mentionGuidance}`;
         }
@@ -994,7 +1002,7 @@ export function Chat() {
 
       // 3. Save AI message (split into multiple if needed)
       if (aiResponse) {
-        await saveSplitMessages(chatId, aiResponse);
+        await saveSplitMessages(chatId, aiResponse, targetCharId);
       }
 
       // Update chat timestamp again
