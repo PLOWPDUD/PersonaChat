@@ -14,8 +14,35 @@ export function Profile() {
   const [formData, setFormData] = useState({
     displayName: '',
     photoURL: '',
-    userPersona: ''
+    personas: [] as { id: string; name: string; description: string }[]
   });
+  const [newPersona, setNewPersona] = useState({ name: '', description: '' });
+  const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
+
+  const handleAddPersona = () => {
+    if (!newPersona.name) return;
+    setFormData(prev => ({
+      ...prev,
+      personas: [...prev.personas, { id: Date.now().toString(), ...newPersona }]
+    }));
+    setNewPersona({ name: '', description: '' });
+  };
+
+  const handleDeletePersona = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      personas: prev.personas.filter(p => p.id !== id)
+    }));
+  };
+
+  const handleUpdatePersona = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      personas: prev.personas.map(p => p.id === id ? { ...p, ...newPersona } : p)
+    }));
+    setEditingPersonaId(null);
+    setNewPersona({ name: '', description: '' });
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -79,7 +106,7 @@ export function Profile() {
           setFormData({
             displayName: data.displayName || '',
             photoURL: data.photoURL || '',
-            userPersona: data.userPersona || ''
+            personas: data.personas || []
           });
         }
       } catch (err: any) {
