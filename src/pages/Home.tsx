@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart } from 'lucide-react';

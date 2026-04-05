@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2 } from 'lucide-react';
@@ -8,9 +8,11 @@ import { useNavigate } from 'react-router-dom';
 export function Admin() {
   const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'reports'>('reports');
+  const [activeTab, setActiveTab] = useState<'users' | 'reports' | 'settings' | 'privateCharacters'>('reports');
   const [profiles, setProfiles] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [privateCharacters, setPrivateCharacters] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -31,6 +33,15 @@ export function Admin() {
           const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
           const snap = await getDocs(q);
           setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } else if (activeTab === 'privateCharacters' && isModerator) {
+          const q = query(collection(db, 'characters'), where('visibility', '==', 'private'));
+          const snap = await getDocs(q);
+          setPrivateCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } else if (activeTab === 'settings' && isOwner) {
+          const settingsSnap = await getDoc(doc(db, 'settings', 'config'));
+          if (settingsSnap.exists()) {
+            setSettings(settingsSnap.data());
+          }
         }
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, activeTab);
@@ -41,6 +52,20 @@ export function Admin() {
 
     fetchData();
   }, [isOwner, isModerator, activeTab, navigate]);
+
+  const handleToggleModeratorPrivate = async () => {
+    if (!isOwner) return;
+    setUpdatingId('moderatorCanSeePrivate');
+    try {
+      const settingsRef = doc(db, 'settings', 'config');
+      await setDoc(settingsRef, { moderatorCanSeePrivate: !settings.moderatorCanSeePrivate }, { merge: true });
+      setSettings(prev => ({ ...prev, moderatorCanSeePrivate: !prev.moderatorCanSeePrivate }));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/config');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (!isOwner) return;
@@ -101,6 +126,24 @@ export function Admin() {
             Users
           </button>
         )}
+        {isOwner && (
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Settings
+          </button>
+        )}
+        <button
+          onClick={() => setActiveTab('privateCharacters')}
+          className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'privateCharacters' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          Private Characters
+        </button>
       </div>
 
       {loading ? (
@@ -157,6 +200,43 @@ export function Admin() {
               ))}
             </tbody>
           </table>
+        </div>
+      ) : activeTab === 'privateCharacters' && isModerator ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {privateCharacters.map(char => (
+            <div key={char.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4">
+              {char.avatarUrl ? (
+                <img src={char.avatarUrl} alt={char.name} className="w-16 h-16 rounded-xl object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-zinc-800 flex items-center justify-center">
+                  <User className="w-8 h-8 text-zinc-500" />
+                </div>
+              )}
+              <div>
+                <h3 className="text-white font-bold">{char.name}</h3>
+                <p className="text-zinc-400 text-sm">Creator: {char.creatorId}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : activeTab === 'settings' && isOwner ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          <h2 className="text-xl font-bold text-white mb-4">Settings</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white font-medium">Moderator Access to Private Characters</p>
+              <p className="text-zinc-400 text-sm">Allow moderators to view private characters.</p>
+            </div>
+            <button
+              onClick={handleToggleModeratorPrivate}
+              disabled={updatingId === 'moderatorCanSeePrivate'}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                settings.moderatorCanSeePrivate ? 'bg-green-600 text-white' : 'bg-zinc-700 text-zinc-300'
+              }`}
+            >
+              {updatingId === 'moderatorCanSeePrivate' ? <Loader2 className="w-4 h-4 animate-spin" /> : settings.moderatorCanSeePrivate ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

@@ -185,6 +185,11 @@ export function Search() {
                 <option value="funny">Funny</option>
                 <option value="original character">Original Character</option>
                 <option value="horror">Horror</option>
+                <option value="fantasy">Fantasy</option>
+                <option value="sci-fi">Sci-Fi</option>
+                <option value="action">Action</option>
+                <option value="romance">Romance</option>
+                <option value="mystery">Mystery</option>
               </select>
             )}
           </div>

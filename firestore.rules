@@ -83,6 +83,12 @@ service cloud.firestore {
         );
     }
 
+    function canModeratorSeePrivate() {
+      return isModeratorRole() &&
+             exists(/databases/$(database)/documents/settings/config) &&
+             get(/databases/$(database)/documents/settings/config).data.moderatorCanSeePrivate == true;
+    }
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -259,8 +265,8 @@ service cloud.firestore {
 
     match /characters/{characterId} {
       // Anyone authenticated can read public or unlisted characters, or their own private characters
-      allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner() || isModeratorRole());
-      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner() || isModeratorRole());
+      allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
+      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
       allow create: if isAuthenticated() && isValidCharacter();
       allow update: if isAuthenticated() && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']) && (isDocOwner() || isOwnerRole());
       allow delete: if isDocOwner() || isOwnerRole();
@@ -330,6 +336,12 @@ service cloud.firestore {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.characterId is string;
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow update: if isOwnerRole();
+      allow create: if isOwnerRole();
     }
 
     match /siteStats/{docId} {

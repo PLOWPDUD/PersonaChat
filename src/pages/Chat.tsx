@@ -1483,7 +1483,7 @@ export function Chat() {
                             ? 'bg-indigo-600 text-white rounded-tr-sm' 
                             : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
                         }`}>
-                          {msg.imageUrl && (
+                          {msg.imageUrl && msg.imageUrl.length > 0 && (
                             <div className="mb-3 rounded-lg overflow-hidden border border-white/10 shadow-lg">
                               <img src={msg.imageUrl} alt="Attachment" className="max-w-full h-auto object-contain max-h-96" referrerPolicy="no-referrer" />
                             </div>
@@ -1569,7 +1569,7 @@ export function Chat() {
 
             {/* Input Area */}
             <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
-              {selectedImage && (
+              {selectedImage && selectedImage.length > 0 && (
                 <div className="mb-3 relative inline-block">
                   <img src={selectedImage} alt="Preview" className="w-20 h-20 object-cover rounded-xl border border-zinc-700" />
                   <button
