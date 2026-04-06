@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
@@ -17,6 +17,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     { path: '/create', label: 'Create', icon: PlusCircle },
     { path: '/personas', label: 'Personas', icon: UserCircle },
     { path: '/stats', label: 'Stats', icon: Users },
+    { path: '/settings', label: 'Settings', icon: Settings },
   ];
 
   if (isModerator) {
@@ -31,7 +32,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     <div className="w-full bg-zinc-950 border-r border-zinc-800 flex flex-col h-full overflow-y-auto">
       <div className="p-6 flex items-center justify-between">
         <Link to="/" onClick={handleNavClick} className="flex items-center gap-2 text-xl font-bold text-white">
-          <MessageSquare className="w-8 h-8 text-indigo-500" />
+          <MessageSquare className="w-8 h-8 text-theme-primary" />
           <span>PersonaChat</span>
         </Link>
         {onClose && (
@@ -52,7 +53,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             onClick={handleNavClick}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
               location.pathname === item.path
-                ? 'bg-zinc-800 text-white'
+                ? 'bg-theme-primary/10 text-theme-primary'
                 : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
             }`}
           >

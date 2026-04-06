@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/Layout';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -18,6 +19,7 @@ import { Chat } from './pages/Chat';
 import { Stats } from './pages/Stats';
 import { Search } from './pages/Search';
 import { Admin } from './pages/Admin';
+import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
 
 // Protected Route wrapper
@@ -39,31 +41,34 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            
-            <Route path="/" element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }>
-              <Route index element={<Home />} />
-              <Route path="search" element={<Search />} />
-              <Route path="create" element={<CreateCharacter />} />
-              <Route path="edit/:characterId" element={<CreateCharacter />} />
-              <Route path="personas" element={<Personas />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="stats" element={<Stats />} />
-              <Route path="admin" element={<Admin />} />
-              <Route path="chat/:characterId" element={<Chat />} />
-              <Route path="chat/:characterId/:chatId" element={<Chat />} />
-            </Route>
-            
-            <Route path="/404" element={<NotFound />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Router>
+        <SettingsProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }>
+                <Route index element={<Home />} />
+                <Route path="search" element={<Search />} />
+                <Route path="create" element={<CreateCharacter />} />
+                <Route path="edit/:characterId" element={<CreateCharacter />} />
+                <Route path="personas" element={<Personas />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="stats" element={<Stats />} />
+                <Route path="admin" element={<Admin />} />
+                <Route path="chat/:characterId" element={<Chat />} />
+                <Route path="chat/:characterId/:chatId" element={<Chat />} />
+              </Route>
+              
+              <Route path="/404" element={<NotFound />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Router>
+        </SettingsProvider>
       </AuthProvider>
     </ErrorBoundary>
   );
