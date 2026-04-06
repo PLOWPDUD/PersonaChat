@@ -84,17 +84,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             const data = profileSnap.data();
             console.log("Profile found:", data);
-            // Migration: Ensure all required fields exist
+            
+            // Only update if essential fields are missing or if the display name/photo has changed from Google
             const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
-            if (needsUpdate) {
-              console.log("Profile needs update/migration");
+            const hasChanged = data.displayName !== profileData.displayName || data.photoURL !== profileData.photoURL;
+
+            if (needsUpdate || hasChanged) {
+              console.log("Profile needs update/migration or has changed");
               const updates: any = {
                 uid: data.uid || profileData.uid,
-                displayName: data.displayName || profileData.displayName,
-                displayName_lowercase: (data.displayName || profileData.displayName).toLowerCase(),
-                email: data.email || profileData.email
+                displayName: profileData.displayName,
+                displayName_lowercase: profileData.displayName.toLowerCase(),
+                photoURL: profileData.photoURL,
+                email: data.email || profileData.email,
+                updatedAt: serverTimestamp()
               };
-              if (!data.createdAt) updates.createdAt = data.createdAt || serverTimestamp();
+              if (!data.createdAt) updates.createdAt = serverTimestamp();
               
               await updateDoc(profileRef, updates);
               setProfile({ ...data, ...updates });
@@ -103,10 +108,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
 
-          // Increment visitor count on every session
-          const statsRef = doc(db, 'siteStats', 'global');
-          await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
-          console.log("Visitor count incremented");
+          // Increment visitor count only once per session to save writes/reads
+          const hasIncremented = sessionStorage.getItem('visitor_incremented');
+          if (!hasIncremented) {
+            const statsRef = doc(db, 'siteStats', 'global');
+            await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
+            sessionStorage.setItem('visitor_incremented', 'true');
+            console.log("Visitor count incremented (once per session)");
+          }
 
         } catch (error) {
           console.error('Error syncing profile:', error);

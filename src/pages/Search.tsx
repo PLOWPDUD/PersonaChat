@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { QuotaExceeded } from '../components/QuotaExceeded';
 
 interface Profile {
   uid: string;
@@ -33,6 +35,7 @@ export function Search() {
   const [isSearching, setIsSearching] = useState(false);
   const [isGroupMode, setIsGroupMode] = useState(false);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -68,7 +71,16 @@ export function Search() {
         }
         
         const snap = await getDocs(q);
-        const chars = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+        const chars = snap.docs.map(doc => {
+          const data = doc.data() as Record<string, any>;
+          const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
+          return { 
+            id: doc.id, 
+            ...data,
+            creatorName: data.creatorName || cachedName
+          } as Character;
+        });
+        
         const creatorIds = new Set<string>();
         
         chars.forEach(char => {
@@ -91,6 +103,9 @@ export function Search() {
             });
           }
 
+          // Update cache
+          setCachedProfiles(profiles);
+
           chars.forEach(char => {
             if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
               char.creatorName = profiles[char.creatorId];
@@ -110,7 +125,11 @@ export function Search() {
         setProfiles(snap.docs.map(doc => doc.data() as Profile));
       }
     } catch (error) {
-      console.error('Search error:', error);
+      if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
+        setQuotaExceeded(true);
+      } else {
+        console.error('Search error:', error);
+      }
     } finally {
       setIsSearching(false);
     }
@@ -132,7 +151,11 @@ export function Search() {
         creatorName: profile.displayName 
       } as Character)));
     } catch (error) {
-      console.error('Error fetching user characters:', error);
+      if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
+        setQuotaExceeded(true);
+      } else {
+        console.error('Error fetching user characters:', error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -261,7 +284,11 @@ export function Search() {
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <AnimatePresence mode="wait">
-            {selectedUser ? (
+            {quotaExceeded ? (
+          <div className="p-4">
+            <QuotaExceeded />
+          </div>
+        ) : selectedUser ? (
               <motion.div
                 key="user-detail"
                 initial={{ opacity: 0, x: 20 }}

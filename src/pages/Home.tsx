@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { QuotaExceeded } from '../components/QuotaExceeded';
 
 interface Character {
   id: string;
@@ -45,6 +47,7 @@ export function Home() {
   const [isDeletingChat, setIsDeletingChat] = useState<string | null>(null);
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   const toggleFavorite = async (e: React.MouseEvent, charId: string) => {
     e.preventDefault();
@@ -111,6 +114,13 @@ export function Home() {
     if (!user) return;
 
     const fetchFavorites = async () => {
+      // Check cache first
+      const cachedFavs = getCachedFavorites();
+      if (cachedFavs) {
+        setFavorites(cachedFavs);
+        return;
+      }
+
       try {
         const favsRef = collection(db, 'favorites');
         const favsQ = query(favsRef, where('userId', '==', user.uid));
@@ -118,6 +128,7 @@ export function Home() {
         const favIds = new Set<string>();
         favsSnapshot.forEach(doc => favIds.add(doc.data().characterId));
         setFavorites(favIds);
+        setCachedFavorites(favIds);
       } catch (error) {
         console.error('Error fetching favorites:', error);
       }
@@ -130,7 +141,16 @@ export function Home() {
     if (!user) return;
 
     const fetchData = async () => {
-      // Check if we already have cached data for this tab
+      // Check global cache first
+      const globalCached = getCachedData(tab);
+      if (globalCached && globalCached.length > 0) {
+        if (tab === 'recent') setRecentChats(globalCached);
+        else setCharacters(globalCached);
+        setLoading(false);
+        return;
+      }
+
+      // Check local component cache
       if (tab === 'recent' && cachedData.recent.length > 0) {
         setRecentChats(cachedData.recent);
         setLoading(false);
@@ -151,7 +171,7 @@ export function Home() {
       try {
         if (tab === 'recent') {
           const chatsRef = collection(db, 'chats');
-          const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(50));
+          const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(30));
           const snapshot = await getDocs(q);
           
           const chats: any[] = [];
@@ -161,7 +181,11 @@ export function Home() {
             const chatData = chatDoc.data();
             const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
             
-            if (!chatData.creatorName && chatData.creatorId) {
+            // Check cache for creatorName
+            const cachedName = chatData.creatorId ? getCachedProfile(chatData.creatorId) : null;
+            const creatorName = chatData.creatorName || cachedName || 'Unknown';
+
+            if (!chatData.creatorName && chatData.creatorId && !cachedName) {
               creatorIds.add(chatData.creatorId);
             }
 
@@ -173,7 +197,7 @@ export function Home() {
                 id: charId || 'unknown', 
                 name: chatData.characterName || 'Unknown Character', 
                 avatarUrl: chatData.characterAvatarUrl || '',
-                creatorName: chatData.creatorName || 'Unknown',
+                creatorName: creatorName,
                 likesCount: chatData.likesCount || 0,
                 interactionsCount: chatData.interactionsCount || 0,
                 averageRating: chatData.averageRating
@@ -196,6 +220,9 @@ export function Home() {
               });
             }
 
+            // Update cache
+            setCachedProfiles(profiles);
+
             chats.forEach(chat => {
               if (chat.character.creatorName === 'Unknown' && chat.creatorId && profiles[chat.creatorId]) {
                 chat.character.creatorName = profiles[chat.creatorId];
@@ -204,15 +231,16 @@ export function Home() {
           }
           
           setRecentChats(chats);
+          updateGlobalCache('recent', chats);
           setCachedData(prev => ({ ...prev, recent: chats }));
         } else {
           const charactersRef = collection(db, 'characters');
           let q;
           
           if (tab === 'public') {
-            q = query(charactersRef, where('visibility', '==', 'public'), limit(50));
+            q = query(charactersRef, where('visibility', '==', 'public'), limit(30));
           } else {
-            q = query(charactersRef, where('creatorId', '==', user.uid), limit(50));
+            q = query(charactersRef, where('creatorId', '==', user.uid), limit(30));
           }
 
           const snapshot = await getDocs(q);
@@ -221,8 +249,16 @@ export function Home() {
           
           snapshot.forEach((doc) => {
             const data = doc.data() as Record<string, any>;
-            chars.push({ id: doc.id, ...data } as Character);
-            if (!data.creatorName && data.creatorId) {
+            const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
+            const creatorName = data.creatorName || cachedName;
+            
+            chars.push({ 
+              id: doc.id, 
+              ...data,
+              creatorName: creatorName
+            } as Character);
+
+            if (!data.creatorName && data.creatorId && !cachedName) {
               creatorIds.add(data.creatorId);
             }
           });
@@ -243,6 +279,9 @@ export function Home() {
               });
             }
 
+            // Update cache
+            setCachedProfiles(profiles);
+
             // Update characters with fetched names
             chars.forEach(char => {
               if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
@@ -253,13 +292,19 @@ export function Home() {
 
           setCharacters(chars);
           if (tab === 'public') {
+            updateGlobalCache('public', chars);
             setCachedData(prev => ({ ...prev, public: chars }));
           } else {
+            updateGlobalCache('mine', chars);
             setCachedData(prev => ({ ...prev, mine: chars }));
           }
         }
       } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');
+        if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
+          setQuotaExceeded(true);
+        } else {
+          handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');
+        }
       } finally {
         setLoading(false);
       }
@@ -457,7 +502,9 @@ export function Home() {
         </div>
       </div>
 
-      {loading ? (
+      {quotaExceeded ? (
+        <QuotaExceeded />
+      ) : loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 h-64 animate-pulse">

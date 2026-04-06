@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -850,7 +851,10 @@ export function Chat() {
         // Fetch missing creator names from profiles
         const creatorIds = new Set<string>();
         fetchedChars.forEach(char => {
-          if (!char.creatorName && char.creatorId) {
+          const cachedName = char.creatorId ? getCachedProfile(char.creatorId) : null;
+          if (cachedName) {
+            char.creatorName = cachedName;
+          } else if (!char.creatorName && char.creatorId) {
             creatorIds.add(char.creatorId);
           }
         });
@@ -868,6 +872,9 @@ export function Chat() {
               profiles[pDoc.id] = pData.displayName || 'Anonymous';
             });
           }
+
+          // Update cache
+          setCachedProfiles(profiles);
 
           fetchedChars.forEach(char => {
             if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
