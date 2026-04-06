@@ -147,7 +147,7 @@ service cloud.firestore {
 
     function isValidProfile(userId) {
       return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'userPersona', 'createdAt', 'updatedAt', 'role', 'email']) &&
+             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'userPersona', 'personas', 'createdAt', 'updatedAt', 'role', 'email']) &&
              request.resource.data.uid == userId &&
              validStringLength('displayName', 1, 100) &&
              request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
@@ -156,11 +156,12 @@ service cloud.firestore {
              isValidOptionalString('email', 0, 200) &&
              request.resource.data.createdAt is timestamp &&
              isValidOptionalTimestamp('updatedAt') &&
-             (!('role' in request.resource.data) || request.resource.data.role in ['user', 'moderator', 'owner']);
+             (!('role' in request.resource.data) || request.resource.data.role in ['user', 'moderator', 'owner']) &&
+             (!('personas' in request.resource.data) || request.resource.data.personas is list);
     }
 
     function isValidCharacter() {
-      return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt', 'likesCount', 'interactionsCount']) &&
+      return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt']) &&
              hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'category', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
@@ -272,11 +273,13 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         ((isDocOwner() || isOwnerRole()) && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt'])) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['interactionsCount']) &&
-         request.resource.data.interactionsCount == resource.data.interactionsCount + 1) ||
+         request.resource.data.interactionsCount == (resource.data.get('interactionsCount', 0) + 1)) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
-         request.resource.data.likesCount == resource.data.likesCount + 1) ||
+         request.resource.data.likesCount == (resource.data.get('likesCount', 0) + 1)) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
-         request.resource.data.likesCount == resource.data.likesCount - 1)
+         request.resource.data.likesCount == (resource.data.get('likesCount', 0) - 1)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasAny(['ratingCount', 'totalRatingScore', 'averageRating']) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingCount', 'totalRatingScore', 'averageRating']))
       );
       allow delete: if isDocOwner() || isOwnerRole();
       
