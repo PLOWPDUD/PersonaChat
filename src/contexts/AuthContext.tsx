@@ -48,11 +48,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log("Auth state changed:", currentUser ? `User logged in: ${currentUser.uid}` : "User logged out");
       setUser(currentUser);
       
       if (currentUser) {
         try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
+          console.log("Fetching profile for:", currentUser.uid);
           const profileSnap = await getDoc(profileRef);
           
           const profileData = {
@@ -64,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
 
           if (!profileSnap.exists()) {
+            console.log("No profile found, creating new one...");
             const newProfile = {
               ...profileData,
               displayName_lowercase: profileData.displayName.toLowerCase(),
@@ -71,16 +74,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: 'user'
             };
             await setDoc(profileRef, newProfile);
+            console.log("New profile created");
             setProfile(newProfile);
 
             // Increment user count
             const statsRef = doc(db, 'siteStats', 'global');
             await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
+            console.log("User count incremented");
           } else {
             const data = profileSnap.data();
+            console.log("Profile found:", data);
             // Migration: Ensure all required fields exist
             const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
             if (needsUpdate) {
+              console.log("Profile needs update/migration");
               const updates: any = {
                 uid: data.uid || profileData.uid,
                 displayName: data.displayName || profileData.displayName,
@@ -99,6 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Increment visitor count on every session
           const statsRef = doc(db, 'siteStats', 'global');
           await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
+          console.log("Visitor count incremented");
 
         } catch (error) {
           console.error('Error syncing profile:', error);

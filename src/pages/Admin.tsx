@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2 } from 'lucide-react';
@@ -26,15 +26,15 @@ export function Admin() {
       setLoading(true);
       try {
         if (activeTab === 'users' && isOwner) {
-          const q = query(collection(db, 'profiles'), orderBy('createdAt', 'desc'));
+          const q = query(collection(db, 'profiles'), orderBy('createdAt', 'desc'), limit(50));
           const snap = await getDocs(q);
           setProfiles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } else if (activeTab === 'reports') {
-          const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
+          const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
           const snap = await getDocs(q);
           setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } else if (activeTab === 'privateCharacters' && isModerator) {
-          const q = query(collection(db, 'characters'), where('visibility', '==', 'private'));
+          const q = query(collection(db, 'characters'), where('visibility', '==', 'private'), limit(50));
           const snap = await getDocs(q);
           setPrivateCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } else if (activeTab === 'settings' && isOwner) {

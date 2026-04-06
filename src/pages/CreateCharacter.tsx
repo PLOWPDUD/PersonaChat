@@ -143,12 +143,15 @@ export function CreateCharacter() {
 
     try {
       const name_lowercase = formData.name.toLowerCase();
+      const creatorName = user.displayName || 'Anonymous User';
+
       if (characterId) {
         // Update existing character
         const charRef = doc(db, 'characters', characterId);
         await updateDoc(charRef, {
           ...formData,
           name_lowercase,
+          creatorName,
           updatedAt: serverTimestamp()
         });
         navigate(`/chat/${characterId}`);
@@ -158,6 +161,7 @@ export function CreateCharacter() {
           ...formData,
           name_lowercase,
           creatorId: user.uid,
+          creatorName,
           createdAt: serverTimestamp(),
           likesCount: 0,
           interactionsCount: 0

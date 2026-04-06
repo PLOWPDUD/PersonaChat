@@ -17,6 +17,7 @@ interface Character {
   avatarUrl: string;
   description: string;
   creatorId: string;
+  creatorName?: string;
   averageRating?: number;
 }
 
@@ -67,7 +68,37 @@ export function Search() {
         }
         
         const snap = await getDocs(q);
-        setCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character)));
+        const chars = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+        const creatorIds = new Set<string>();
+        
+        chars.forEach(char => {
+          if (!char.creatorName && char.creatorId) {
+            creatorIds.add(char.creatorId);
+          }
+        });
+
+        if (creatorIds.size > 0) {
+          const creatorIdsArray = Array.from(creatorIds);
+          const profiles: Record<string, string> = {};
+          
+          for (let i = 0; i < creatorIdsArray.length; i += 30) {
+            const chunk = creatorIdsArray.slice(i, i + 30);
+            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+            const profilesSnap = await getDocs(profilesQ);
+            profilesSnap.forEach(pDoc => {
+              const pData = pDoc.data();
+              profiles[pDoc.id] = pData.displayName || 'Anonymous';
+            });
+          }
+
+          chars.forEach(char => {
+            if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
+              char.creatorName = profiles[char.creatorId];
+            }
+          });
+        }
+        
+        setCharacters(chars);
       } else {
         const q = query(
           collection(db, 'profiles'),
@@ -92,11 +123,14 @@ export function Search() {
       const q = query(
         collection(db, 'characters'),
         where('creatorId', '==', profile.uid),
-        where('visibility', '==', 'public'),
-        orderBy('createdAt', 'desc')
+        where('visibility', '==', 'public')
       );
       const snap = await getDocs(q);
-      setUserCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character)));
+      setUserCharacters(snap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        creatorName: profile.displayName 
+      } as Character)));
     } catch (error) {
       console.error('Error fetching user characters:', error);
     } finally {
@@ -299,6 +333,7 @@ export function Search() {
                                   </span>
                                 )}
                               </h3>
+                              <p className="text-zinc-500 text-[10px] mb-1">By {char.creatorName || 'Unknown'}</p>
                               <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                             </div>
                             {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
@@ -358,6 +393,7 @@ export function Search() {
                                 </span>
                               )}
                             </h3>
+                            <p className="text-zinc-500 text-[10px] mb-1">By {char.creatorName || 'Unknown'}</p>
                             <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                           </div>
                           {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}

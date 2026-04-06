@@ -19,6 +19,7 @@ interface Character {
   likesCount: number;
   interactionsCount: number;
   creatorId: string;
+  creatorName?: string;
   ratingCount?: number;
   totalRatingScore?: number;
   averageRating?: number;
@@ -82,6 +83,41 @@ export function Chat() {
   const [isFetchingRecent, setIsFetchingRecent] = useState(false);
   const [characterSearchQuery, setCharacterSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Character[]>([]);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (characterSearchQuery.trim().length >= 2) {
+        const performSearch = async () => {
+          try {
+            const charsRef = collection(db, 'characters');
+            const q = query(
+              charsRef, 
+              where('visibility', '==', 'public'),
+              where('name_lowercase', '>=', characterSearchQuery.toLowerCase()),
+              where('name_lowercase', '<=', characterSearchQuery.toLowerCase() + '\uf8ff'),
+              limit(5)
+            );
+            const snapshot = await getDocs(q);
+            const results: Character[] = [];
+            snapshot.forEach(doc => {
+              const data = doc.data() as Character;
+              if (!characters.some(c => c.id === doc.id)) {
+                results.push({ id: doc.id, ...data });
+              }
+            });
+            setSearchResults(results);
+          } catch (error) {
+            console.error('Error searching characters:', error);
+          }
+        };
+        performSearch();
+      } else {
+        setSearchResults([]);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [characterSearchQuery, characters]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
   const [userPersona, setUserPersona] = useState('');
@@ -188,15 +224,15 @@ export function Chat() {
         return;
       }
 
-      // Fetch character details
+      // Fetch character details in batch
       const chars: Character[] = [];
-      const charIdsArray = Array.from(charIds).slice(0, 10); // Limit to 10 for now
+      const charIdsArray = Array.from(charIds).slice(0, 30);
       
-      for (const id of charIdsArray) {
-        const charDoc = await getDoc(doc(db, 'characters', id));
-        if (charDoc.exists()) {
-          chars.push({ id: charDoc.id, ...charDoc.data() } as Character);
-        }
+      for (let i = 0; i < charIdsArray.length; i += 30) {
+        const chunk = charIdsArray.slice(i, i + 30);
+        const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
+        const charSnap = await getDocs(charQ);
+        charSnap.forEach(doc => chars.push({ id: doc.id, ...doc.data() } as Character));
       }
       setRecentCharacters(chars);
     } catch (error) {
@@ -206,35 +242,8 @@ export function Chat() {
     }
   };
 
-  const handleCharacterSearch = async (queryStr: string) => {
+  const handleCharacterSearch = (queryStr: string) => {
     setCharacterSearchQuery(queryStr);
-    if (queryStr.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    try {
-      const charsRef = collection(db, 'characters');
-      // Simple search by name (case-sensitive in Firestore, but we can do a prefix search)
-      const q = query(
-        charsRef, 
-        where('visibility', '==', 'public'),
-        where('name_lowercase', '>=', queryStr.toLowerCase()),
-        where('name_lowercase', '<=', queryStr.toLowerCase() + '\uf8ff'),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      const results: Character[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data() as Character;
-        if (!characters.some(c => c.id === doc.id)) {
-          results.push({ id: doc.id, ...data });
-        }
-      });
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching characters:', error);
-    }
   };
 
   const handleAddCharacterToChat = async (char: Character) => {
@@ -372,6 +381,9 @@ export function Chat() {
         userId: user.uid,
         characterIds: charIds,
         characterId: characterId, // legacy
+        characterName: primaryChar.name,
+        characterAvatarUrl: primaryChar.avatarUrl,
+        creatorName: primaryChar.creatorName || 'Unknown',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`
@@ -819,17 +831,51 @@ export function Chat() {
           return;
         }
 
-        // 1. Fetch all characters
-        const charPromises = charIds.map(id => getDoc(doc(db, 'characters', id)));
-        const charSnaps = await Promise.all(charPromises);
-        const fetchedChars = charSnaps
-          .filter(s => s.exists())
-          .map(s => ({ id: s.id, ...s.data() } as Character));
+        // 1. Fetch all characters in batch
+        const fetchedChars: Character[] = [];
+        const charIdsArray = Array.from(new Set(charIds));
+        
+        for (let i = 0; i < charIdsArray.length; i += 30) {
+          const chunk = charIdsArray.slice(i, i + 30);
+          const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
+          const charSnap = await getDocs(charQ);
+          charSnap.forEach(doc => fetchedChars.push({ id: doc.id, ...doc.data() } as Character));
+        }
         
         if (fetchedChars.length === 0) {
           navigate('/404');
           return;
         }
+
+        // Fetch missing creator names from profiles
+        const creatorIds = new Set<string>();
+        fetchedChars.forEach(char => {
+          if (!char.creatorName && char.creatorId) {
+            creatorIds.add(char.creatorId);
+          }
+        });
+
+        if (creatorIds.size > 0) {
+          const creatorIdsArray = Array.from(creatorIds);
+          const profiles: Record<string, string> = {};
+          
+          for (let i = 0; i < creatorIdsArray.length; i += 30) {
+            const chunk = creatorIdsArray.slice(i, i + 30);
+            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+            const profilesSnap = await getDocs(profilesQ);
+            profilesSnap.forEach(pDoc => {
+              const pData = pDoc.data();
+              profiles[pDoc.id] = pData.displayName || 'Anonymous';
+            });
+          }
+
+          fetchedChars.forEach(char => {
+            if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
+              char.creatorName = profiles[char.creatorId];
+            }
+          });
+        }
+        
         setCharacters(fetchedChars);
         const primaryChar = fetchedChars[0];
 
@@ -868,6 +914,9 @@ export function Chat() {
               userId: user.uid,
               characterIds: charIds,
               characterId: characterId, // legacy
+              characterName: primaryChar.name,
+              characterAvatarUrl: primaryChar.avatarUrl,
+              creatorName: primaryChar.creatorName || 'Unknown',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               title: `Chat with ${primaryChar.name}`
@@ -1303,7 +1352,7 @@ export function Chat() {
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
-                {characters.length > 1 ? `${characters.length} characters` : 'AI Character'}
+                {characters.length > 1 ? `${characters.length} characters` : `By ${characters[0]?.creatorName || 'Unknown'}`}
               </p>
             </div>
           </div>

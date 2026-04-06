@@ -162,11 +162,12 @@ service cloud.firestore {
 
     function isValidCharacter() {
       return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'category', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
+             hasOnlyAllowedFields(['creatorId', 'creatorName', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'category', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
              request.resource.data.creatorId == request.auth.uid &&
              validStringLength('name', 1, 100) &&
              request.resource.data.name_lowercase == request.resource.data.name.lower() &&
              isValidOptionalString('avatarUrl', 0, 1000000) &&
+             isValidOptionalString('creatorName', 0, 100) &&
              validStringLength('greeting', 1, 5000) &&
              validStringLength('description', 1, 10000) &&
              isValidOptionalString('personality', 0, 5000) &&
@@ -189,13 +190,16 @@ service cloud.firestore {
 
     function isValidChat() {
       return hasRequiredFields(['userId', 'createdAt', 'updatedAt']) &&
-             hasOnlyAllowedFields(['userId', 'characterId', 'characterIds', 'createdAt', 'updatedAt', 'title']) &&
+             hasOnlyAllowedFields(['userId', 'characterId', 'characterIds', 'createdAt', 'updatedAt', 'title', 'characterName', 'characterAvatarUrl', 'creatorName']) &&
              request.resource.data.userId == request.auth.uid &&
              (
                ('characterIds' in request.resource.data && request.resource.data.characterIds is list && request.resource.data.characterIds.size() > 0) ||
                ('characterId' in request.resource.data && request.resource.data.characterId is string)
              ) &&
              isValidOptionalString('title', 0, 200) &&
+             isValidOptionalString('characterName', 0, 100) &&
+             isValidOptionalString('characterAvatarUrl', 0, 1000000) &&
+             isValidOptionalString('creatorName', 0, 100) &&
              request.resource.data.createdAt is timestamp &&
              request.resource.data.updatedAt is timestamp;
     }

@@ -29,9 +29,15 @@ export function Home() {
   const [recentChats, setRecentChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'public' | 'mine' | 'recent'>('public');
+  const [cachedData, setCachedData] = useState<{
+    public: Character[];
+    mine: Character[];
+    recent: any[];
+  }>({ public: [], mine: [], recent: [] });
   const [isGroupChatModalOpen, setIsGroupChatModalOpen] = useState(false);
   const [selectedCharacters, setSelectedCharacters] = useState<Character[]>([]);
   const [recentCharacters, setRecentCharacters] = useState<Character[]>([]);
+  const [cachedRecentCharacters, setCachedRecentCharacters] = useState<Character[]>([]);
   const [isFetchingRecent, setIsFetchingRecent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Character[]>([]);
@@ -104,85 +110,109 @@ export function Home() {
   useEffect(() => {
     if (!user) return;
 
-    const fetchData = async () => {
-      setLoading(true);
+    const fetchFavorites = async () => {
       try {
-        // Fetch favorites
         const favsRef = collection(db, 'favorites');
         const favsQ = query(favsRef, where('userId', '==', user.uid));
         const favsSnapshot = await getDocs(favsQ);
         const favIds = new Set<string>();
         favsSnapshot.forEach(doc => favIds.add(doc.data().characterId));
         setFavorites(favIds);
+      } catch (error) {
+        console.error('Error fetching favorites:', error);
+      }
+    };
 
+    fetchFavorites();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchData = async () => {
+      // Check if we already have cached data for this tab
+      if (tab === 'recent' && cachedData.recent.length > 0) {
+        setRecentChats(cachedData.recent);
+        setLoading(false);
+        return;
+      }
+      if (tab === 'public' && cachedData.public.length > 0) {
+        setCharacters(cachedData.public);
+        setLoading(false);
+        return;
+      }
+      if (tab === 'mine' && cachedData.mine.length > 0) {
+        setCharacters(cachedData.mine);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
         if (tab === 'recent') {
           const chatsRef = collection(db, 'chats');
-          const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'));
+          const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(50));
           const snapshot = await getDocs(q);
           
           const chats: any[] = [];
-          for (const chatDoc of snapshot.docs) {
+          const creatorIds = new Set<string>();
+          
+          snapshot.docs.forEach(chatDoc => {
             const chatData = chatDoc.data();
-            // Fetch character info for each chat
-            // For group chats, use the first character in characterIds
             const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
             
-            if (charId) {
-              try {
-                const charRef = doc(db, 'characters', charId);
-                const charSnap = await getDoc(charRef);
-                if (charSnap.exists()) {
-                  const charData = charSnap.data();
-                  let creatorName = 'Unknown';
-                  if (charData.creatorId) {
-                    const profileRef = doc(db, 'profiles', charData.creatorId);
-                    const profileSnap = await getDoc(profileRef);
-                    if (profileSnap.exists()) {
-                      creatorName = profileSnap.data().displayName || 'Unknown';
-                    }
-                  }
-                  chats.push({
-                    id: chatDoc.id,
-                    ...chatData,
-                    characterId: charId,
-                    character: { id: charSnap.id, ...charData, creatorName }
-                  });
-                } else {
-                  chats.push({
-                    id: chatDoc.id,
-                    ...chatData,
-                    characterId: charId,
-                    character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
-                  });
-                }
-              } catch (e) {
-                console.error('Error fetching character for recent chat:', e);
-                chats.push({
-                  id: chatDoc.id,
-                  ...chatData,
-                  characterId: charId,
-                  character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
-                });
+            if (!chatData.creatorName && chatData.creatorId) {
+              creatorIds.add(chatData.creatorId);
+            }
+
+            chats.push({
+              id: chatDoc.id,
+              ...chatData,
+              characterId: charId || 'unknown',
+              character: { 
+                id: charId || 'unknown', 
+                name: chatData.characterName || 'Unknown Character', 
+                avatarUrl: chatData.characterAvatarUrl || '',
+                creatorName: chatData.creatorName || 'Unknown',
+                likesCount: chatData.likesCount || 0,
+                interactionsCount: chatData.interactionsCount || 0,
+                averageRating: chatData.averageRating
               }
-            } else {
-              // Fallback if no character info found
-              chats.push({
-                id: chatDoc.id,
-                ...chatData,
-                characterId: 'unknown',
-                character: { id: 'unknown', name: 'Unknown Character', avatarUrl: '' }
+            });
+          });
+
+          // Fetch missing creator names from profiles
+          if (creatorIds.size > 0) {
+            const creatorIdsArray = Array.from(creatorIds);
+            const profiles: Record<string, string> = {};
+            
+            for (let i = 0; i < creatorIdsArray.length; i += 30) {
+              const chunk = creatorIdsArray.slice(i, i + 30);
+              const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+              const profilesSnap = await getDocs(profilesQ);
+              profilesSnap.forEach(pDoc => {
+                const pData = pDoc.data();
+                profiles[pDoc.id] = pData.displayName || 'Anonymous';
               });
             }
+
+            chats.forEach(chat => {
+              if (chat.character.creatorName === 'Unknown' && chat.creatorId && profiles[chat.creatorId]) {
+                chat.character.creatorName = profiles[chat.creatorId];
+              }
+            });
           }
+          
           setRecentChats(chats);
+          setCachedData(prev => ({ ...prev, recent: chats }));
         } else {
           const charactersRef = collection(db, 'characters');
           let q;
           
           if (tab === 'public') {
-            q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'));
+            q = query(charactersRef, where('visibility', '==', 'public'), limit(50));
           } else {
-            q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'));
+            q = query(charactersRef, where('creatorId', '==', user.uid), limit(50));
           }
 
           const snapshot = await getDocs(q);
@@ -192,32 +222,41 @@ export function Home() {
           snapshot.forEach((doc) => {
             const data = doc.data() as Record<string, any>;
             chars.push({ id: doc.id, ...data } as Character);
-            if (data.creatorId) creatorIds.add(data.creatorId);
+            if (!data.creatorName && data.creatorId) {
+              creatorIds.add(data.creatorId);
+            }
           });
 
-          // Fetch creator names
-          const creatorMap = new Map<string, string>();
-          for (const creatorId of creatorIds) {
-            try {
-              const profileRef = doc(db, 'profiles', creatorId);
-              const profileSnap = await getDoc(profileRef);
-              if (profileSnap.exists()) {
-                creatorMap.set(creatorId, profileSnap.data().displayName || 'Unknown');
-              } else {
-                creatorMap.set(creatorId, 'Unknown');
-              }
-            } catch (e) {
-              console.error('Error fetching creator profile:', e);
-              creatorMap.set(creatorId, 'Unknown');
+          // Fetch missing creator names from profiles
+          if (creatorIds.size > 0) {
+            const creatorIdsArray = Array.from(creatorIds);
+            const profiles: Record<string, string> = {};
+            
+            // Batch fetch profiles (max 30 per query)
+            for (let i = 0; i < creatorIdsArray.length; i += 30) {
+              const chunk = creatorIdsArray.slice(i, i + 30);
+              const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+              const profilesSnap = await getDocs(profilesQ);
+              profilesSnap.forEach(pDoc => {
+                const pData = pDoc.data();
+                profiles[pDoc.id] = pData.displayName || 'Anonymous';
+              });
             }
+
+            // Update characters with fetched names
+            chars.forEach(char => {
+              if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
+                char.creatorName = profiles[char.creatorId];
+              }
+            });
           }
 
-          // Populate creatorName
-          chars.forEach(char => {
-            char.creatorName = creatorMap.get(char.creatorId) || 'Unknown';
-          });
-          
           setCharacters(chars);
+          if (tab === 'public') {
+            setCachedData(prev => ({ ...prev, public: chars }));
+          } else {
+            setCachedData(prev => ({ ...prev, mine: chars }));
+          }
         }
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');
@@ -231,10 +270,14 @@ export function Home() {
 
   const fetchRecentCharacters = async () => {
     if (!user) return;
+    if (cachedRecentCharacters.length > 0) {
+      setRecentCharacters(cachedRecentCharacters);
+      return;
+    }
     setIsFetchingRecent(true);
     try {
       const chatsRef = collection(db, 'chats');
-      const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(20));
+      const q = query(chatsRef, where('userId', '==', user.uid), limit(20));
       const snapshot = await getDocs(q);
       
       const charIds = new Set<string>();
@@ -251,16 +294,17 @@ export function Home() {
         return;
       }
 
-      const chars: Character[] = [];
-      const charIdsArray = Array.from(charIds).slice(0, 15);
+      const charIdsArray = Array.from(charIds).slice(0, 30);
       
-      for (const id of charIdsArray) {
-        const charDoc = await getDoc(doc(db, 'characters', id));
-        if (charDoc.exists()) {
-          chars.push({ id: charDoc.id, ...charDoc.data() } as Character);
-        }
+      const chars: Character[] = [];
+      for (let i = 0; i < charIdsArray.length; i += 30) {
+        const chunk = charIdsArray.slice(i, i + 30);
+        const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
+        const charSnap = await getDocs(charQ);
+        charSnap.forEach(doc => chars.push({ id: doc.id, ...doc.data() } as Character));
       }
       setRecentCharacters(chars);
+      setCachedRecentCharacters(chars);
     } catch (error) {
       console.error('Error fetching recent characters:', error);
     } finally {
@@ -268,31 +312,40 @@ export function Home() {
     }
   };
 
-  const handleSearch = async (queryStr: string) => {
-    setSearchQuery(queryStr);
-    if (queryStr.length < 2) {
-      setSearchResults([]);
-      return;
-    }
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim().length >= 2) {
+        const performSearch = async () => {
+          try {
+            const charsRef = collection(db, 'characters');
+            const q = query(
+              charsRef, 
+              where('visibility', '==', 'public'),
+              where('name_lowercase', '>=', searchQuery.toLowerCase()),
+              where('name_lowercase', '<=', searchQuery.toLowerCase() + '\uf8ff'),
+              limit(5)
+            );
+            const snapshot = await getDocs(q);
+            const results: Character[] = [];
+            snapshot.forEach(doc => {
+              results.push({ id: doc.id, ...doc.data() } as Character);
+            });
+            setSearchResults(results);
+          } catch (error) {
+            console.error('Error searching characters:', error);
+          }
+        };
+        performSearch();
+      } else {
+        setSearchResults([]);
+      }
+    }, 500);
 
-    try {
-      const charsRef = collection(db, 'characters');
-      const q = query(
-        charsRef, 
-        where('visibility', '==', 'public'),
-        where('name_lowercase', '>=', queryStr.toLowerCase()),
-        where('name_lowercase', '<=', queryStr.toLowerCase() + '\uf8ff'),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      const results: Character[] = [];
-      snapshot.forEach(doc => {
-        results.push({ id: doc.id, ...doc.data() } as Character);
-      });
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching characters:', error);
-    }
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const handleSearch = (queryStr: string) => {
+    setSearchQuery(queryStr);
   };
 
   const toggleCharacterSelection = (char: Character) => {
@@ -314,6 +367,9 @@ export function Home() {
         userId: user.uid,
         characterIds: charIds,
         characterId: charIds[0], // legacy support for single-character views
+        characterName: selectedCharacters[0].name,
+        characterAvatarUrl: selectedCharacters[0].avatarUrl,
+        creatorName: selectedCharacters[0].creatorName || 'Unknown',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: selectedCharacters.length > 1 ? `Group Chat with ${selectedCharacters.map(c => c.name).join(', ')}` : `Chat with ${selectedCharacters[0].name}`

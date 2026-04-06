@@ -4,9 +4,13 @@ import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, o
 import firebaseConfig from '@/firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
+console.log("Firebase initialized with project:", firebaseConfig.projectId);
+
 export const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence).catch(console.error);
+
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+console.log("Firestore initialized with database:", firebaseConfig.firestoreDatabaseId || "(default)");
 
 // Connection test
 async function testConnection() {
@@ -63,10 +67,9 @@ export const signInWithGoogle = async () => {
         ...profileData,
         createdAt: serverTimestamp()
       });
-    } else {
-      // Ensure search fields and email exist
-      await setDoc(profileRef, profileData, { merge: true });
     }
+    // If profile exists, we don't overwrite it here. 
+    // AuthContext.tsx handles any necessary background migrations/syncing.
 
     return user;
   } catch (error) {

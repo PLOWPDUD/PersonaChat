@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { UserCircle, Trash2, Plus, AlertCircle } from 'lucide-react';
@@ -25,7 +25,7 @@ export function Personas() {
       setLoading(true);
       try {
         const personasRef = collection(db, 'personas');
-        const q = query(personasRef, where('creatorId', '==', user.uid));
+        const q = query(personasRef, where('creatorId', '==', user.uid), limit(20));
         const snapshot = await getDocs(q);
         const p: Persona[] = [];
         snapshot.forEach((doc) => {
