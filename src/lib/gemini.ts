@@ -76,9 +76,11 @@ ${userPersonaContext}
 5. INTERACTION: Characters should talk to EACH OTHER. They have their own dynamics, conflicts, and relationships.
 6. DYNAMIC RESPONSE: Maintain a natural flow. Characters should take turns rather than all speaking at once.
 7. STORYTELLING: Be extremely brief. Only use actions (*nods*) or sensory details when absolutely necessary.
-8. CONCISENESS: STRICT BREVITY. Total response MUST be between 10 and 40 words. Never exceed 50 words.
+8. CONCISENESS: STRICT BREVITY. Total response MUST be between 10 and 60 words. Never exceed 80 words.
 9. LANGUAGE: You are permitted to use vulgar, profane, or explicit language if it fits the character's personality or the scene.
 10. EXPRESSION: Keep it grounded and realistic. Avoid "over-acting".
+11. WORLD KNOWLEDGE: Characters possess common sense and modern knowledge (e.g., they know what a phone is) unless their specific description or the established lore/setting explicitly states otherwise.
+12. CONTINUITY: Maintain strict continuity with the established chat timeline, story, and previous events. Do not forget what has happened.
 
 ### EXECUTION ###
 Respond to the user's latest message. Ensure the flow is natural and characters interact with each other.
@@ -87,33 +89,33 @@ Name1: Message
 Name2: Message
 (Or just the message if only one character speaks)`;
 
-      // Ensure roles alternate and remove any trailing user message if it matches the current one
+      // Ensure roles alternate and merge consecutive messages of the same role
       const contents: any[] = [];
-      let lastRole: string | null = null;
-
-      // Filter out empty messages and ensure role alternation
       const filteredHistory = chatHistory.filter(msg => msg.content.trim() !== '' || msg.imageUrl);
 
       for (const msg of filteredHistory) {
-        if (msg.role !== lastRole) {
-          const parts: any[] = [{ text: msg.content }];
-          
-          if (msg.imageUrl && msg.imageUrl.startsWith('data:')) {
-            const [header, base64Data] = msg.imageUrl.split(',');
-            const mimeType = header.split(';')[0].split(':')[1];
-            parts.push({
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType
-              }
-            });
-          }
+        const parts: any[] = [{ text: msg.content }];
+        
+        if (msg.imageUrl && msg.imageUrl.startsWith('data:')) {
+          const [header, base64Data] = msg.imageUrl.split(',');
+          const mimeType = header.split(';')[0].split(':')[1];
+          parts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType
+            }
+          });
+        }
 
+        if (contents.length > 0 && contents[contents.length - 1].role === msg.role) {
+          // Merge with previous message of the same role
+          const lastMsg = contents[contents.length - 1];
+          lastMsg.parts.push(...parts);
+        } else {
           contents.push({
             role: msg.role,
             parts: parts
           });
-          lastRole = msg.role;
         }
       }
       
@@ -132,14 +134,14 @@ Name2: Message
         });
       }
 
-      if (lastRole !== 'user') {
+      if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+        // If the last message was a user message, we append the new parts to it
+        contents[contents.length - 1].parts.push(...newUserParts);
+      } else {
         contents.push({
           role: 'user',
           parts: newUserParts
         });
-      } else {
-        // If the last message was a user message, we update it to include the new input
-        contents[contents.length - 1].parts = newUserParts;
       }
 
       const response = await ai.models.generateContent({
