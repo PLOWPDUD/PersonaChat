@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { signInWithGoogle, signInAnonymously } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageSquare, Sparkles, UserCircle } from 'lucide-react';
 
@@ -18,13 +18,8 @@ export function Login() {
     try {
       setError('');
       setIsLoading(true);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
+      await signInWithGoogle();
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
       setIsLoading(false);
@@ -35,8 +30,7 @@ export function Login() {
     try {
       setError('');
       setIsLoading(true);
-      const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
+      await signInAnonymously();
       navigate('/');
     } catch (err: any) {
       setError(err.message || 'Failed to sign in as guest');

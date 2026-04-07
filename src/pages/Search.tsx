@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +21,8 @@ interface Character {
   creatorId: string;
   creatorName?: string;
   averageRating?: number;
+  visibility: string;
+  category?: string;
 }
 
 export function Search() {
@@ -52,29 +55,45 @@ export function Search() {
 
   const handleSearch = async () => {
     setIsSearching(true);
-    const lowerQuery = searchQuery.toLowerCase();
+    const lowerQuery = searchQuery.toLowerCase().trim();
     try {
       if (activeTab === 'characters') {
-        let query = supabase.from('characters').select('*').eq('visibility', 'public').limit(20);
+        const charRef = collection(db, 'characters');
+        let q;
         
-        if (searchQuery.trim()) {
-          query = query.ilike('name', `%${searchQuery}%`);
+        if (lowerQuery) {
+          // Prefix search using \uf8ff
+          q = query(
+            charRef, 
+            where('visibility', '==', 'public'),
+            where('name_lowercase', '>=', lowerQuery),
+            where('name_lowercase', '<=', lowerQuery + '\uf8ff'),
+            limit(20)
+          );
+        } else if (selectedCategory) {
+          q = query(
+            charRef,
+            where('visibility', '==', 'public'),
+            where('category', '==', selectedCategory),
+            limit(20)
+          );
+        } else {
+          q = query(
+            charRef,
+            where('visibility', '==', 'public'),
+            limit(20)
+          );
         }
         
-        if (selectedCategory) {
-          query = query.eq('category', selectedCategory);
-        }
+        const snap = await getDocs(q);
+        const chars = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Character));
         
-        const { data: chars, error } = await query;
-        if (error) throw error;
-        
-        const charactersWithNames: Character[] = (chars || []).map(char => ({
+        const charactersWithNames: Character[] = chars.map(char => ({
           ...char,
           creatorName: char.creatorName || getCachedProfile(char.creatorId)
         }));
         
         const creatorIds = new Set<string>();
-        
         charactersWithNames.forEach(char => {
           if (!char.creatorName && char.creatorId) {
             creatorIds.add(char.creatorId);
@@ -82,15 +101,18 @@ export function Search() {
         });
 
         if (creatorIds.size > 0) {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('uid, displayName')
-            .in('uid', Array.from(creatorIds));
+          const profilesRef = collection(db, 'profiles');
+          // Firestore 'in' query is limited to 10-30 items depending on version, 
+          // but for 20 results it's usually fine.
+          const profileIds = Array.from(creatorIds).slice(0, 30);
+          if (profileIds.length > 0) {
+            const profileQ = query(profilesRef, where('uid', 'in', profileIds));
+            const profileSnap = await getDocs(profileQ);
             
-          if (!profilesError && profiles) {
             const profilesMap: Record<string, string> = {};
-            profiles.forEach(p => {
-              profilesMap[p.uid] = p.displayName || 'Anonymous';
+            profileSnap.forEach(doc => {
+              const data = doc.data();
+              profilesMap[doc.id] = data.displayName || 'Anonymous';
             });
             
             setCachedProfiles(profilesMap);
@@ -105,16 +127,28 @@ export function Search() {
         
         setCharacters(charactersWithNames);
       } else {
-        const { data: profiles, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .ilike('displayName', `%${searchQuery}%`)
-          .limit(20);
+        const profilesRef = collection(db, 'profiles');
+        let q;
         
-        if (error) throw error;
-        setProfiles(profiles || []);
+        if (lowerQuery) {
+          q = query(
+            profilesRef,
+            where('displayName_lowercase', '>=', lowerQuery),
+            where('displayName_lowercase', '<=', lowerQuery + '\uf8ff'),
+            limit(20)
+          );
+        } else {
+          q = query(profilesRef, limit(20));
+        }
+        
+        const snap = await getDocs(q);
+        const fetchedProfiles = snap.docs.map(doc => ({ uid: doc.id, ...(doc.data() as any) } as Profile));
+        setProfiles(fetchedProfiles);
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        setQuotaExceeded(true);
+      }
       console.error('Search error:', error);
     } finally {
       setIsSearching(false);
@@ -125,15 +159,17 @@ export function Search() {
     setSelectedUser(profile);
     setIsLoading(true);
     try {
-      const { data: userChars, error } = await supabase
-        .from('characters')
-        .select('*')
-        .eq('creatorId', profile.uid)
-        .eq('visibility', 'public');
-        
-      if (error) throw error;
+      const charRef = collection(db, 'characters');
+      const q = query(
+        charRef,
+        where('creatorId', '==', profile.uid),
+        where('visibility', '==', 'public')
+      );
       
-      setUserCharacters((userChars || []).map(char => ({ 
+      const snap = await getDocs(q);
+      const userChars = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Character));
+      
+      setUserCharacters(userChars.map(char => ({ 
         ...char,
         creatorName: profile.displayName 
       })));

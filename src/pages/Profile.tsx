@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle } from 'lucide-react';
 
 export function Profile() {
   const { user, updateProfile } = useAuth();
@@ -15,9 +15,9 @@ export function Profile() {
     displayName: '',
     photoURL: '',
     userPersona: '',
-    personas: [] as { id: string; name: string; description: string }[]
+    personas: [] as { id: string; name: string; description: string; personality?: string }[]
   });
-  const [newPersona, setNewPersona] = useState({ name: '', description: '' });
+  const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
 
   const handleAddPersona = () => {
@@ -26,7 +26,7 @@ export function Profile() {
       ...prev,
       personas: [...prev.personas, { id: Date.now().toString(), ...newPersona }]
     }));
-    setNewPersona({ name: '', description: '' });
+    setNewPersona({ name: '', description: '', personality: '' });
   };
 
   const handleDeletePersona = (id: string) => {
@@ -42,7 +42,7 @@ export function Profile() {
       personas: prev.personas.map(p => p.id === id ? { ...p, ...newPersona } : p)
     }));
     setEditingPersonaId(null);
-    setNewPersona({ name: '', description: '' });
+    setNewPersona({ name: '', description: '', personality: '' });
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,74 +218,126 @@ export function Profile() {
         </div>
 
         <div className="space-y-4 pt-4 border-t border-zinc-800">
-          <h2 className="text-xl font-bold text-white">Manage Personas</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <UserCircle className="w-6 h-6 text-indigo-500" />
+              Custom Personas
+            </h2>
+          </div>
+          
+          <p className="text-sm text-zinc-400">
+            Create different personas for yourself to use in chats. These help the AI understand who you are in different contexts.
+          </p>
+
           <div className="space-y-3">
             {formData.personas.map(p => (
-              <div key={p.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex justify-between items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-white font-bold truncate">{p.name}</h3>
-                  <p className="text-zinc-400 text-sm line-clamp-2">{p.description}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      setEditingPersonaId(p.id);
-                      setNewPersona({ name: p.name, description: p.description });
-                    }}
-                    className="text-indigo-400 hover:text-indigo-300"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => handleDeletePersona(p.id)} 
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
+              <div key={p.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl group hover:border-indigo-500/30 transition-all">
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-bold truncate">{p.name}</h3>
+                    <p className="text-zinc-400 text-sm line-clamp-2 mt-1">{p.description}</p>
+                    {p.personality && (
+                      <p className="text-zinc-500 text-xs mt-2 italic line-clamp-1">
+                        Personality: {p.personality}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setEditingPersonaId(p.id);
+                        setNewPersona({ 
+                          name: p.name, 
+                          description: p.description,
+                          personality: p.personality || ''
+                        });
+                        // Scroll to form
+                        const form = document.getElementById('persona-form');
+                        form?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                      title="Edit Persona"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => handleDeletePersona(p.id)} 
+                      className="p-2 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                      title="Delete Persona"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
           
-          <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl space-y-3">
-            <h3 className="text-white font-medium">{editingPersonaId ? 'Edit Persona' : 'Add New Persona'}</h3>
-            <input 
-              type="text" 
-              placeholder="Persona Name (e.g., Adventurer)" 
-              value={newPersona.name} 
-              onChange={e => setNewPersona({...newPersona, name: e.target.value})} 
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm" 
-            />
-            <textarea 
-              placeholder="Description (How you want to be perceived)" 
-              value={newPersona.description} 
-              onChange={e => setNewPersona({...newPersona, description: e.target.value})} 
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm" 
-              rows={3}
-            />
-            <div className="flex gap-2">
-              <button 
-                type="button"
-                onClick={editingPersonaId ? () => handleUpdatePersona(editingPersonaId) : handleAddPersona} 
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {editingPersonaId ? 'Update' : 'Add'}
-              </button>
+          <div id="persona-form" className="bg-zinc-950 border border-zinc-800 p-5 rounded-2xl space-y-4 mt-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-bold flex items-center gap-2">
+                {editingPersonaId ? <Edit2 className="w-4 h-4 text-indigo-500" /> : <Plus className="w-4 h-4 text-indigo-500" />}
+                {editingPersonaId ? 'Edit Persona' : 'Add New Persona'}
+              </h3>
               {editingPersonaId && (
                 <button 
                   type="button"
                   onClick={() => {
                     setEditingPersonaId(null);
-                    setNewPersona({ name: '', description: '' });
+                    setNewPersona({ name: '', description: '', personality: '' });
                   }}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  className="text-xs text-zinc-500 hover:text-white transition-colors"
                 >
-                  Cancel
+                  Cancel Edit
                 </button>
               )}
             </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 ml-1">Name</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Brave Explorer" 
+                  value={newPersona.name} 
+                  onChange={e => setNewPersona({...newPersona, name: e.target.value})} 
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-white text-sm focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 ml-1">Description</label>
+                <textarea 
+                  placeholder="Briefly describe this persona..." 
+                  value={newPersona.description} 
+                  onChange={e => setNewPersona({...newPersona, description: e.target.value})} 
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-white text-sm focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none" 
+                  rows={2}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 ml-1">Personality Traits (Optional)</label>
+                <textarea 
+                  placeholder="e.g. Sarcastic, helpful, adventurous..." 
+                  value={newPersona.personality} 
+                  onChange={e => setNewPersona({...newPersona, personality: e.target.value})} 
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-white text-sm focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none" 
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            <button 
+              type="button"
+              onClick={editingPersonaId ? () => handleUpdatePersona(editingPersonaId) : handleAddPersona} 
+              disabled={!newPersona.name || !newPersona.description}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/10"
+            >
+              {editingPersonaId ? 'Update Persona' : 'Add Persona'}
+            </button>
           </div>
         </div>
 
