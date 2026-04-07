@@ -1,70 +1,123 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2 } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+interface UserProfile {
+  id: string;
+  displayName: string;
+  email: string;
+  photoURL: string;
+  role: string;
+  createdAt: any;
+  characters?: any[];
+}
+
 export function Admin() {
-  const { user, isOwner, isModerator } = useAuth();
+  const { user, isOwner, isModerator, becomeModerator } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'reports' | 'settings' | 'privateCharacters'>('reports');
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'users' | 'reports'>('users');
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<any[]>([]);
-  const [privateCharacters, setPrivateCharacters] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [modPassword, setModPassword] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  
+  // Pagination for Users
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [firstVisible, setFirstVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   useEffect(() => {
-    if (!isModerator) {
-      navigate('/');
+    if (!user) {
+      navigate('/login');
       return;
     }
-
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        if (activeTab === 'users' && isOwner) {
-          const q = query(collection(db, 'profiles'), orderBy('createdAt', 'desc'), limit(50));
-          const snap = await getDocs(q);
-          setProfiles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        } else if (activeTab === 'reports') {
-          const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
-          const snap = await getDocs(q);
-          setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        } else if (activeTab === 'privateCharacters' && isModerator) {
-          const q = query(collection(db, 'characters'), where('visibility', '==', 'private'), limit(50));
-          const snap = await getDocs(q);
-          setPrivateCharacters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        } else if (activeTab === 'settings' && isOwner) {
-          const settingsSnap = await getDoc(doc(db, 'settings', 'config'));
-          if (settingsSnap.exists()) {
-            setSettings(settingsSnap.data());
-          }
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, activeTab);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [isOwner, isModerator, activeTab, navigate]);
-
-  const handleToggleModeratorPrivate = async () => {
-    if (!isOwner) return;
-    setUpdatingId('moderatorCanSeePrivate');
-    try {
-      const settingsRef = doc(db, 'settings', 'config');
-      await setDoc(settingsRef, { moderatorCanSeePrivate: !settings.moderatorCanSeePrivate }, { merge: true });
-      setSettings(prev => ({ ...prev, moderatorCanSeePrivate: !prev.moderatorCanSeePrivate }));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/config');
-    } finally {
-      setUpdatingId(null);
+    
+    if (isModerator) {
+      fetchData();
     }
+  }, [isModerator, activeTab, user]);
+
+  const fetchData = async (direction: 'next' | 'prev' | 'initial' = 'initial') => {
+    setLoading(true);
+    try {
+      if (activeTab === 'users') {
+        const profilesRef = collection(db, 'profiles');
+        let q;
+        const pageSize = 10;
+
+        if (direction === 'next' && lastVisible) {
+          q = query(profilesRef, orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
+        } else if (direction === 'prev' && firstVisible) {
+          // Firestore doesn't have a simple "prev" query without keeping track of all pages
+          // For simplicity, we'll just reload or handle it if we have a stack of lastVisibles
+          // But for now, let's just do basic next/initial
+          q = query(profilesRef, orderBy('createdAt', 'desc'), limit(pageSize));
+          setPage(1);
+        } else {
+          q = query(profilesRef, orderBy('createdAt', 'desc'), limit(pageSize));
+          setPage(1);
+        }
+
+        const snap = await getDocs(q);
+        const fetchedProfiles: UserProfile[] = [];
+        
+        for (const profileDoc of snap.docs) {
+          const profileData = profileDoc.data() as UserProfile;
+          // Fetch their characters (up to 10)
+          const charQ = query(collection(db, 'characters'), where('creatorId', '==', profileDoc.id), limit(10));
+          const charSnap = await getDocs(charQ);
+          const userChars = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          
+          fetchedProfiles.push({
+            id: profileDoc.id,
+            ...profileData,
+            characters: userChars
+          });
+        }
+
+        setProfiles(fetchedProfiles);
+        setLastVisible(snap.docs[snap.docs.length - 1]);
+        setFirstVisible(snap.docs[0]);
+        setHasMore(snap.docs.length === pageSize);
+      } else if (activeTab === 'reports') {
+        const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
+        const snap = await getDocs(q);
+        setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, activeTab);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNextPage = () => {
+    setPage(p => p + 1);
+    fetchData('next');
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1) {
+      setPage(p => p - 1);
+      fetchData('initial'); // Reset to first page for now as simple implementation
+    }
+  };
+
+  const handleModAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthenticating(true);
+    const success = becomeModerator(modPassword);
+    if (!success) {
+      alert('Invalid Moderator Password');
+    }
+    setIsAuthenticating(false);
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -82,7 +135,6 @@ export function Admin() {
   };
 
   const handleReportStatus = async (reportId: string, newStatus: string) => {
-    if (!isOwner) return;
     setUpdatingId(reportId);
     try {
       const reportRef = doc(db, 'reports', reportId);
@@ -95,199 +147,229 @@ export function Admin() {
     }
   };
 
-  if (!isModerator) return null;
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div className="flex items-center gap-4">
-        <Shield className="w-8 h-8 text-indigo-500" />
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Admin Dashboard</h1>
-          <p className="text-zinc-400">Manage users and review reports.</p>
+  if (!isModerator) {
+    return (
+      <div className="max-w-md mx-auto mt-20">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center shadow-2xl">
+          <ShieldAlert className="w-16 h-16 text-indigo-500 mx-auto mb-6" />
+          <h2 className="text-2xl font-bold text-white mb-2">Admin Access</h2>
+          <p className="text-zinc-400 mb-8">Please enter the Moderator Password to access the dashboard.</p>
+          <form onSubmit={handleModAuth} className="space-y-4">
+            <input
+              type="password"
+              value={modPassword}
+              onChange={(e) => setModPassword(e.target.value)}
+              placeholder="Enter password..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl py-4 px-6 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={isAuthenticating}
+              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isAuthenticating ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+              Authenticate
+            </button>
+          </form>
         </div>
       </div>
+    );
+  }
 
-      <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 w-fit">
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Reports
-        </button>
-        {isOwner && (
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 pb-20">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-indigo-600/10 rounded-2xl">
+            <Shield className="w-8 h-8 text-indigo-500" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">Admin Dashboard</h1>
+            <p className="text-zinc-400">Moderator access granted.</p>
+          </div>
+        </div>
+
+        <div className="flex bg-zinc-900 p-1 rounded-2xl border border-zinc-800">
           <button
             onClick={() => setActiveTab('users')}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'users' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             Users
           </button>
-        )}
-        {isOwner && (
           <button
-            onClick={() => setActiveTab('settings')}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            onClick={() => setActiveTab('reports')}
+            className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Settings
+            Reports
           </button>
-        )}
-        <button
-          onClick={() => setActiveTab('privateCharacters')}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === 'privateCharacters' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Private Characters
-        </button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
+          <p className="text-zinc-500 animate-pulse">Fetching data...</p>
         </div>
-      ) : activeTab === 'users' && isOwner ? (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="bg-zinc-800/50 text-zinc-300">
-              <tr>
-                <th className="px-6 py-4 font-medium">User</th>
-                <th className="px-6 py-4 font-medium">Email</th>
-                <th className="px-6 py-4 font-medium">Role</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {profiles.map(profile => (
-                <tr key={profile.id} className="hover:bg-zinc-800/30 transition-colors">
-                  <td className="px-6 py-4 flex items-center gap-3">
+      ) : activeTab === 'users' ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            {profiles.map(profile => (
+              <div key={profile.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-xl">
+                <div className="p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
                     {profile.photoURL ? (
-                      <img src={profile.photoURL} alt="" className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+                      <img src={profile.photoURL} alt="" className="w-12 h-12 rounded-2xl object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-                        <User className="w-4 h-4 text-zinc-500" />
+                      <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center">
+                        <User className="w-6 h-6 text-zinc-500" />
                       </div>
                     )}
-                    <span className="text-white font-medium">{profile.displayName}</span>
-                  </td>
-                  <td className="px-6 py-4">{profile.email || 'N/A'}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      profile.role === 'owner' ? 'bg-purple-500/10 text-purple-400' :
-                      profile.role === 'moderator' ? 'bg-blue-500/10 text-blue-400' :
-                      'bg-zinc-800 text-zinc-300'
+                    <div>
+                      <h3 className="text-white font-bold text-lg">{profile.displayName}</h3>
+                      <p className="text-zinc-500 text-sm">{profile.email}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                      profile.role === 'owner' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                      profile.role === 'moderator' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                      'bg-zinc-800 text-zinc-400 border border-zinc-700'
                     }`}>
                       {profile.role || 'user'}
                     </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <select
-                      value={profile.role || 'user'}
-                      onChange={(e) => handleRoleChange(profile.id, e.target.value)}
-                      disabled={updatingId === profile.id || profile.email === 'videosonli5@gmail.com'}
-                      className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                    >
-                      <option value="user">User</option>
-                      <option value="moderator">Moderator</option>
-                      <option value="owner">Owner</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : activeTab === 'privateCharacters' && isModerator ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {privateCharacters.map(char => (
-            <div key={char.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4">
-              {char.avatarUrl ? (
-                <img src={char.avatarUrl} alt={char.name} className="w-16 h-16 rounded-xl object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-16 h-16 rounded-xl bg-zinc-800 flex items-center justify-center">
-                  <User className="w-8 h-8 text-zinc-500" />
+                    {isOwner && profile.email !== 'videosonli5@gmail.com' && (
+                      <select
+                        value={profile.role || 'user'}
+                        onChange={(e) => handleRoleChange(profile.id, e.target.value)}
+                        disabled={updatingId === profile.id}
+                        className="bg-zinc-800 text-white text-sm rounded-xl px-4 py-2 border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      >
+                        <option value="user">User</option>
+                        <option value="moderator">Moderator</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div>
-                <h3 className="text-white font-bold">{char.name}</h3>
-                <p className="text-zinc-400 text-sm">Creator: {char.creatorId}</p>
+
+                <div className="p-6 bg-zinc-900/50">
+                  <h4 className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Bot className="w-4 h-4" />
+                    Characters ({profile.characters?.length || 0})
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    {profile.characters && profile.characters.length > 0 ? (
+                      profile.characters.map((char: any) => (
+                        <div key={char.id} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 flex items-center gap-3 group hover:border-indigo-500/50 transition-all">
+                          {char.avatarUrl ? (
+                            <img src={char.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center">
+                              <Bot className="w-5 h-5 text-zinc-500" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-bold truncate">{char.name}</p>
+                            <p className="text-zinc-500 text-[10px] uppercase font-bold">{char.visibility}</p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-zinc-600 text-sm italic">No characters created yet.</p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : activeTab === 'settings' && isOwner ? (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <h2 className="text-xl font-bold text-white mb-4">Settings</h2>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white font-medium">Moderator Access to Private Characters</p>
-              <p className="text-zinc-400 text-sm">Allow moderators to view private characters.</p>
-            </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-center gap-4 pt-8">
             <button
-              onClick={handleToggleModeratorPrivate}
-              disabled={updatingId === 'moderatorCanSeePrivate'}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                settings.moderatorCanSeePrivate ? 'bg-green-600 text-white' : 'bg-zinc-700 text-zinc-300'
-              }`}
+              onClick={handlePrevPage}
+              disabled={page === 1}
+              className="p-3 bg-zinc-900 border border-zinc-800 rounded-2xl text-white hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
-              {updatingId === 'moderatorCanSeePrivate' ? <Loader2 className="w-4 h-4 animate-spin" /> : settings.moderatorCanSeePrivate ? 'Enabled' : 'Disabled'}
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <span className="text-white font-bold bg-zinc-900 px-6 py-3 rounded-2xl border border-zinc-800">
+              Page {page}
+            </span>
+            <button
+              onClick={handleNextPage}
+              disabled={!hasMore}
+              className="p-3 bg-zinc-900 border border-zinc-800 rounded-2xl text-white hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight className="w-6 h-6" />
             </button>
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4">
           {reports.length === 0 ? (
-            <div className="text-center py-12 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
-              <ShieldCheck className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
-              <p className="text-zinc-400">No reports to review.</p>
+            <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
+              <ShieldCheck className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+              <p className="text-zinc-400 text-lg">All clear! No pending reports.</p>
             </div>
           ) : (
             reports.map(report => (
-              <div key={report.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col sm:flex-row gap-6 justify-between items-start">
-                <div className="space-y-2">
+              <div key={report.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col sm:flex-row gap-6 justify-between items-start hover:border-indigo-500/30 transition-all">
+                <div className="space-y-4 flex-1">
                   <div className="flex items-center gap-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      report.status === 'pending' ? 'bg-yellow-500/10 text-yellow-500' :
-                      report.status === 'reviewed' ? 'bg-blue-500/10 text-blue-400' :
-                      'bg-green-500/10 text-green-400'
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                      report.status === 'pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
+                      report.status === 'reviewed' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                      'bg-green-500/10 text-green-400 border border-green-500/20'
                     }`}>
-                      {report.status.toUpperCase()}
+                      {report.status}
                     </span>
-                    <span className="text-zinc-500 text-sm">
-                      {report.type === 'character' ? 'Character Report' : 'User Report'}
+                    <span className="text-zinc-500 text-xs font-bold uppercase tracking-widest">
+                      {report.type} Report
                     </span>
                   </div>
-                  <p className="text-white font-medium">Target ID: <span className="font-mono text-indigo-400">{report.targetId}</span></p>
-                  <p className="text-zinc-300 bg-zinc-950 p-3 rounded-xl border border-zinc-800">{report.reason}</p>
-                  <p className="text-xs text-zinc-500">Reported by: {report.reporterId}</p>
+                  
+                  <div className="space-y-2">
+                    <p className="text-white font-bold">
+                      Target: <span className="text-indigo-400 font-mono text-sm">{report.targetId}</span>
+                    </p>
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                      <p className="text-zinc-300 text-sm leading-relaxed">{report.reason}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <User className="w-3 h-3" />
+                    <span>Reported by: {report.reporterId}</span>
+                    <span className="mx-2">•</span>
+                    <span>{report.createdAt?.toDate ? new Date(report.createdAt.toDate()).toLocaleDateString() : 'Recently'}</span>
+                  </div>
                 </div>
                 
-                {isOwner && (
-                  <div className="flex flex-col gap-2 min-w-[140px]">
-                    {report.status === 'pending' && (
-                      <button
-                        onClick={() => handleReportStatus(report.id, 'reviewed')}
-                        disabled={updatingId === report.id}
-                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                      >
-                        Mark Reviewed
-                      </button>
-                    )}
-                    {report.status !== 'resolved' && (
-                      <button
-                        onClick={() => handleReportStatus(report.id, 'resolved')}
-                        disabled={updatingId === report.id}
-                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                      >
-                        Mark Resolved
-                      </button>
-                    )}
-                  </div>
-                )}
+                <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px]">
+                  {report.status === 'pending' && (
+                    <button
+                      onClick={() => handleReportStatus(report.id, 'reviewed')}
+                      disabled={updatingId === report.id}
+                      className="w-full px-6 py-3 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                    >
+                      Mark Reviewed
+                    </button>
+                  )}
+                  {report.status !== 'resolved' && (
+                    <button
+                      onClick={() => handleReportStatus(report.id, 'resolved')}
+                      disabled={updatingId === report.id}
+                      className="w-full px-6 py-3 bg-green-600/10 text-green-400 hover:bg-green-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                    >
+                      Mark Resolved
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}

@@ -43,7 +43,7 @@ interface Memory {
 
 export function Chat() {
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
-  const { user, isOwner, isModerator } = useAuth();
+  const { user, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
@@ -84,6 +84,10 @@ export function Chat() {
   const [isFetchingRecent, setIsFetchingRecent] = useState(false);
   const [characterSearchQuery, setCharacterSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Character[]>([]);
+  const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
+  const [isLocalMode, setIsLocalMode] = useState(false);
+
+  const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -378,7 +382,7 @@ export function Chat() {
       const newChatRef = doc(collection(db, 'chats'));
       const newChatId = newChatRef.id;
       
-      await setDoc(newChatRef, {
+      const chatData = {
         userId: user.uid,
         characterIds: charIds,
         characterId: characterId, // legacy
@@ -388,15 +392,38 @@ export function Chat() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`
-      });
-      
-      await addDoc(collection(db, `chats/${newChatId}/messages`), {
+      };
+
+      const initialMessage = {
         chatId: newChatId,
         role: 'model',
         characterId: primaryChar.id,
         content: primaryChar.greeting,
         createdAt: serverTimestamp()
-      });
+      };
+
+      try {
+        await setDoc(newChatRef, chatData);
+        await addDoc(collection(db, `chats/${newChatId}/messages`), initialMessage);
+      } catch (e: any) {
+        if (e?.message?.includes('Quota limit exceeded') || e?.code === 'resource-exhausted') {
+          console.warn("Quota exceeded during chat creation, using local mode");
+          setIsLocalMode(true);
+          // Save to localStorage
+          const localChats = JSON.parse(localStorage.getItem('local_chats') || '[]');
+          localChats.push({ id: newChatId, ...chatData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+          localStorage.setItem('local_chats', JSON.stringify(localChats));
+          
+          const localMessages = [{ 
+            ...initialMessage, 
+            id: 'initial', 
+            createdAt: new Date().toISOString() 
+          }];
+          localStorage.setItem(`chat_${newChatId}`, JSON.stringify(localMessages));
+        } else {
+          throw e;
+        }
+      }
       
       navigate(`/chat/${characterId}/${newChatId}`);
       setIsHistoryOpen(false);
@@ -832,15 +859,31 @@ export function Chat() {
           return;
         }
 
-        // 1. Fetch all characters in batch
+        // 1. Fetch all characters in batch (check cache first)
         const fetchedChars: Character[] = [];
         const charIdsArray = Array.from(new Set(charIds));
+        const missingCharIds: string[] = [];
+
+        charIdsArray.forEach(id => {
+          const cached = localStorage.getItem(`cached_char_${id}`);
+          if (cached) {
+            fetchedChars.push(JSON.parse(cached));
+          } else {
+            missingCharIds.push(id);
+          }
+        });
         
-        for (let i = 0; i < charIdsArray.length; i += 30) {
-          const chunk = charIdsArray.slice(i, i + 30);
-          const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
-          const charSnap = await getDocs(charQ);
-          charSnap.forEach(doc => fetchedChars.push({ id: doc.id, ...doc.data() } as Character));
+        if (missingCharIds.length > 0) {
+          for (let i = 0; i < missingCharIds.length; i += 30) {
+            const chunk = missingCharIds.slice(i, i + 30);
+            const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
+            const charSnap = await getDocs(charQ);
+            charSnap.forEach(doc => {
+              const charData = { id: doc.id, ...doc.data() } as Character;
+              fetchedChars.push(charData);
+              localStorage.setItem(`cached_char_${doc.id}`, JSON.stringify(charData));
+            });
+          }
         }
         
         if (fetchedChars.length === 0) {
@@ -944,7 +987,7 @@ export function Chat() {
         
         // 3. Listen to messages
         const messagesRef = collection(db, `chats/${currentChatId}/messages`);
-        const mq = query(messagesRef, orderBy('createdAt', 'asc'));
+        const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
         
         const unsubscribe = onSnapshot(mq, (snapshot) => {
           const msgs: Message[] = [];
@@ -956,27 +999,63 @@ export function Chat() {
               msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
             }
           });
-          setMessages(msgs);
+          
+          // Merge with local messages if any
+          const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
+          
+          // Only add local messages that aren't in Firestore yet
+          const merged = [...msgs];
+          const seenIds = new Set(msgs.map(m => m.id));
+          
+          localMsgs.forEach((lm: any) => {
+            // Check if this local message has been synced (content match fallback if ID differs)
+            const isSynced = msgs.some(fm => 
+              fm.id === lm.id || 
+              (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
+            );
+
+            if (!isSynced && !seenIds.has(lm.id)) {
+              merged.push({
+                ...lm,
+                createdAt: { toDate: () => new Date(lm.createdAt) }
+              });
+              seenIds.add(lm.id);
+            }
+          });
+          
+          setMessages(merged.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+            return dateA.getTime() - dateB.getTime();
+          }));
           setLoading(false);
         }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/messages`);
+          console.error("onSnapshot error:", error);
+          if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+            setIsLocalMode(true);
+            // Load from localStorage only
+            const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
+            setMessages(localMsgs.map((lm: any) => ({
+              ...lm,
+              createdAt: { toDate: () => new Date(lm.createdAt) }
+            })));
+            setLoading(false);
+          } else {
+            handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/messages`);
+          }
         });
 
-        // 4. Listen to memories
+        // 4. Fetch memories (one-time)
         const memoriesRef = collection(db, `chats/${currentChatId}/memories`);
         const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
-        
-        const unsubscribeMemories = onSnapshot(memQ, (snapshot) => {
-          const mems: Memory[] = [];
-          snapshot.forEach((doc) => {
-            mems.push({ id: doc.id, ...doc.data() } as Memory);
-          });
-          setMemories(mems);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/memories`);
+        const memSnapshot = await getDocs(memQ);
+        const mems: Memory[] = [];
+        memSnapshot.forEach((doc) => {
+          mems.push({ id: doc.id, ...doc.data() } as Memory);
         });
+        setMemories(mems);
 
-        // 5. Listen to chat history
+        // 5. Fetch chat history (one-time)
         const chatsRef = collection(db, 'chats');
         const hq = query(
           chatsRef, 
@@ -984,26 +1063,26 @@ export function Chat() {
           where('characterIds', 'array-contains', characterId),
           orderBy('updatedAt', 'desc')
         );
-        
-        const unsubscribeHistory = onSnapshot(hq, (snapshot) => {
-          const history = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setChatHistory(history);
-        });
+        const historySnapshot = await getDocs(hq);
+        const history = historySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setChatHistory(history);
 
         return () => {
           unsubscribe();
-          unsubscribeMemories();
-          unsubscribeHistory();
         };
       } catch (error: any) {
         console.error('Chat initialization error:', error);
-        setNotification({ 
-          message: `Failed to load chat: ${error.message || 'Unknown error'}. Please try refreshing.`, 
-          type: 'error' 
-        });
+        if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+          setLocalQuotaExceeded(true);
+        } else {
+          setNotification({ 
+            message: `Failed to load chat: ${error.message || 'Unknown error'}. Please try refreshing.`, 
+            type: 'error' 
+          });
+        }
         setLoading(false);
       }
     };
@@ -1017,6 +1096,30 @@ export function Chat() {
     return persona ? persona.description : userPersona;
   };
 
+  const syncToFirestore = async () => {
+    if (!chatId || !user) return;
+    
+    try {
+      // Get messages from localStorage
+      const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+      
+      // Save to Firestore
+      for (const msg of localMessages) {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          ...msg,
+          createdAt: serverTimestamp()
+        });
+      }
+      
+      // Clear localStorage
+      localStorage.removeItem(`chat_${chatId}`);
+      setNotification({ message: 'Chat synced to cloud.', type: 'success' });
+    } catch (error) {
+      console.error('Error syncing to Firestore:', error);
+      setNotification({ message: 'Failed to sync chat.', type: 'error' });
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
@@ -1028,29 +1131,21 @@ export function Chat() {
     setSelectedImage(null);
     setIsTyping(true);
 
+    // 1. Save user message to localStorage
+    const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+    const newUserMessage = {
+      id: Date.now().toString(),
+      chatId,
+      role: 'user',
+      content: userMessage,
+      imageUrl: userImageUrl || null,
+      createdAt: new Date().toISOString()
+    };
+    localMessages.push(newUserMessage);
+    localStorage.setItem(`chat_${chatId}`, JSON.stringify(localMessages));
+    setMessages(prev => [...prev, newUserMessage as Message]);
+
     try {
-      // 1. Save user message
-      try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'user',
-          content: userMessage,
-          imageUrl: userImageUrl || null,
-          createdAt: serverTimestamp()
-        });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
-      }
-
-      // Update chat timestamp
-      try {
-        await setDoc(doc(db, 'chats', chatId), {
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
-      }
-
       // 2. Generate AI response
       const historyForGemini = messages.map(m => ({
         role: m.role,
@@ -1090,27 +1185,39 @@ export function Chat() {
 
       const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
 
-      // 3. Save AI message (split into multiple if needed)
+      // 3. Save AI message to localStorage
       if (aiResponse) {
-        await saveSplitMessages(chatId, aiResponse, targetCharId);
+        const newAiMessages = aiResponse.split('\n').filter(line => line.trim()).map((line, index) => {
+          const colonIndex = line.indexOf(':');
+          const name = colonIndex !== -1 ? line.substring(0, colonIndex).trim() : null;
+          const char = name ? characters.find(c => c.name.toLowerCase() === name.toLowerCase()) : null;
+          
+          return {
+            id: Date.now().toString() + index,
+            chatId,
+            role: 'model',
+            characterId: char?.id || characters[0].id,
+            content: colonIndex !== -1 ? line.substring(colonIndex + 1).trim() : line,
+            createdAt: new Date().toISOString()
+          };
+        });
+        
+        const updatedLocalMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        updatedLocalMessages.push(...newAiMessages);
+        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
+        setMessages(prev => [...prev, ...newAiMessages as Message[]]);
         
         // Update interactionsCount for all characters in the chat
         for (const char of characters) {
-          await updateDoc(doc(db, 'characters', char.id), {
-            interactionsCount: (char.interactionsCount || 0) + 1
-          });
+          try {
+            await updateDoc(doc(db, 'characters', char.id), {
+              interactionsCount: (char.interactionsCount || 0) + 1
+            });
+          } catch (e) {
+            console.warn("Failed to update interactionsCount (likely quota):", e);
+          }
         }
       }
-
-      // Update chat timestamp again
-      try {
-        await setDoc(doc(db, 'chats', chatId), {
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
-      }
-
     } catch (error: any) {
       console.error('Error sending message:', error);
       const isQuotaError = error.message?.includes('API_QUOTA_EXCEEDED');
@@ -1118,18 +1225,6 @@ export function Chat() {
         ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 3.1 Lite) or wait a moment."
         : (error?.message || "Unknown error occurred");
       setNotification({ message: isQuotaError ? errorMessage : `Error: ${errorMessage}`, type: 'error' });
-      
-      try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'model',
-          characterId: characters[0].id,
-          content: `*OOC: Sorry, I'm having trouble connecting right now. Error details: ${errorMessage}*`,
-          createdAt: serverTimestamp()
-        });
-      } catch (e) {
-        console.error('Critical failure: Could not even send fallback message', e);
-      }
     } finally {
       setIsTyping(false);
     }
@@ -1154,6 +1249,17 @@ export function Chat() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
+      {isLocalMode && (
+        <div className="bg-amber-600/20 border-b border-amber-600/30 px-4 py-2 flex items-center justify-between z-50">
+          <div className="flex items-center gap-2 text-amber-500 text-xs font-medium">
+            <AlertCircle className="w-4 h-4" />
+            <span>Local Mode: Firestore limit reached. Messages are saved locally.</span>
+          </div>
+          <button onClick={() => setIsLocalMode(false)} className="text-amber-500 hover:text-amber-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* History Sidebar Overlay */}
       {isHistoryOpen && (
         <div 
@@ -1440,6 +1546,15 @@ export function Chat() {
             >
               <History className="w-5 h-5" />
               <span className="hidden md:inline text-sm font-medium">History</span>
+            </button>
+
+            <button
+              onClick={syncToFirestore}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-green-400 transition-all flex items-center gap-2"
+              title="Sync to Cloud"
+            >
+              <RefreshCw className="w-5 h-5" />
+              <span className="hidden md:inline text-sm font-medium">Sync</span>
             </button>
             
             <div className="hidden sm:block w-px h-6 bg-zinc-800 mx-1" />

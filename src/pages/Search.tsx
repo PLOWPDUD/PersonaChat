@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -56,80 +55,67 @@ export function Search() {
     const lowerQuery = searchQuery.toLowerCase();
     try {
       if (activeTab === 'characters') {
-        let q = query(
-          collection(db, 'characters'),
-          where('visibility', '==', 'public'),
-          limit(20)
-        );
+        let query = supabase.from('characters').select('*').eq('visibility', 'public').limit(20);
         
         if (searchQuery.trim()) {
-          q = query(q, where('name_lowercase', '>=', lowerQuery), where('name_lowercase', '<=', lowerQuery + '\uf8ff'));
+          query = query.ilike('name', `%${searchQuery}%`);
         }
         
         if (selectedCategory) {
-          q = query(q, where('category', '==', selectedCategory));
+          query = query.eq('category', selectedCategory);
         }
         
-        const snap = await getDocs(q);
-        const chars = snap.docs.map(doc => {
-          const data = doc.data() as Record<string, any>;
-          const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
-          return { 
-            id: doc.id, 
-            ...data,
-            creatorName: data.creatorName || cachedName
-          } as Character;
-        });
+        const { data: chars, error } = await query;
+        if (error) throw error;
+        
+        const charactersWithNames: Character[] = (chars || []).map(char => ({
+          ...char,
+          creatorName: char.creatorName || getCachedProfile(char.creatorId)
+        }));
         
         const creatorIds = new Set<string>();
         
-        chars.forEach(char => {
+        charactersWithNames.forEach(char => {
           if (!char.creatorName && char.creatorId) {
             creatorIds.add(char.creatorId);
           }
         });
 
         if (creatorIds.size > 0) {
-          const creatorIdsArray = Array.from(creatorIds);
-          const profiles: Record<string, string> = {};
-          
-          for (let i = 0; i < creatorIdsArray.length; i += 30) {
-            const chunk = creatorIdsArray.slice(i, i + 30);
-            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
-            const profilesSnap = await getDocs(profilesQ);
-            profilesSnap.forEach(pDoc => {
-              const pData = pDoc.data();
-              profiles[pDoc.id] = pData.displayName || 'Anonymous';
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('uid, displayName')
+            .in('uid', Array.from(creatorIds));
+            
+          if (!profilesError && profiles) {
+            const profilesMap: Record<string, string> = {};
+            profiles.forEach(p => {
+              profilesMap[p.uid] = p.displayName || 'Anonymous';
+            });
+            
+            setCachedProfiles(profilesMap);
+
+            charactersWithNames.forEach(char => {
+              if (!char.creatorName && char.creatorId && profilesMap[char.creatorId]) {
+                char.creatorName = profilesMap[char.creatorId];
+              }
             });
           }
-
-          // Update cache
-          setCachedProfiles(profiles);
-
-          chars.forEach(char => {
-            if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
-              char.creatorName = profiles[char.creatorId];
-            }
-          });
         }
         
-        setCharacters(chars);
+        setCharacters(charactersWithNames);
       } else {
-        const q = query(
-          collection(db, 'profiles'),
-          where('displayName_lowercase', '>=', lowerQuery),
-          where('displayName_lowercase', '<=', lowerQuery + '\uf8ff'),
-          limit(20)
-        );
-        const snap = await getDocs(q);
-        setProfiles(snap.docs.map(doc => doc.data() as Profile));
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .ilike('displayName', `%${searchQuery}%`)
+          .limit(20);
+        
+        if (error) throw error;
+        setProfiles(profiles || []);
       }
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
-        setQuotaExceeded(true);
-      } else {
-        console.error('Search error:', error);
-      }
+      console.error('Search error:', error);
     } finally {
       setIsSearching(false);
     }
@@ -139,23 +125,20 @@ export function Search() {
     setSelectedUser(profile);
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, 'characters'),
-        where('creatorId', '==', profile.uid),
-        where('visibility', '==', 'public')
-      );
-      const snap = await getDocs(q);
-      setUserCharacters(snap.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data(),
+      const { data: userChars, error } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('creatorId', profile.uid)
+        .eq('visibility', 'public');
+        
+      if (error) throw error;
+      
+      setUserCharacters((userChars || []).map(char => ({ 
+        ...char,
         creatorName: profile.displayName 
-      } as Character)));
+      })));
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
-        setQuotaExceeded(true);
-      } else {
-        console.error('Error fetching user characters:', error);
-      }
+      console.error('Error fetching user characters:', error);
     } finally {
       setIsLoading(false);
     }

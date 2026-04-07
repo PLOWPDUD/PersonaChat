@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Users, Loader2, User } from 'lucide-react';
+import { Users, Loader2, User, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Stats() {
   const { user, profile } = useAuth();
   const [stats, setStats] = useState<{ visitorCount: number; userCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const statsRef = doc(db, 'siteStats', 'global');
         const statsSnap = await getDoc(statsRef);
+        
         if (statsSnap.exists()) {
           setStats(statsSnap.data() as { visitorCount: number; userCount: number });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching stats:', error);
+        handleFirestoreError(error, OperationType.GET, 'siteStats/global');
+        setError('Failed to load statistics.');
       } finally {
         setLoading(false);
       }
@@ -31,6 +37,21 @@ export function Stats() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
+        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <p className="text-red-400 mb-4">{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="text-indigo-400 hover:text-indigo-300 font-medium"
+        >
+          Try reloading
+        </button>
       </div>
     );
   }

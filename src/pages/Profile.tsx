@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Save, AlertCircle, Camera, Upload } from 'lucide-react';
 
@@ -102,6 +102,7 @@ export function Profile() {
       try {
         const profileRef = doc(db, 'profiles', user.uid);
         const profileSnap = await getDoc(profileRef);
+        
         if (profileSnap.exists()) {
           const data = profileSnap.data();
           setFormData({
@@ -131,21 +132,16 @@ export function Profile() {
     setSuccess(false);
 
     try {
-      const profileRef = doc(db, 'profiles', user.uid);
       const updatedData = {
         displayName: formData.displayName,
-        displayName_lowercase: formData.displayName.toLowerCase(),
         photoURL: formData.photoURL,
         userPersona: formData.userPersona,
-        personas: formData.personas,
-        email: user.email || '',
-        updatedAt: serverTimestamp()
+        personas: formData.personas
       };
-      await setDoc(profileRef, updatedData, { merge: true });
-      updateProfile(updatedData);
+      
+      await updateProfile(updatedData);
       setSuccess(true);
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
       setError('Failed to update profile.');
     } finally {
       setLoading(false);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { UserCircle, Trash2, Plus, AlertCircle } from 'lucide-react';
 
@@ -12,61 +12,46 @@ interface Persona {
 }
 
 export function Personas() {
-  const { user } = useAuth();
-  const [personas, setPersonas] = useState<Persona[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user, profile } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
 
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchPersonas = async () => {
-      setLoading(true);
-      try {
-        const personasRef = collection(db, 'personas');
-        const q = query(personasRef, where('creatorId', '==', user.uid), limit(20));
-        const snapshot = await getDocs(q);
-        const p: Persona[] = [];
-        snapshot.forEach((doc) => {
-          p.push({ id: doc.id, ...doc.data() } as Persona);
-        });
-        setPersonas(p);
-      } catch (err: any) {
-        handleFirestoreError(err, OperationType.LIST, 'personas');
-        setError('Failed to load personas.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPersonas();
-  }, [user]);
+  const personas = profile?.personas || [];
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     try {
-      const docRef = await addDoc(collection(db, 'personas'), {
+      const personaId = crypto.randomUUID();
+      const personaData = {
+        id: personaId,
         ...newPersona,
-        creatorId: user.uid,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
+      };
+
+      const profileRef = doc(db, 'profiles', user.uid);
+      await updateDoc(profileRef, {
+        personas: arrayUnion(personaData)
       });
-      setPersonas([...personas, { id: docRef.id, ...newPersona }]);
+      
       setNewPersona({ name: '', description: '', personality: '' });
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.CREATE, 'personas');
+      handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
       setError('Failed to create persona.');
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (persona: any) => {
+    if (!user) return;
     try {
-      await deleteDoc(doc(db, 'personas', id));
-      setPersonas(personas.filter(p => p.id !== id));
+      const profileRef = doc(db, 'profiles', user.uid);
+      await updateDoc(profileRef, {
+        personas: arrayRemove(persona)
+      });
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.DELETE, `personas/${id}`);
+      handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
       setError('Failed to delete persona.');
     }
   };
@@ -115,7 +100,7 @@ export function Personas() {
                 <p className="text-zinc-400 text-sm">{p.description}</p>
               </div>
             </div>
-            <button onClick={() => handleDelete(p.id)} className="text-zinc-500 hover:text-red-400">
+            <button onClick={() => handleDelete(p)} className="text-zinc-500 hover:text-red-400">
               <Trash2 className="w-5 h-5" />
             </button>
           </div>

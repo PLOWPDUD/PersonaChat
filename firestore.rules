@@ -1,384 +1,95 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required) - The user's unique ID
-    //   - displayName: string (optional) - The user's display name
-    //   - email: string (required) - The user's email address
-    //   - photoURL: string (optional) - The user's profile picture URL
-    //   - createdAt: timestamp (required) - When the user was created
-    //
-    // Collection: characters
-    // Document ID: {characterId}
-    // Fields:
-    //   - creatorId: string (required) - The UID of the user who created this character
-    //   - name: string (required) - The character's name
-    //   - name_lowercase: string (required) - Lowercase version for search
-    //   - avatarUrl: string (optional) - The character's avatar image URL
-    //   - greeting: string (required) - The character's initial greeting message
-    //   - description: string (required) - Detailed description of the character's persona
-    //   - personality: string (optional) - The character's personality traits
-    //   - visibility: string (required) - 'public' or 'private'
-    //   - createdAt: timestamp (required) - When the character was created
-    //
-    // Collection: chats
-    // Document ID: {chatId}
-    // Fields:
-    //   - userId: string (required) - The UID of the user
-    //   - characterId: string (required) - The ID of the character
-    //   - createdAt: timestamp (required) - When the chat was started
-    //   - updatedAt: timestamp (required) - When the chat was last updated
-    //
-    // Collection: chats/{chatId}/messages
-    // Document ID: {messageId}
-    // Fields:
-    //   - chatId: string (required) - The ID of the chat this message belongs to
-    //   - role: string (required) - 'user' or 'model'
-    //   - content: string (required) - The content of the message
-    //   - createdAt: timestamp (required) - When the message was sent
-    //
-    // ===============================================================
-
-    // Collection: profiles
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required) - The user's unique ID
-    //   - displayName: string (required) - The user's display name
-    //   - displayName_lowercase: string (required) - Lowercase version for search
-    //   - photoURL: string (optional) - The user's profile picture URL
-    //   - userPersona: string (optional) - The user's persona
-    //   - createdAt: timestamp (required) - When the profile was created
-    //
-    // ===============================================================
 
     // ===============================================================
     // Helper Functions
     // ===============================================================
+
     function isAuthenticated() {
       return request.auth != null;
-    }
-
-    function isOwnerRole() {
-      return isAuthenticated() &&
-        (
-          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
-           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'owner') ||
-          (request.auth.token.email == "videosonli5@gmail.com" && request.auth.token.email_verified == true)
-        );
-    }
-
-    function isModeratorRole() {
-      return isAuthenticated() &&
-        (
-          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
-           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role in ['owner', 'moderator']) ||
-          (request.auth.token.email == "videosonli5@gmail.com" && request.auth.token.email_verified == true)
-        );
-    }
-
-    function canModeratorSeePrivate() {
-      return isModeratorRole() &&
-             exists(/databases/$(database)/documents/settings/config) &&
-             get(/databases/$(database)/documents/settings/config).data.moderatorCanSeePrivate == true;
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() && resource.data.creatorId == request.auth.uid;
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "videosonli5@gmail.com" || 
+         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner");
     }
 
-    function uidUnchanged(field) {
-      return !(field in request.resource.data) || request.resource.data[field] == request.auth.uid;
+    function isModerator() {
+      return isAuthenticated() && 
+        (isAdmin() || get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator");
     }
 
-    function uidNotModified(field) {
-      return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
-    }
-
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    function validStringLength(field, minLen, maxLen) {
-      return request.resource.data[field] is string &&
-        request.resource.data[field].size() >= minLen &&
-        request.resource.data[field].size() <= maxLen;
-    }
-
-    function isValidOptionalString(field, minLen, maxLen) {
-      return !(field in request.resource.data) ||
-             request.resource.data[field] == null ||
-             (request.resource.data[field] is string &&
-              request.resource.data[field].size() >= minLen &&
-              request.resource.data[field].size() <= maxLen);
-    }
-
-    function areImmutableFieldsUnchanged(fields) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
-    function isValidUser() {
-      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'email', 'photoURL', 'createdAt']) &&
-             request.resource.data.uid == request.auth.uid &&
-             request.resource.data.email is string &&
-             isValidOptionalString('displayName', 0, 100) &&
-             isValidOptionalString('photoURL', 0, 1000000) &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidProfile(userId) {
-      return hasRequiredFields(['uid', 'displayName', 'displayName_lowercase', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'displayName', 'displayName_lowercase', 'photoURL', 'userPersona', 'personas', 'createdAt', 'updatedAt', 'role', 'email']) &&
-             request.resource.data.uid == userId &&
-             validStringLength('displayName', 1, 100) &&
-             request.resource.data.displayName_lowercase == request.resource.data.displayName.lower() &&
-             isValidOptionalString('photoURL', 0, 1000000) &&
-             isValidOptionalString('userPersona', 0, 5000) &&
-             isValidOptionalString('email', 0, 200) &&
-             request.resource.data.createdAt is timestamp &&
-             isValidOptionalTimestamp('updatedAt') &&
-             (!('role' in request.resource.data) || request.resource.data.role in ['user', 'moderator', 'owner']) &&
-             (!('personas' in request.resource.data) || request.resource.data.personas is list);
-    }
-
-    function isValidCharacter() {
-      return hasRequiredFields(['creatorId', 'name', 'name_lowercase', 'greeting', 'description', 'visibility', 'createdAt']) &&
-             hasOnlyAllowedFields(['creatorId', 'creatorName', 'name', 'name_lowercase', 'avatarUrl', 'greeting', 'description', 'personality', 'visibility', 'category', 'createdAt', 'updatedAt', 'likesCount', 'interactionsCount', 'ratingCount', 'totalRatingScore', 'averageRating']) &&
-             request.resource.data.creatorId == request.auth.uid &&
-             validStringLength('name', 1, 100) &&
-             request.resource.data.name_lowercase == request.resource.data.name.lower() &&
-             isValidOptionalString('avatarUrl', 0, 1000000) &&
-             isValidOptionalString('creatorName', 0, 100) &&
-             validStringLength('greeting', 1, 5000) &&
-             validStringLength('description', 1, 10000) &&
-             isValidOptionalString('personality', 0, 5000) &&
-             isValidOptionalString('category', 0, 100) &&
-             request.resource.data.visibility in ['public', 'private', 'unlisted'] &&
-             request.resource.data.createdAt is timestamp &&
-             isValidOptionalTimestamp('updatedAt') &&
-             request.resource.data.likesCount is number && request.resource.data.likesCount >= 0 &&
-             request.resource.data.interactionsCount is number && request.resource.data.interactionsCount >= 0 &&
-             (!('ratingCount' in request.resource.data) || (request.resource.data.ratingCount is number && request.resource.data.ratingCount >= 0)) &&
-             (!('totalRatingScore' in request.resource.data) || (request.resource.data.totalRatingScore is number && request.resource.data.totalRatingScore >= 0)) &&
-             (!('averageRating' in request.resource.data) || (request.resource.data.averageRating is number && request.resource.data.averageRating >= 0 && request.resource.data.averageRating <= 5));
-    }
-
-    function isValidOptionalTimestamp(field) {
-      return !(field in request.resource.data) || 
-             request.resource.data[field] == null || 
-             request.resource.data[field] is timestamp;
-    }
-
-    function isValidChat() {
-      return hasRequiredFields(['userId', 'createdAt', 'updatedAt']) &&
-             hasOnlyAllowedFields(['userId', 'characterId', 'characterIds', 'createdAt', 'updatedAt', 'title', 'characterName', 'characterAvatarUrl', 'creatorName']) &&
-             request.resource.data.userId == request.auth.uid &&
-             (
-               ('characterIds' in request.resource.data && request.resource.data.characterIds is list && request.resource.data.characterIds.size() > 0) ||
-               ('characterId' in request.resource.data && request.resource.data.characterId is string)
-             ) &&
-             isValidOptionalString('title', 0, 200) &&
-             isValidOptionalString('characterName', 0, 100) &&
-             isValidOptionalString('characterAvatarUrl', 0, 1000000) &&
-             isValidOptionalString('creatorName', 0, 100) &&
-             request.resource.data.createdAt is timestamp &&
-             request.resource.data.updatedAt is timestamp;
-    }
-
-    function isChatOwner(cid) {
-      return isAuthenticated() && (
-        cid.startsWith(request.auth.uid + "_") || 
-        (exists(/databases/$(database)/documents/chats/$(cid)) && 
-         get(/databases/$(database)/documents/chats/$(cid)).data.userId == request.auth.uid) ||
-        isOwnerRole()
-      );
-    }
-
-    function isValidMessage(chatId) {
-      return hasRequiredFields(['chatId', 'role', 'content', 'createdAt']) &&
-             hasOnlyAllowedFields(['chatId', 'role', 'content', 'createdAt', 'updatedAt', 'imageUrl', 'characterId']) &&
-             request.resource.data.chatId == chatId &&
-             request.resource.data.role in ['user', 'model'] &&
-             validStringLength('content', 0, 50000) &&
-             isValidOptionalString('imageUrl', 0, 1000000) &&
-             isValidOptionalString('characterId', 0, 100) &&
-             request.resource.data.createdAt is timestamp &&
-             isValidOptionalTimestamp('updatedAt');
-    }
-
-    function isValidMemory(chatId) {
-      return hasRequiredFields(['chatId', 'content', 'createdAt']) &&
-             hasOnlyAllowedFields(['chatId', 'content', 'createdAt']) &&
-             request.resource.data.chatId == chatId &&
-             validStringLength('content', 1, 1000) &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidPersona() {
-      return hasRequiredFields(['creatorId', 'name', 'description', 'createdAt']) &&
-             hasOnlyAllowedFields(['creatorId', 'name', 'description', 'personality', 'createdAt']) &&
-             request.resource.data.creatorId == request.auth.uid &&
-             validStringLength('name', 1, 100) &&
-             validStringLength('description', 1, 10000) &&
-             isValidOptionalString('personality', 0, 5000) &&
-             request.resource.data.createdAt is timestamp;
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
-    match /users/{userId} {
-      // Users can only read and write their own profile, admins can read all
-      allow read: if isOwner(userId) || isOwnerRole();
-      allow create: if isOwner(userId) && isValidUser();
-      allow update: if isOwner(userId) && isValidUser() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
-      allow delete: if isOwner(userId) || isOwnerRole();
-    }
-
-    match /profiles/{userId} {
-      // Profiles are public for authenticated users
-      allow read, list: if isAuthenticated();
-      allow create: if isOwner(userId) && isValidProfile(userId) && (!('role' in request.resource.data) || request.resource.data.role == 'user' || isOwnerRole());
-      allow update: if isAuthenticated() && isValidProfile(userId) && 
-                    (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid) &&
-                    (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
-                    (
-                      (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
-                      isOwnerRole()
-                    );
-      allow delete: if isOwner(userId) || isOwnerRole();
+    match /profiles/{uid} {
+      allow read: if isAuthenticated() && (isOwner(uid) || isModerator());
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /characters/{characterId} {
-      // Anyone authenticated can read public or unlisted characters, or their own private characters
-      allow get: if isAuthenticated() && (resource == null || resource.data.visibility in ['public', 'unlisted'] || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
-      allow list: if isAuthenticated() && (resource.data.visibility == 'public' || isDocOwner() || isModeratorRole() || (resource.data.visibility == 'private' && canModeratorSeePrivate()));
-      allow create: if isAuthenticated() && isValidCharacter();
-      allow update: if isAuthenticated() && (
-        ((isDocOwner() || isOwnerRole()) && isValidCharacter() && areImmutableFieldsUnchanged(['creatorId', 'createdAt'])) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['interactionsCount']) &&
-         request.resource.data.interactionsCount == (resource.data.get('interactionsCount', 0) + 1)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
-         request.resource.data.likesCount == (resource.data.get('likesCount', 0) + 1)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
-         request.resource.data.likesCount == (resource.data.get('likesCount', 0) - 1)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasAny(['ratingCount', 'totalRatingScore', 'averageRating']) &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingCount', 'totalRatingScore', 'averageRating']))
-      );
-      allow delete: if isDocOwner() || isOwnerRole();
-      
+      allow read: if true; // Public characters
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+
       match /ratings/{userId} {
-        allow read: if isAuthenticated();
-        allow create: if isOwner(userId) && 
-                      hasRequiredFields(['userId', 'characterId', 'score', 'createdAt']) &&
-                      hasOnlyAllowedFields(['userId', 'characterId', 'score', 'createdAt']) &&
-                      request.resource.data.userId == userId &&
-                      request.resource.data.characterId == characterId &&
-                      request.resource.data.score is number && 
-                      request.resource.data.score >= 1 && 
-                      request.resource.data.score <= 5 &&
-                      request.resource.data.createdAt is timestamp;
-        allow update: if isOwner(userId) && 
-                      hasRequiredFields(['userId', 'characterId', 'score', 'createdAt']) &&
-                      hasOnlyAllowedFields(['userId', 'characterId', 'score', 'createdAt']) &&
-                      request.resource.data.userId == userId &&
-                      request.resource.data.characterId == characterId &&
-                      request.resource.data.score is number && 
-                      request.resource.data.score >= 1 && 
-                      request.resource.data.score <= 5 &&
-                      areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt']);
-        allow delete: if isOwner(userId);
+        allow read: if true;
+        allow write: if isOwner(userId);
       }
     }
 
     match /chats/{chatId} {
-      // Users can only read and write their own chats
-      // We allow 'get' even if the document doesn't exist so the app can handle initialization
-      allow get: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isOwnerRole());
-      allow list: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());
-      allow create: if isAuthenticated() && isValidChat();
-      allow update: if isAuthenticated() && (
-        (resource.data.userId == request.auth.uid && isValidChat() && areImmutableFieldsUnchanged(['userId', 'characterId', 'createdAt'])) ||
-        isOwnerRole()
-      );
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isOwnerRole());
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
 
       match /messages/{messageId} {
-        // Users can only read and write messages in their own chats
-        allow read: if isChatOwner(chatId);
-        allow create: if isChatOwner(chatId) && isValidMessage(chatId);
-        allow update: if isChatOwner(chatId) && isValidMessage(chatId) && areImmutableFieldsUnchanged(['chatId', 'role', 'createdAt']);
-        allow delete: if isChatOwner(chatId);
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isAuthenticated() && isAdmin();
       }
 
       match /memories/{memoryId} {
-        // Users can only read and write memories in their own chats
-        allow read: if isChatOwner(chatId);
-        allow create: if isChatOwner(chatId) && isValidMemory(chatId);
-        allow update: if isChatOwner(chatId) && isValidMemory(chatId) && areImmutableFieldsUnchanged(['chatId', 'createdAt']);
-        allow delete: if isChatOwner(chatId);
+        allow read, write: if isAuthenticated();
       }
     }
 
-    match /personas/{personaId} {
-      // Users can only read and write their own personas
-      allow read, list: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidPersona();
-      allow update: if isAuthenticated() && resource.data.creatorId == request.auth.uid && isValidPersona() && areImmutableFieldsUnchanged(['creatorId', 'createdAt']);
-      allow delete: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
-    }
-
     match /favorites/{favoriteId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.characterId is string;
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    match /settings/{docId} {
       allow read: if isAuthenticated();
-      allow update: if isOwnerRole();
-      allow create: if isOwnerRole();
-    }
-
-    match /siteStats/{docId} {
-      allow read: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /reports/{reportId} {
-      allow create: if isAuthenticated() && 
-                    hasRequiredFields(['reporterId', 'targetId', 'type', 'reason', 'status', 'createdAt']) &&
-                    hasOnlyAllowedFields(['reporterId', 'targetId', 'type', 'reason', 'status', 'createdAt', 'updatedAt']) &&
-                    request.resource.data.reporterId == request.auth.uid &&
-                    request.resource.data.type in ['character', 'user'] &&
-                    request.resource.data.status == 'pending' &&
-                    request.resource.data.createdAt is timestamp;
-      allow read: if isOwnerRole() || isModeratorRole();
-      allow update: if isOwnerRole() && 
-                    areImmutableFieldsUnchanged(['reporterId', 'targetId', 'type', 'reason', 'createdAt']) &&
-                    request.resource.data.status in ['pending', 'reviewed', 'resolved'];
-      allow delete: if isOwnerRole();
+      allow read: if isModerator();
+      allow create: if isAuthenticated();
+      allow update: if isModerator();
+    }
+
+    match /siteStats/{docId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

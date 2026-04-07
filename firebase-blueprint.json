@@ -1,156 +1,159 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "description": "A user of the application.",
+    "Profile": {
+      "title": "User Profile",
+      "description": "Stores user-specific information and preferences.",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "The user's unique ID." },
+        "uid": { "type": "string", "description": "The unique identifier for the user." },
         "displayName": { "type": "string", "description": "The user's display name." },
+        "displayName_lowercase": { "type": "string", "description": "The user's display name in lowercase for searching." },
+        "photoURL": { "type": "string", "description": "The URL to the user's profile photo." },
         "email": { "type": "string", "format": "email", "description": "The user's email address." },
-        "photoURL": { "type": "string", "format": "uri", "description": "The user's profile picture URL." },
-        "role": { "type": "string", "enum": ["user", "moderator", "owner"], "description": "The user's role for RBAC." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
+        "role": { "type": "string", "enum": ["user", "moderator", "owner"], "description": "The user's role in the application." },
+        "userPersona": { "type": "string", "description": "A description of the user's persona for AI interactions." },
+        "personas": { 
+          "type": "array", 
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "description": "A list of custom personas the user has created."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the profile was last updated." }
       },
-      "required": ["uid", "email", "createdAt"]
+      "required": ["uid", "displayName", "email"]
     },
     "Character": {
-      "title": "Character",
-      "description": "An AI character created by a user.",
+      "title": "AI Character",
+      "description": "Defines an AI personality that users can chat with.",
       "type": "object",
       "properties": {
-        "creatorId": { "type": "string", "description": "The UID of the user who created this character." },
         "name": { "type": "string", "description": "The character's name." },
-        "avatarUrl": { "type": "string", "format": "uri", "description": "The character's avatar image URL." },
+        "name_lowercase": { "type": "string", "description": "The character's name in lowercase for searching." },
+        "avatarUrl": { "type": "string", "description": "The URL to the character's avatar image." },
         "greeting": { "type": "string", "description": "The character's initial greeting message." },
-        "description": { "type": "string", "description": "Detailed description of the character's persona." },
-        "personality": { "type": "string", "description": "The character's personality traits." },
-        "visibility": { "type": "string", "enum": ["public", "private", "unlisted"], "description": "Whether the character is public, private, or unlisted." },
-        "likesCount": { "type": "number", "description": "The number of likes the character has received." },
-        "interactionsCount": { "type": "number", "description": "The number of interactions the character has had." },
-        "ratingCount": { "type": "number", "description": "The number of ratings the character has received." },
-        "totalRatingScore": { "type": "number", "description": "The sum of all rating scores." },
-        "averageRating": { "type": "number", "description": "The average rating score." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the character was created." }
+        "description": { "type": "string", "description": "A short description of the character." },
+        "personality": { "type": "string", "description": "Detailed instructions for the AI on how to behave as this character." },
+        "visibility": { "type": "string", "enum": ["public", "private", "unlisted"], "description": "Who can see and chat with this character." },
+        "category": { "type": "string", "description": "The category the character belongs to." },
+        "creatorId": { "type": "string", "description": "The UID of the user who created the character." },
+        "creatorName": { "type": "string", "description": "The display name of the creator." },
+        "likesCount": { "type": "number", "description": "Number of users who favorited this character." },
+        "interactionsCount": { "type": "number", "description": "Number of messages sent to this character." },
+        "ratingCount": { "type": "number", "description": "Number of ratings received." },
+        "totalRatingScore": { "type": "number", "description": "Sum of all rating scores." },
+        "averageRating": { "type": "number", "description": "Average rating score." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["creatorId", "name", "greeting", "description", "visibility", "createdAt", "likesCount", "interactionsCount"]
-    },
-    "Rating": {
-      "title": "Rating",
-      "description": "A user's rating for a character.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string", "description": "The UID of the user." },
-        "characterId": { "type": "string", "description": "The ID of the character." },
-        "score": { "type": "number", "description": "The rating score (e.g., 1-5)." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the rating was given." }
-      },
-      "required": ["userId", "characterId", "score", "createdAt"]
+      "required": ["name", "greeting", "description", "visibility", "creatorId"]
     },
     "Chat": {
-      "title": "Chat",
-      "description": "A chat session between a user and one or more characters.",
+      "title": "Chat Session",
+      "description": "Represents a conversation between a user and one or more characters.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "The UID of the user." },
-        "characterId": { "type": "string", "description": "The ID of the primary character (legacy)." },
-        "characterIds": { 
-          "type": "array", 
-          "items": { "type": "string" },
-          "description": "The IDs of the characters in this chat." 
-        },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the chat was started." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." },
-        "title": { "type": "string", "description": "The title of the chat session." }
+        "userId": { "type": "string", "description": "The UID of the user in the chat." },
+        "characterId": { "type": "string", "description": "The primary character's ID (legacy support)." },
+        "characterIds": { "type": "array", "items": { "type": "string" }, "description": "List of character IDs in the chat." },
+        "characterName": { "type": "string", "description": "Name of the primary character." },
+        "characterAvatarUrl": { "type": "string", "description": "Avatar URL of the primary character." },
+        "creatorName": { "type": "string", "description": "Creator name of the primary character." },
+        "title": { "type": "string", "description": "The title of the chat session." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "characterIds", "createdAt", "updatedAt"]
+      "required": ["userId", "characterIds"]
     },
     "Message": {
-      "title": "Message",
-      "description": "A single message within a chat session.",
+      "title": "Chat Message",
+      "description": "A single message in a chat session.",
       "type": "object",
       "properties": {
-        "chatId": { "type": "string", "description": "The ID of the chat this message belongs to." },
-        "role": { "type": "string", "enum": ["user", "model"], "description": "Who sent the message." },
-        "characterId": { "type": "string", "description": "The ID of the character who sent this message (if role is model)." },
-        "content": { "type": "string", "description": "The content of the message." },
-        "imageUrl": { "type": "string", "description": "The URL of the image sent with the message." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." }
+        "chatId": { "type": "string", "description": "The ID of the chat session." },
+        "role": { "type": "string", "enum": ["user", "model"], "description": "The sender's role." },
+        "characterId": { "type": "string", "description": "The character ID if the role is 'model'." },
+        "content": { "type": "string", "description": "The text content of the message." },
+        "imageUrl": { "type": "string", "description": "Optional URL to an image attached to the message." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["chatId", "role", "content", "createdAt"]
     },
     "Memory": {
-      "title": "Memory",
-      "description": "A specific detail or fact the AI should remember about the chat or characters.",
+      "title": "Chat Memory",
+      "description": "A piece of context or memory for a specific chat session.",
       "type": "object",
       "properties": {
-        "chatId": { "type": "string", "description": "The ID of the chat this memory belongs to." },
-        "content": { "type": "string", "description": "The fact or detail to remember." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the memory was added." }
+        "chatId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["chatId", "content", "createdAt"]
     },
-    "Persona": {
-      "title": "Persona",
-      "description": "A reusable set of personality traits and description.",
+    "Favorite": {
+      "title": "User Favorite",
+      "description": "A mapping between a user and a character they have favorited.",
       "type": "object",
       "properties": {
-        "creatorId": { "type": "string", "description": "The UID of the user who created this persona." },
-        "name": { "type": "string", "description": "The persona's name." },
-        "description": { "type": "string", "description": "Detailed description of the persona." },
-        "personality": { "type": "string", "description": "The persona's personality traits." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the persona was created." }
+        "userId": { "type": "string" },
+        "characterId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["creatorId", "name", "description", "createdAt"]
+      "required": ["userId", "characterId", "createdAt"]
+    },
+    "Rating": {
+      "title": "Character Rating",
+      "description": "A user's rating for a specific character.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "characterId": { "type": "string" },
+        "score": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "characterId", "score", "createdAt"]
     },
     "Report": {
-      "title": "Report",
-      "description": "A report submitted by a user or moderator.",
+      "title": "Content Report",
+      "description": "A report filed by a user against a character or message.",
       "type": "object",
       "properties": {
-        "reporterId": { "type": "string", "description": "The UID of the user who submitted the report." },
-        "targetId": { "type": "string", "description": "The ID of the reported character or user." },
-        "type": { "type": "string", "enum": ["character", "user"], "description": "The type of entity being reported." },
-        "reason": { "type": "string", "description": "The reason for the report." },
-        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"], "description": "The status of the report." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the report was created." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "When the report was last updated." }
+        "reporterId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["character", "message"] },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["reporterId", "targetId", "type", "reason", "status", "createdAt"]
+    },
+    "SiteStats": {
+      "title": "Site Statistics",
+      "description": "Global statistics for the application.",
+      "type": "object",
+      "properties": {
+        "userCount": { "type": "number" },
+        "visitorCount": { "type": "number" }
+      }
     }
   },
   "firestore": {
-    "/users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "Stores user profiles."
-    },
-    "/characters/{characterId}": {
-      "schema": { "$ref": "#/entities/Character" },
-      "description": "Stores AI characters."
-    },
-    "/characters/{characterId}/ratings/{userId}": {
-      "schema": { "$ref": "#/entities/Rating" },
-      "description": "Stores user ratings for a character."
-    },
-    "/chats/{chatId}": {
-      "schema": { "$ref": "#/entities/Chat" },
-      "description": "Stores chat sessions."
-    },
-    "/chats/{chatId}/messages/{messageId}": {
-      "schema": { "$ref": "#/entities/Message" },
-      "description": "Stores messages within a chat."
-    },
-    "/chats/{chatId}/memories/{memoryId}": {
-      "schema": { "$ref": "#/entities/Memory" },
-      "description": "Stores specific details the AI should remember."
-    },
-    "/personas/{personaId}": {
-      "schema": { "$ref": "#/entities/Persona" },
-      "description": "Stores user-created personas."
-    },
-    "/reports/{reportId}": {
-      "schema": { "$ref": "#/entities/Report" },
-      "description": "Stores reports submitted by users and moderators."
-    }
+    "/profiles/{uid}": { "schema": "Profile", "description": "User profiles." },
+    "/characters/{characterId}": { "schema": "Character", "description": "AI characters." },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Chat sessions." },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat." },
+    "/chats/{chatId}/memories/{memoryId}": { "schema": "Memory", "description": "Memories for a chat." },
+    "/favorites/{favoriteId}": { "schema": "Favorite", "description": "User favorites." },
+    "/characters/{characterId}/ratings/{userId}": { "schema": "Rating", "description": "Character ratings." },
+    "/reports/{reportId}": { "schema": "Report", "description": "Content reports." },
+    "/siteStats/{docId}": { "schema": "SiteStats", "description": "Global site statistics." }
   }
 }

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 
@@ -24,7 +24,7 @@ interface Character {
 }
 
 export function Home() {
-  const { user } = useAuth();
+  const { user, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -47,7 +47,48 @@ export function Home() {
   const [isDeletingChat, setIsDeletingChat] = useState<string | null>(null);
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  // Report Modal States
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportTargetId, setReportTargetId] = useState<string | null>(null);
+
+  const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
+
+  const handleReport = async () => {
+    if (!user || !reportTargetId || !reportReason.trim()) return;
+    setIsSubmittingReport(true);
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId: user.uid,
+        targetId: reportTargetId,
+        type: 'character',
+        reason: reportReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      setIsReportModalOpen(false);
+      setReportReason('');
+      setReportTargetId(null);
+      alert('Report submitted successfully.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'reports');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
+  const openReportModal = (e: React.MouseEvent, charId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setReportTargetId(charId);
+    setIsReportModalOpen(true);
+  };
 
   const toggleFavorite = async (e: React.MouseEvent, charId: string) => {
     e.preventDefault();
@@ -129,7 +170,10 @@ export function Home() {
         favsSnapshot.forEach(doc => favIds.add(doc.data().characterId));
         setFavorites(favIds);
         setCachedFavorites(favIds);
-      } catch (error) {
+      } catch (error: any) {
+        if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+          setLocalQuotaExceeded(true);
+        }
         console.error('Error fetching favorites:', error);
       }
     };
@@ -137,17 +181,32 @@ export function Home() {
     fetchFavorites();
   }, [user]);
 
-  useEffect(() => {
+  const fetchData = async (isLoadMore = false) => {
     if (!user) return;
-
-    const fetchData = async () => {
+    if (isLoadMore) setIsFetchingMore(true);
+    else {
       // Check global cache first
       const globalCached = getCachedData(tab);
-      if (globalCached && globalCached.length > 0) {
+      if (globalCached && globalCached.length > 0 && !isLoadMore) {
         if (tab === 'recent') setRecentChats(globalCached);
         else setCharacters(globalCached);
         setLoading(false);
         return;
+      }
+
+      // Check localStorage for 'public' tab (10 min cache)
+      if (tab === 'public' && !isLoadMore) {
+        const cached = localStorage.getItem('cached_public_characters');
+        const lastFetch = localStorage.getItem('last_public_fetch');
+        const now = Date.now();
+        const tenMinutes = 10 * 60 * 1000;
+
+        if (cached && lastFetch && (now - parseInt(lastFetch)) < tenMinutes) {
+          const parsed = JSON.parse(cached);
+          setCharacters(parsed);
+          setLoading(false);
+          return;
+        }
       }
 
       // Check local component cache
@@ -167,149 +226,198 @@ export function Home() {
         return;
       }
 
-      setLoading(true);
-      try {
-        if (tab === 'recent') {
-          const chatsRef = collection(db, 'chats');
-          const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(30));
-          const snapshot = await getDocs(q);
-          
-          const chats: any[] = [];
-          const creatorIds = new Set<string>();
-          
-          snapshot.docs.forEach(chatDoc => {
-            const chatData = chatDoc.data();
-            const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
-            
-            // Check cache for creatorName
-            const cachedName = chatData.creatorId ? getCachedProfile(chatData.creatorId) : null;
-            const creatorName = chatData.creatorName || cachedName || 'Unknown';
-
-            if (!chatData.creatorName && chatData.creatorId && !cachedName) {
-              creatorIds.add(chatData.creatorId);
-            }
-
-            chats.push({
-              id: chatDoc.id,
-              ...chatData,
-              characterId: charId || 'unknown',
-              character: { 
-                id: charId || 'unknown', 
-                name: chatData.characterName || 'Unknown Character', 
-                avatarUrl: chatData.characterAvatarUrl || '',
-                creatorName: creatorName,
-                likesCount: chatData.likesCount || 0,
-                interactionsCount: chatData.interactionsCount || 0,
-                averageRating: chatData.averageRating
-              }
-            });
-          });
-
-          // Fetch missing creator names from profiles
-          if (creatorIds.size > 0) {
-            const creatorIdsArray = Array.from(creatorIds);
-            const profiles: Record<string, string> = {};
-            
-            for (let i = 0; i < creatorIdsArray.length; i += 30) {
-              const chunk = creatorIdsArray.slice(i, i + 30);
-              const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
-              const profilesSnap = await getDocs(profilesQ);
-              profilesSnap.forEach(pDoc => {
-                const pData = pDoc.data();
-                profiles[pDoc.id] = pData.displayName || 'Anonymous';
-              });
-            }
-
-            // Update cache
-            setCachedProfiles(profiles);
-
-            chats.forEach(chat => {
-              if (chat.character.creatorName === 'Unknown' && chat.creatorId && profiles[chat.creatorId]) {
-                chat.character.creatorName = profiles[chat.creatorId];
-              }
-            });
-          }
-          
-          setRecentChats(chats);
-          updateGlobalCache('recent', chats);
-          setCachedData(prev => ({ ...prev, recent: chats }));
+      // Check localStorage for 'mine' tab
+      if (tab === 'mine') {
+        const cached = localStorage.getItem(`cached_mine_characters_${user.uid}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setCharacters(parsed);
+          setLoading(false);
+          // We still fetch in background to update
         } else {
-          const charactersRef = collection(db, 'characters');
-          let q;
-          
-          if (tab === 'public') {
-            q = query(charactersRef, where('visibility', '==', 'public'), limit(30));
-          } else {
-            q = query(charactersRef, where('creatorId', '==', user.uid), limit(30));
-          }
-
-          const snapshot = await getDocs(q);
-          const chars: Character[] = [];
-          const creatorIds = new Set<string>();
-          
-          snapshot.forEach((doc) => {
-            const data = doc.data() as Record<string, any>;
-            const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
-            const creatorName = data.creatorName || cachedName;
-            
-            chars.push({ 
-              id: doc.id, 
-              ...data,
-              creatorName: creatorName
-            } as Character);
-
-            if (!data.creatorName && data.creatorId && !cachedName) {
-              creatorIds.add(data.creatorId);
-            }
-          });
-
-          // Fetch missing creator names from profiles
-          if (creatorIds.size > 0) {
-            const creatorIdsArray = Array.from(creatorIds);
-            const profiles: Record<string, string> = {};
-            
-            // Batch fetch profiles (max 30 per query)
-            for (let i = 0; i < creatorIdsArray.length; i += 30) {
-              const chunk = creatorIdsArray.slice(i, i + 30);
-              const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
-              const profilesSnap = await getDocs(profilesQ);
-              profilesSnap.forEach(pDoc => {
-                const pData = pDoc.data();
-                profiles[pDoc.id] = pData.displayName || 'Anonymous';
-              });
-            }
-
-            // Update cache
-            setCachedProfiles(profiles);
-
-            // Update characters with fetched names
-            chars.forEach(char => {
-              if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
-                char.creatorName = profiles[char.creatorId];
-              }
-            });
-          }
-
-          setCharacters(chars);
-          if (tab === 'public') {
-            updateGlobalCache('public', chars);
-            setCachedData(prev => ({ ...prev, public: chars }));
-          } else {
-            updateGlobalCache('mine', chars);
-            setCachedData(prev => ({ ...prev, mine: chars }));
-          }
+          setLoading(true);
         }
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('Quota limit exceeded')) {
-          setQuotaExceeded(true);
-        } else {
-          handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');
-        }
-      } finally {
-        setLoading(false);
+      } else {
+        setLoading(true);
       }
-    };
+    }
 
+    try {
+      if (tab === 'recent') {
+        const chatsRef = collection(db, 'chats');
+        const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(30));
+        const snapshot = await getDocs(q);
+        
+        const chats: any[] = [];
+        const creatorIds = new Set<string>();
+        
+        snapshot.docs.forEach(chatDoc => {
+          const chatData = chatDoc.data();
+          const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
+          
+          // Check cache for creatorName
+          const cachedName = chatData.creatorId ? getCachedProfile(chatData.creatorId) : null;
+          const creatorName = chatData.creatorName || cachedName || 'Unknown';
+
+          if (!chatData.creatorName && chatData.creatorId && !cachedName) {
+            creatorIds.add(chatData.creatorId);
+          }
+
+          chats.push({
+            id: chatDoc.id,
+            ...chatData,
+            characterId: charId || 'unknown',
+            character: { 
+              id: charId || 'unknown', 
+              name: chatData.characterName || 'Unknown Character', 
+              avatarUrl: chatData.characterAvatarUrl || '',
+              creatorName: creatorName,
+              likesCount: chatData.likesCount || 0,
+              interactionsCount: chatData.interactionsCount || 0,
+              averageRating: chatData.averageRating
+            }
+          });
+        });
+
+        // Fetch missing creator names from profiles
+        if (creatorIds.size > 0) {
+          const creatorIdsArray = Array.from(creatorIds);
+          const profiles: Record<string, string> = {};
+          
+          for (let i = 0; i < creatorIdsArray.length; i += 30) {
+            const chunk = creatorIdsArray.slice(i, i + 30);
+            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+            const profilesSnap = await getDocs(profilesQ);
+            profilesSnap.forEach(pDoc => {
+              const pData = pDoc.data();
+              profiles[pDoc.id] = pData.displayName || 'Anonymous';
+            });
+          }
+
+          // Update cache
+          setCachedProfiles(profiles);
+
+          chats.forEach(chat => {
+            if (chat.character.creatorName === 'Unknown' && chat.creatorId && profiles[chat.creatorId]) {
+              chat.character.creatorName = profiles[chat.creatorId];
+            }
+          });
+        }
+        
+        setRecentChats(chats);
+        updateGlobalCache('recent', chats);
+        setCachedData(prev => ({ ...prev, recent: chats }));
+      } else {
+        const charactersRef = collection(db, 'characters');
+        let q;
+        
+        if (tab === 'public') {
+          const pageSize = 15;
+          if (isLoadMore && lastVisible) {
+            q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
+          } else {
+            q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), limit(pageSize));
+          }
+        } else {
+          q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'), limit(50));
+        }
+
+        const snapshot = await getDocs(q);
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        setLastVisible(lastDoc);
+        if (tab === 'public') {
+          setHasMore(snapshot.docs.length === 15);
+        } else {
+          setHasMore(false);
+        }
+
+        const chars: Character[] = [];
+        const creatorIds = new Set<string>();
+        
+        snapshot.forEach((doc) => {
+          const data = doc.data() as Record<string, any>;
+          const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
+          const creatorName = data.creatorName || cachedName;
+          
+          chars.push({ 
+            id: doc.id, 
+            ...data,
+            creatorName: creatorName
+          } as Character);
+
+          if (!data.creatorName && data.creatorId && !cachedName) {
+            creatorIds.add(data.creatorId);
+          }
+        });
+
+        // Fetch missing creator names from profiles
+        if (creatorIds.size > 0) {
+          const creatorIdsArray = Array.from(creatorIds);
+          const profiles: Record<string, string> = {};
+          
+          // Batch fetch profiles (max 30 per query)
+          for (let i = 0; i < creatorIdsArray.length; i += 30) {
+            const chunk = creatorIdsArray.slice(i, i + 30);
+            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+            const profilesSnap = await getDocs(profilesQ);
+            profilesSnap.forEach(pDoc => {
+              const pData = pDoc.data();
+              profiles[pDoc.id] = pData.displayName || 'Anonymous';
+            });
+          }
+
+          // Update cache
+          setCachedProfiles(profiles);
+
+          // Update characters with fetched names
+          chars.forEach(char => {
+            if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
+              char.creatorName = profiles[char.creatorId];
+            }
+          });
+        }
+
+        if (isLoadMore) {
+          setCharacters(prev => {
+            const combined = [...prev, ...chars];
+            const seen = new Set();
+            return combined.filter(item => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            });
+          });
+        } else {
+          setCharacters(chars);
+        }
+
+        if (tab === 'public') {
+          const updatedPublic = isLoadMore ? [...cachedData.public, ...chars] : chars;
+          updateGlobalCache('public', updatedPublic);
+          setCachedData(prev => ({ ...prev, public: updatedPublic }));
+          if (!isLoadMore) {
+            localStorage.setItem('cached_public_characters', JSON.stringify(chars));
+            localStorage.setItem('last_public_fetch', Date.now().toString());
+          }
+        } else {
+          updateGlobalCache('mine', chars);
+          setCachedData(prev => ({ ...prev, mine: chars }));
+          localStorage.setItem(`cached_mine_characters_${user.uid}`, JSON.stringify(chars));
+        }
+      }
+    } catch (error: any) {
+      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        setLocalQuotaExceeded(true);
+      } else {
+        handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');
+      }
+    } finally {
+      setLoading(false);
+      setIsFetchingMore(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [user, tab]);
 
@@ -622,6 +730,13 @@ export function Home() {
                 >
                   <Heart className={`w-4 h-4 ${favorites.has(char.id) ? 'fill-red-500 text-red-500' : 'text-zinc-400'}`} />
                 </button>
+              <button
+                  onClick={(e) => openReportModal(e, char.id)}
+                  className="absolute top-2 right-2 p-2 rounded-full bg-zinc-800/80 backdrop-blur-sm hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-colors z-10 opacity-0 group-hover:opacity-100"
+                  title="Report Character"
+                >
+                  <ShieldAlert className="w-4 h-4" />
+                </button>
               <Link 
                 to={`/chat/${char.id}`}
                 className="flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 h-full"
@@ -665,6 +780,45 @@ export function Home() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {isReportModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-3xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <ShieldAlert className="w-6 h-6 text-red-500" />
+              Report Character
+            </h3>
+            <p className="text-zinc-400 mb-4">
+              Please describe the issue with this character. Our moderators will review it.
+            </p>
+            <textarea
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              placeholder="Reason for reporting..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500/50 transition-all h-32 mb-4 resize-none"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setIsReportModalOpen(false);
+                  setReportReason('');
+                }}
+                className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReport}
+                disabled={!reportReason.trim() || isSubmittingReport}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit Report'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -866,6 +1020,24 @@ export function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {tab === 'public' && hasMore && (
+        <div className="flex justify-center mt-8">
+          <button
+            onClick={() => fetchData(true)}
+            disabled={isFetchingMore}
+            className="px-8 py-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl font-medium border border-zinc-800 transition-all disabled:opacity-50 flex items-center gap-2"
+          >
+            {isFetchingMore ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load More'
+            )}
+          </button>
         </div>
       )}
     </div>

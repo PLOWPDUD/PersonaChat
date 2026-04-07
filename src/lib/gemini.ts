@@ -1,14 +1,9 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
-// Get API key from environment variables
-const getApiKey = () => {
-  if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-    return process.env.GEMINI_API_KEY;
-  }
-  if (typeof (import.meta as any).env !== 'undefined' && (import.meta as any).env.VITE_GEMINI_API_KEY) {
-    return (import.meta as any).env.VITE_GEMINI_API_KEY;
-  }
-  return '';
+// Get API keys from environment variables
+const getApiKeys = () => {
+  const keysString = process.env.GEMINI_KEYS || (import.meta as any).env.VITE_GEMINI_KEYS || process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY || '';
+  return keysString.split(',').map((k: string) => k.trim()).filter((k: string) => k !== '');
 };
 
 export async function generateCharacterResponse(
@@ -20,21 +15,24 @@ export async function generateCharacterResponse(
   model: string = 'gemini-3-flash-preview',
   userPersona?: string
 ) {
-  const apiKey = getApiKey();
+  const apiKeys = getApiKeys();
   
-  if (!apiKey || apiKey === 'missing-key') {
-    console.error("GEMINI_API_KEY is missing. Please ensure it is set in the environment variables.");
+  if (apiKeys.length === 0) {
+    console.error("GEMINI_KEYS is missing. Please ensure it is set in the environment variables.");
     throw new Error("API_KEY_MISSING: The application's Gemini API key is not configured. Please contact the administrator.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-
-  let currentModel = model;
   let attempts = 0;
-  const maxAttempts = 3;
+  const maxAttempts = apiKeys.length * 3; // Allow retries across all keys
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  
+  let currentKeyIndex = 0;
+  let currentModel = model;
 
   while (attempts < maxAttempts) {
+    const apiKey = apiKeys[currentKeyIndex];
+    const ai = new GoogleGenAI({ apiKey });
+
     try {
       const memoryContext = memories.length > 0 
         ? `\n### ESTABLISHED LORE & MEMORIES ###\n${memories.map(m => `- ${m}`).join('\n')}\n`
@@ -180,17 +178,16 @@ Name2: Message
     } catch (error: any) {
       attempts++;
       const errorMsg = error.message || String(error);
-      console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}, Model: ${currentModel}):`, errorMsg);
+      console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}, KeyIndex: ${currentKeyIndex}, Model: ${currentModel}):`, errorMsg);
 
       const isQuotaError = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota');
       
-      // Fallback logic for quota errors
-      if (isQuotaError && attempts < maxAttempts) {
-        if (currentModel === 'gemini-3-flash-preview' || currentModel === 'gemini-flash-latest') {
-          console.warn(`Quota exceeded for ${currentModel}. Falling back to gemini-3.1-flash-lite-preview.`);
-          currentModel = 'gemini-3.1-flash-lite-preview';
-          continue;
-        }
+      if (isQuotaError) {
+        // Rotate key
+        currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+        console.warn(`Quota exceeded for key index ${currentKeyIndex - 1}. Rotating to key index ${currentKeyIndex}.`);
+        await delay(1000); // Small delay before trying next key
+        continue;
       }
 
       const isRetryable = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('Failed to fetch') || isQuotaError;
@@ -208,7 +205,7 @@ Name2: Message
       if (errorMsg.includes('safety')) {
         return "*OOC: The character's response was filtered by safety settings. Try a different topic.*";
       }
-      if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) {
+      if (isQuotaError) {
         throw new Error(`API_QUOTA_EXCEEDED: The application's API quota has been exceeded. Please try again later.`);
       }
       if (errorMsg.includes('403') || errorMsg.includes('Forbidden') || errorMsg.includes('API key not valid')) {

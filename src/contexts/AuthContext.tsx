@@ -10,6 +10,8 @@ interface AuthContextType {
   loading: boolean;
   isOwner: boolean;
   isModerator: boolean;
+  quotaExceeded: boolean;
+  becomeModerator: (password: string) => boolean;
   updateProfile: (newProfile: any) => void;
   logOut: () => Promise<void>;
 }
@@ -20,6 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true, 
   isOwner: false,
   isModerator: false,
+  quotaExceeded: false,
+  becomeModerator: () => false,
   updateProfile: () => {},
   logOut: async () => {}
 });
@@ -28,14 +32,39 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [profile, setProfile] = useState<any | null>(() => {
+    const cached = localStorage.getItem('cached_profile');
+    return cached ? JSON.parse(cached) : null;
+  });
   const [loading, setLoading] = useState(true);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
 
-  const isOwner = user?.email === 'videosonli5@gmail.com' || profile?.role === 'owner';
-  const isModerator = isOwner || profile?.role === 'moderator';
+  // Use sessionStorage to cache roles for the session
+  const [roles, setRoles] = useState<{ isOwner: boolean; isModerator: boolean }> (() => {
+    const cached = sessionStorage.getItem('cached_roles');
+    return cached ? JSON.parse(cached) : { isOwner: false, isModerator: false };
+  });
+
+  const isOwner = roles.isOwner;
+  const isModerator = roles.isModerator;
+
+  const becomeModerator = (password: string) => {
+    const correctPassword = (import.meta as any).env.VITE_MODERATOR_PASSWORD || 'admin123';
+    if (password === correctPassword) {
+      const newRoles = { ...roles, isModerator: true };
+      setRoles(newRoles);
+      sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
+      return true;
+    }
+    return false;
+  };
 
   const updateProfile = (newProfile: any) => {
-    setProfile((prev: any) => ({ ...prev, ...newProfile }));
+    setProfile((prev: any) => {
+      const updated = { ...prev, ...newProfile };
+      localStorage.setItem('cached_profile', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const logOut = async () => {
@@ -52,6 +81,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       
       if (currentUser) {
+        // If we have a cached profile for this user, we can stop loading early
+        if (profile && profile.uid === currentUser.uid) {
+          setLoading(false);
+        }
+
+        // Skip if already synced in this session
+        const isSynced = sessionStorage.getItem(`profile_synced_${currentUser.uid}`);
+        if (isSynced) {
+          setLoading(false);
+          return;
+        }
+
         try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
           console.log("Fetching profile for:", currentUser.uid);
@@ -76,6 +117,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await setDoc(profileRef, newProfile);
             console.log("New profile created");
             setProfile(newProfile);
+            localStorage.setItem('cached_profile', JSON.stringify(newProfile));
+            
+            const newRoles = {
+              isOwner: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner',
+              isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'moderator'
+            };
+            setRoles(newRoles);
+            sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
 
             // Increment user count
             const statsRef = doc(db, 'siteStats', 'global');
@@ -102,26 +151,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (!data.createdAt) updates.createdAt = serverTimestamp();
               
               await updateDoc(profileRef, updates);
-              setProfile({ ...data, ...updates });
+              const updatedProfile = { ...data, ...updates };
+              setProfile(updatedProfile);
+              localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
             } else {
               setProfile(data);
+              localStorage.setItem('cached_profile', JSON.stringify(data));
             }
+
+            const newRoles = {
+              isOwner: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner',
+              isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'moderator'
+            };
+            setRoles(newRoles);
+            sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
           }
 
-          // Increment visitor count only once per session to save writes/reads
-          const hasIncremented = sessionStorage.getItem('visitor_incremented');
-          if (!hasIncremented) {
+          // Mark as synced for this session
+          sessionStorage.setItem(`profile_synced_${currentUser.uid}`, 'true');
+
+          // Increment visitor count only once per 24 hours per device to save writes
+          const lastIncrement = localStorage.getItem('last_visitor_increment');
+          const now = Date.now();
+          const oneDay = 24 * 60 * 60 * 1000;
+          
+          if (!lastIncrement || (now - parseInt(lastIncrement)) > oneDay) {
             const statsRef = doc(db, 'siteStats', 'global');
             await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
-            sessionStorage.setItem('visitor_incremented', 'true');
-            console.log("Visitor count incremented (once per session)");
+            localStorage.setItem('last_visitor_increment', now.toString());
+            console.log("Visitor count incremented (once per 24h)");
           }
 
-        } catch (error) {
+        } catch (error: any) {
+          if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+            setQuotaExceeded(true);
+          }
           console.error('Error syncing profile:', error);
         }
       } else {
         setProfile(null);
+        setRoles({ isOwner: false, isModerator: false });
+        localStorage.removeItem('cached_profile');
+        sessionStorage.removeItem('cached_roles');
       }
       
       // Small delay to prevent transient null states from triggering redirects
@@ -134,7 +205,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, updateProfile, logOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, quotaExceeded, becomeModerator, updateProfile, logOut }}>
       {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );

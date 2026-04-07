@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3 } from 'lucide-react';
 
 export function CreateCharacter() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { characterId } = useParams<{ characterId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,7 +59,6 @@ export function CreateCharacter() {
           setError('Character not found.');
         }
       } catch (err: any) {
-        handleFirestoreError(err, OperationType.GET, `characters/${characterId}`);
         setError('Failed to load character data.');
       } finally {
         setFetching(false);
@@ -142,29 +141,29 @@ export function CreateCharacter() {
     setError('');
 
     try {
-      const name_lowercase = formData.name.toLowerCase();
-      const creatorName = user.displayName || 'Anonymous User';
+      const creatorName = profile?.displayName || user.displayName || 'Anonymous User';
 
       if (characterId) {
         // Update existing character
         const charRef = doc(db, 'characters', characterId);
         await updateDoc(charRef, {
           ...formData,
-          name_lowercase,
           creatorName,
           updatedAt: serverTimestamp()
         });
+        
         navigate(`/chat/${characterId}`);
       } else {
         // Create new character
         const charData = {
           ...formData,
-          name_lowercase,
           creatorId: user.uid,
           creatorName,
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
           likesCount: 0,
-          interactionsCount: 0
+          interactionsCount: 0,
+          name_lowercase: formData.name.toLowerCase()
         };
 
         const docRef = await addDoc(collection(db, 'characters'), charData);
@@ -172,8 +171,8 @@ export function CreateCharacter() {
       }
     } catch (err: any) {
       console.error(err);
+      handleFirestoreError(err, characterId ? OperationType.UPDATE : OperationType.CREATE, characterId ? `characters/${characterId}` : 'characters');
       setError(err.message || `Failed to ${characterId ? 'update' : 'create'} character`);
-      handleFirestoreError(err, characterId ? OperationType.UPDATE : OperationType.CREATE, 'characters');
     } finally {
       setLoading(false);
     }

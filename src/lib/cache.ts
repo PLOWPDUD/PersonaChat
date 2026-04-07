@@ -1,5 +1,6 @@
-// Global cache to reduce Firestore reads
+// Global cache to reduce Supabase reads
 export const profileCache: Record<string, string> = {};
+export const fullProfileCache: Record<string, any> = {};
 export let favoritesCache: Set<string> | null = null;
 
 export const dataCache: Record<string, any[]> = {
@@ -9,9 +10,14 @@ export const dataCache: Record<string, any[]> = {
 };
 
 export const getCachedProfile = (uid: string) => profileCache[uid];
+export const getCachedFullProfile = (uid: string) => fullProfileCache[uid];
 
 export const setCachedProfile = (uid: string, displayName: string) => {
   profileCache[uid] = displayName;
+};
+
+export const setCachedFullProfile = (uid: string, profile: any) => {
+  fullProfileCache[uid] = profile;
 };
 
 export const setCachedProfiles = (profiles: Record<string, string>) => {
