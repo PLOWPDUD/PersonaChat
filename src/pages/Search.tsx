@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { getCachedProfile, setCachedProfiles } from '../lib/cache';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
+import { getCachedProfile, setCachedProfiles, getCachedData, updateGlobalCache } from '../lib/cache';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +11,8 @@ interface Profile {
   uid: string;
   displayName: string;
   photoURL: string;
+  role?: string;
+  email?: string;
 }
 
 interface Character {
@@ -40,6 +42,19 @@ export function Search() {
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const navigate = useNavigate();
 
+  const getRankInfo = (profile: Profile) => {
+    if (profile.email === 'videosonli5@gmail.com' || profile.role === 'owner') {
+      return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    }
+    if (profile.role === 'moderator') {
+      return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    }
+    if (!profile.email) {
+      return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    }
+    return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
+  };
+
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (searchQuery.trim() || selectedCategory) {
@@ -59,6 +74,17 @@ export function Search() {
     try {
       if (activeTab === 'characters') {
         const charRef = collection(db, 'characters');
+        
+        // Check cache for empty query
+        if (!lowerQuery && !selectedCategory) {
+          const cached = getCachedData('search_characters');
+          if (cached && cached.length > 0) {
+            setCharacters(cached);
+            setIsSearching(false);
+            return;
+          }
+        }
+
         let q;
         
         if (lowerQuery) {
@@ -126,8 +152,22 @@ export function Search() {
         }
         
         setCharacters(charactersWithNames);
+        if (!lowerQuery && !selectedCategory) {
+          updateGlobalCache('search_characters', charactersWithNames);
+        }
       } else {
         const profilesRef = collection(db, 'profiles');
+        
+        // Check cache for empty query
+        if (!lowerQuery) {
+          const cached = getCachedData('search_profiles');
+          if (cached && cached.length > 0) {
+            setProfiles(cached);
+            setIsSearching(false);
+            return;
+          }
+        }
+
         let q;
         
         if (lowerQuery) {
@@ -144,12 +184,16 @@ export function Search() {
         const snap = await getDocs(q);
         const fetchedProfiles = snap.docs.map(doc => ({ uid: doc.id, ...(doc.data() as any) } as Profile));
         setProfiles(fetchedProfiles);
+        if (!lowerQuery) {
+          updateGlobalCache('search_profiles', fetchedProfiles);
+        }
       }
     } catch (error: any) {
-      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+      if (isQuotaError(error)) {
         setQuotaExceeded(true);
+      } else {
+        console.error('Search error:', error);
       }
-      console.error('Search error:', error);
     } finally {
       setIsSearching(false);
     }
@@ -331,7 +375,12 @@ export function Search() {
                       </div>
                     )}
                     <div>
-                      <h2 className="text-xl font-bold text-white">{selectedUser.displayName}</h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white">{selectedUser.displayName}</h2>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getRankInfo(selectedUser).color}`}>
+                          {getRankInfo(selectedUser).label}
+                        </span>
+                      </div>
                       <p className="text-zinc-500 text-sm">Public Characters</p>
                     </div>
                   </div>
@@ -473,7 +522,12 @@ export function Search() {
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors">{profile.displayName}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors">{profile.displayName}</h3>
+                              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getRankInfo(profile).color}`}>
+                                {getRankInfo(profile).label}
+                              </span>
+                            </div>
                             <p className="text-zinc-500 text-sm mt-1">View characters</p>
                           </div>
                           <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />

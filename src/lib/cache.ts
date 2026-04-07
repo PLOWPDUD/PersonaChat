@@ -6,7 +6,9 @@ export let favoritesCache: Set<string> | null = null;
 export const dataCache: Record<string, any[]> = {
   public: [],
   mine: [],
-  recent: []
+  recent: [],
+  search_profiles: [],
+  search_characters: []
 };
 
 export const getCachedProfile = (uid: string) => profileCache[uid];

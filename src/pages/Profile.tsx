@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert } from 'lucide-react';
+import { QuotaExceeded } from '../components/QuotaExceeded';
 
 export function Profile() {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, isOwner, isModerator } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [formData, setFormData] = useState({
     displayName: '',
     photoURL: '',
@@ -19,6 +21,13 @@ export function Profile() {
   });
   const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
+
+  const getRankInfo = () => {
+    if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    if (isModerator) return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (user?.isAnonymous) return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
+  };
 
   const handleAddPersona = () => {
     if (!newPersona.name) return;
@@ -113,8 +122,12 @@ export function Profile() {
           });
         }
       } catch (err: any) {
-        handleFirestoreError(err, OperationType.GET, `profiles/${user.uid}`);
-        setError('Failed to load profile.');
+        if (isQuotaError(err)) {
+          setQuotaExceeded(true);
+        } else {
+          handleFirestoreError(err, OperationType.GET, `profiles/${user.uid}`);
+          setError('Failed to load profile.');
+        }
       } finally {
         setFetching(false);
       }
@@ -142,7 +155,11 @@ export function Profile() {
       await updateProfile(updatedData);
       setSuccess(true);
     } catch (err: any) {
-      setError('Failed to update profile.');
+      if (isQuotaError(err)) {
+        setQuotaExceeded(true);
+      } else {
+        setError('Failed to update profile.');
+      }
     } finally {
       setLoading(false);
     }
@@ -150,9 +167,33 @@ export function Profile() {
 
   if (fetching) return <div className="text-white text-center p-8">Loading...</div>;
 
+  if (quotaExceeded) {
+    return (
+      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
+        <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-white mb-2">Quota Limit Reached</h2>
+        <p className="text-zinc-400 mb-6">
+          The website has reached its daily data limit for the free tier. 
+          Profile updates are temporarily unavailable. Please check back tomorrow!
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="text-indigo-400 hover:text-indigo-300 font-medium"
+        >
+          Try reloading
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto space-y-8">
-      <h1 className="text-3xl font-bold text-white">Edit Profile</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-white">Edit Profile</h1>
+        <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${getRankInfo().color}`}>
+          {getRankInfo().label}
+        </span>
+      </div>
 
       {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl">{error}</div>}
       {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl">Profile updated successfully!</div>}

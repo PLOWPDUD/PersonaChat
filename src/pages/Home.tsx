@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
@@ -171,10 +171,11 @@ export function Home() {
         setFavorites(favIds);
         setCachedFavorites(favIds);
       } catch (error: any) {
-        if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        if (isQuotaError(error)) {
           setLocalQuotaExceeded(true);
+        } else {
+          console.error('Error fetching favorites:', error);
         }
-        console.error('Error fetching favorites:', error);
       }
     };
 
@@ -406,7 +407,7 @@ export function Home() {
         }
       }
     } catch (error: any) {
-      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+      if (isQuotaError(error)) {
         setLocalQuotaExceeded(true);
       } else {
         handleFirestoreError(error, OperationType.LIST, tab === 'recent' ? 'chats' : 'characters');

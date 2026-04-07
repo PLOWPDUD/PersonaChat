@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { Users, Loader2, User, AlertCircle } from 'lucide-react';
+import { Users, Loader2, User, AlertCircle, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Stats() {
-  const { user, profile } = useAuth();
+  const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const [stats, setStats] = useState<{ visitorCount: number; userCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
+
+  const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -23,8 +26,12 @@ export function Stats() {
         }
       } catch (error: any) {
         console.error('Error fetching stats:', error);
-        handleFirestoreError(error, OperationType.GET, 'siteStats/global');
-        setError('Failed to load statistics.');
+        if (isQuotaError(error)) {
+          setLocalQuotaExceeded(true);
+        } else {
+          handleFirestoreError(error, OperationType.GET, 'siteStats/global');
+          setError('Failed to load statistics.');
+        }
       } finally {
         setLoading(false);
       }
@@ -37,6 +44,25 @@ export function Stats() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (quotaExceeded) {
+    return (
+      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
+        <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-white mb-2">Quota Limit Reached</h2>
+        <p className="text-zinc-400 mb-6">
+          The website has reached its daily data limit for the free tier. 
+          Statistics are temporarily unavailable. Please check back tomorrow!
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="text-indigo-400 hover:text-indigo-300 font-medium"
+        >
+          Try reloading
+        </button>
       </div>
     );
   }

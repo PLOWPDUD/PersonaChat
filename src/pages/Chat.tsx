@@ -1414,7 +1414,10 @@ export function Chat() {
                   >
                     Copy Error Details
                   </button>
-                  {notification.message.includes('API_HIGH_DEMAND') && (
+                  {(notification.message.includes('API_HIGH_DEMAND') || 
+                    notification.message.includes('MAX_ATTEMPTS_REACHED') || 
+                    notification.message.includes('API_QUOTA_EXCEEDED') ||
+                    notification.message.includes('NETWORK_ERROR')) && (
                     <button 
                       onClick={handleRetry}
                       className="text-xs bg-white text-red-600 hover:bg-zinc-100 px-2 py-1 rounded-lg transition-colors font-bold"

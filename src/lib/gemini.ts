@@ -28,6 +28,7 @@ export async function generateCharacterResponse(
   
   let currentKeyIndex = 0;
   let currentModel = model;
+  let lastError: any = null;
 
   while (attempts < maxAttempts) {
     const apiKey = apiKeys[currentKeyIndex];
@@ -177,6 +178,7 @@ Name2: Message
       return response.text;
     } catch (error: any) {
       attempts++;
+      lastError = error;
       const errorMsg = error.message || String(error);
       console.error(`Error generating character response (Attempt ${attempts}/${maxAttempts}, KeyIndex: ${currentKeyIndex}, Model: ${currentModel}):`, errorMsg);
 
@@ -228,5 +230,14 @@ Name2: Message
       throw new Error(`${errorMsg}`);
     }
   }
-  throw new Error('MAX_ATTEMPTS_REACHED: Failed to get a response from AI after multiple attempts.');
+  
+  const finalErrorMsg = lastError?.message || String(lastError) || 'Unknown error';
+  if (finalErrorMsg.includes('429') || finalErrorMsg.includes('RESOURCE_EXHAUSTED') || finalErrorMsg.includes('quota')) {
+    throw new Error(`API_QUOTA_EXCEEDED: All configured Gemini API keys have exceeded their quota. Please try again later.`);
+  }
+  if (finalErrorMsg.includes('503') || finalErrorMsg.includes('high demand') || finalErrorMsg.includes('UNAVAILABLE')) {
+    throw new Error(`API_HIGH_DEMAND: Google's AI servers are currently experiencing high demand and failed to respond after ${maxAttempts} attempts.`);
+  }
+  
+  throw new Error(`MAX_ATTEMPTS_REACHED: Failed to get a response from AI after ${maxAttempts} attempts. Last error: ${finalErrorMsg}`);
 }

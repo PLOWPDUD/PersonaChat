@@ -9,7 +9,14 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation();
-  const { user, profile, isModerator, logOut } = useAuth();
+  const { user, profile, isOwner, isModerator, logOut } = useAuth();
+
+  const getRankInfo = () => {
+    if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    if (isModerator) return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (user?.isAnonymous) return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
+  };
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -73,6 +80,9 @@ export function Sidebar({ onClose }: SidebarProps) {
             <p className="text-sm font-medium text-white truncate">
               {user?.isAnonymous ? 'Guest' : (profile?.displayName || 'User')}
             </p>
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border mt-1 inline-block ${getRankInfo().color}`}>
+              {getRankInfo().label}
+            </span>
           </div>
         </Link>
         <button
