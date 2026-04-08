@@ -4,6 +4,7 @@ import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, server
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
+import { getLocalCharacters } from '../lib/localStorage';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { QuotaExceeded } from '../components/QuotaExceeded';
@@ -21,6 +22,7 @@ interface Character {
   likesCount: number;
   interactionsCount: number;
   averageRating?: number;
+  updatedAt?: any;
 }
 
 export function Home() {
@@ -375,6 +377,21 @@ export function Home() {
             if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
               char.creatorName = profiles[char.creatorId];
             }
+          });
+        }
+
+        // Add local characters if tab is 'mine'
+        if (tab === 'mine') {
+          const localChars = getLocalCharacters();
+          // Filter out any that might already be in Firestore (though they shouldn't be)
+          const localToAdd = localChars.filter(lc => !chars.some(c => c.id === lc.id));
+          chars.push(...(localToAdd as any[]));
+          
+          // Sort by updatedAt
+          chars.sort((a, b) => {
+            const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
+            const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
+            return dateB.getTime() - dateA.getTime();
           });
         }
 

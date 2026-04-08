@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { getCachedProfile, setCachedProfiles, getCachedData, updateGlobalCache } from '../lib/cache';
+import { getLocalCharacters } from '../lib/localStorage';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -114,7 +115,23 @@ export function Search() {
         const snap = await getDocs(q);
         const chars = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Character));
         
-        const charactersWithNames: Character[] = chars.map(char => ({
+        // Add local characters
+        const localChars = getLocalCharacters();
+        const filteredLocal = localChars.filter(lc => {
+          const matchesQuery = !lowerQuery || lc.name.toLowerCase().includes(lowerQuery);
+          const matchesCategory = !selectedCategory || lc.category === selectedCategory;
+          return matchesQuery && matchesCategory;
+        });
+        
+        // Merge and deduplicate
+        const mergedChars = [...chars];
+        filteredLocal.forEach(lc => {
+          if (!mergedChars.some(c => c.id === lc.id)) {
+            mergedChars.push(lc as any);
+          }
+        });
+
+        const charactersWithNames: Character[] = mergedChars.map(char => ({
           ...char,
           creatorName: char.creatorName || getCachedProfile(char.creatorId)
         }));

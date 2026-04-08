@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
+import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
 import { generateCharacterResponse } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -865,6 +866,13 @@ export function Chat() {
         const missingCharIds: string[] = [];
 
         charIdsArray.forEach(id => {
+          // Check local storage first
+          const localChar = getLocalCharacterById(id);
+          if (localChar) {
+            fetchedChars.push({ ...localChar, id: localChar.id } as Character);
+            return;
+          }
+
           const cached = localStorage.getItem(`cached_char_${id}`);
           if (cached) {
             fetchedChars.push(JSON.parse(cached));
@@ -928,63 +936,151 @@ export function Chat() {
         
         setCharacters(fetchedChars);
         const primaryChar = fetchedChars[0];
+        const isLocalCharacter = primaryChar.id.startsWith('local_');
 
-        // 2. Fetch user's rating for primary character
-        const ratingRef = doc(db, `characters/${primaryChar.id}/ratings`, user.uid);
-        try {
-          const ratingSnap = await getDoc(ratingRef);
-          if (ratingSnap.exists()) {
-            setUserRating(ratingSnap.data().score);
+        if (isLocalCharacter) {
+          setIsLocalMode(true);
+        }
+
+        // 2. Fetch user's rating for primary character (skip if local)
+        if (!isLocalCharacter) {
+          const ratingRef = doc(db, `characters/${primaryChar.id}/ratings`, user.uid);
+          try {
+            const ratingSnap = await getDoc(ratingRef);
+            if (ratingSnap.exists()) {
+              setUserRating(ratingSnap.data().score);
+            }
+          } catch (e) {
+            console.error('Error fetching rating:', e);
           }
-        } catch (e) {
-          console.error('Error fetching rating:', e);
         }
 
         // 3. Find or create chat session
         if (!currentChatId) {
-          // Try to find the latest chat for this character (single chat)
-          const chatsRef = collection(db, 'chats');
-          const q = query(
-            chatsRef, 
-            where('userId', '==', user.uid), 
-            where('characterId', '==', characterId),
-            orderBy('updatedAt', 'desc'),
-            limit(1)
-          );
-          const chatDocs = await getDocs(q);
-          
-          if (!chatDocs.empty && !chatDocs.docs[0].data().characterIds) {
-            currentChatId = chatDocs.docs[0].id;
+          if (isLocalCharacter) {
+            const localChat = getLocalChatByCharacterId(user.uid, primaryChar.id);
+            if (localChat) {
+              currentChatId = localChat.id;
+            } else {
+              currentChatId = `local_chat_${Date.now()}`;
+              const newLocalChat: LocalChat = {
+                id: currentChatId,
+                userId: user.uid,
+                characterId: primaryChar.id,
+                characterIds: [primaryChar.id],
+                characterName: primaryChar.name,
+                characterAvatarUrl: primaryChar.avatarUrl,
+                creatorName: primaryChar.creatorName || 'Unknown',
+                title: `Chat with ${primaryChar.name}`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              };
+              saveLocalChat(newLocalChat);
+              
+              // Add initial greeting to local messages
+              const initialMessage = {
+                id: `msg_${Date.now()}`,
+                chatId: currentChatId,
+                role: 'model',
+                characterId: primaryChar.id,
+                content: primaryChar.greeting,
+                createdAt: new Date().toISOString()
+              };
+              localStorage.setItem(`chat_${currentChatId}`, JSON.stringify([initialMessage]));
+            }
             navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           } else {
-            // Create new chat if none exists
-            const newChatRef = doc(collection(db, 'chats'));
-            currentChatId = newChatRef.id;
-            await setDoc(newChatRef, {
-              userId: user.uid,
-              characterIds: charIds,
-              characterId: characterId, // legacy
-              characterName: primaryChar.name,
-              characterAvatarUrl: primaryChar.avatarUrl,
-              creatorName: primaryChar.creatorName || 'Unknown',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              title: `Chat with ${primaryChar.name}`
-            });
+            // Try to find the latest chat for this character (single chat)
+            const chatsRef = collection(db, 'chats');
+            const q = query(
+              chatsRef, 
+              where('userId', '==', user.uid), 
+              where('characterId', '==', characterId),
+              orderBy('updatedAt', 'desc'),
+              limit(1)
+            );
             
-            await addDoc(collection(db, `chats/${currentChatId}/messages`), {
-              chatId: currentChatId,
-              role: 'model',
-              characterId: primaryChar.id,
-              content: primaryChar.greeting,
-              createdAt: serverTimestamp()
-            });
-            navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+            const chatDocs = await getDocs(q);
+            if (!chatDocs.empty && !chatDocs.docs[0].data().characterIds) {
+              currentChatId = chatDocs.docs[0].id;
+              navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+            } else {
+              // Create new chat if none exists
+              const newChatRef = doc(collection(db, 'chats'));
+              currentChatId = newChatRef.id;
+              
+              const chatData = {
+                userId: user.uid,
+                characterIds: charIds,
+                characterId: characterId, // legacy
+                characterName: primaryChar.name,
+                characterAvatarUrl: primaryChar.avatarUrl,
+                creatorName: primaryChar.creatorName || 'Unknown',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                title: `Chat with ${primaryChar.name}`
+              };
+
+              const initialMessage = {
+                chatId: currentChatId,
+                role: 'model',
+                characterId: primaryChar.id,
+                content: primaryChar.greeting,
+                createdAt: serverTimestamp()
+              };
+
+              try {
+                await setDoc(newChatRef, chatData);
+                await addDoc(collection(db, `chats/${currentChatId}/messages`), initialMessage);
+              } catch (e: any) {
+                if (isQuotaError(e)) {
+                  console.warn("Quota exceeded during chat creation, using local mode");
+                  setIsLocalMode(true);
+                  // Save to localStorage
+                  const newLocalChat: LocalChat = {
+                    id: currentChatId,
+                    userId: user.uid,
+                    characterId: primaryChar.id,
+                    characterIds: [primaryChar.id],
+                    characterName: primaryChar.name,
+                    characterAvatarUrl: primaryChar.avatarUrl,
+                    creatorName: primaryChar.creatorName || 'Unknown',
+                    title: `Chat with ${primaryChar.name}`,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                  };
+                  saveLocalChat(newLocalChat);
+                  
+                  const localInitialMsg = {
+                    id: `msg_${Date.now()}`,
+                    chatId: currentChatId,
+                    role: 'model',
+                    characterId: primaryChar.id,
+                    content: primaryChar.greeting,
+                    createdAt: new Date().toISOString()
+                  };
+                  localStorage.setItem(`chat_${currentChatId}`, JSON.stringify([localInitialMsg]));
+                } else {
+                  throw e;
+                }
+              }
+              navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+            }
           }
         }
         
         setChatId(currentChatId);
         
+        if (isLocalMode || currentChatId.startsWith('local_chat_')) {
+          const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
+          setMessages(localMsgs.map((lm: any) => ({
+            ...lm,
+            createdAt: { toDate: () => new Date(lm.createdAt) }
+          })));
+          setLoading(false);
+          return;
+        }
+
         // 3. Listen to messages
         const messagesRef = collection(db, `chats/${currentChatId}/messages`);
         const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
@@ -1145,6 +1241,29 @@ export function Chat() {
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(localMessages));
     setMessages(prev => [...prev, newUserMessage as Message]);
 
+    // Firestore sync (only if not local mode)
+    if (!isLocalMode && !chatId.startsWith('local_chat_')) {
+      try {
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+          chatId,
+          role: 'user',
+          content: userMessage,
+          imageUrl: userImageUrl || null,
+          createdAt: serverTimestamp()
+        });
+        await updateDoc(doc(db, 'chats', chatId), {
+          updatedAt: serverTimestamp()
+        });
+      } catch (e: any) {
+        if (isQuotaError(e)) {
+          console.warn("Quota exceeded during message save, switching to local mode");
+          setIsLocalMode(true);
+        } else {
+          console.error("Failed to save message to Firestore:", e);
+        }
+      }
+    }
+
     try {
       // 2. Generate AI response
       const historyForGemini = messages.map(m => ({
@@ -1207,14 +1326,29 @@ export function Chat() {
         localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
         setMessages(prev => [...prev, ...newAiMessages as Message[]]);
         
-        // Update interactionsCount for all characters in the chat
-        for (const char of characters) {
+        // Firestore sync (only if not local mode)
+        if (!isLocalMode && !chatId.startsWith('local_chat_')) {
           try {
-            await updateDoc(doc(db, 'characters', char.id), {
-              interactionsCount: (char.interactionsCount || 0) + 1
-            });
-          } catch (e) {
-            console.warn("Failed to update interactionsCount (likely quota):", e);
+            for (const msg of newAiMessages) {
+              await addDoc(collection(db, `chats/${chatId}/messages`), {
+                ...msg,
+                createdAt: serverTimestamp()
+              });
+            }
+            
+            // Update interactionsCount for all characters in the chat
+            for (const char of characters) {
+              await updateDoc(doc(db, 'characters', char.id), {
+                interactionsCount: (char.interactionsCount || 0) + 1
+              });
+            }
+          } catch (e: any) {
+            if (isQuotaError(e)) {
+              console.warn("Quota exceeded during AI message save, switching to local mode");
+              setIsLocalMode(true);
+            } else {
+              console.error("Failed to save AI message to Firestore:", e);
+            }
           }
         }
       }

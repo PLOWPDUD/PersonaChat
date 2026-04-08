@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3 } from 'lucide-react';
+import { getLocalCharacterById, saveLocalCharacter, deleteLocalCharacter, LocalCharacter } from '../lib/localStorage';
 
 export function CreateCharacter() {
   const { user, profile } = useAuth();
@@ -31,6 +32,25 @@ export function CreateCharacter() {
     const fetchCharacter = async () => {
       setFetching(true);
       try {
+        // Check local storage first
+        const localChar = getLocalCharacterById(characterId);
+        if (localChar) {
+          setFormData({
+            name: localChar.name || '',
+            avatarUrl: localChar.avatarUrl || '',
+            greeting: localChar.greeting || '',
+            description: localChar.description || '',
+            personality: localChar.personality || '',
+            visibility: 'private',
+            category: localChar.category || ''
+          });
+          if (localChar.avatarUrl) {
+            setImagePreview(localChar.avatarUrl);
+          }
+          setFetching(false);
+          return;
+        }
+
         const charRef = doc(db, 'characters', characterId);
         const charSnap = await getDoc(charRef);
         
@@ -142,9 +162,36 @@ export function CreateCharacter() {
 
     try {
       const creatorName = profile?.displayName || user.displayName || 'Anonymous User';
+      const isPrivate = formData.visibility === 'private';
 
-      if (characterId) {
-        // Update existing character
+      if (isPrivate) {
+        const id = characterId || `local_${Date.now()}`;
+        const existingLocal = characterId?.startsWith('local_') ? getLocalCharacterById(characterId) : null;
+        
+        const localChar: LocalCharacter = {
+          ...formData,
+          id,
+          creatorId: user.uid,
+          creatorName,
+          createdAt: existingLocal?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          likesCount: existingLocal?.likesCount || 0,
+          interactionsCount: existingLocal?.interactionsCount || 0,
+          name_lowercase: formData.name.toLowerCase(),
+          visibility: 'private'
+        };
+        
+        saveLocalCharacter(localChar);
+        
+        // If it was a Firestore character, we don't delete it automatically 
+        // to prevent accidental data loss, but it's now "forked" to local.
+        
+        navigate(`/chat/${id}`);
+        return;
+      }
+
+      if (characterId && !characterId.startsWith('local_')) {
+        // Update existing Firestore character
         const charRef = doc(db, 'characters', characterId);
         await updateDoc(charRef, {
           ...formData,
@@ -154,7 +201,7 @@ export function CreateCharacter() {
         
         navigate(`/chat/${characterId}`);
       } else {
-        // Create new character
+        // Create new Firestore character
         const charData = {
           ...formData,
           creatorId: user.uid,
@@ -167,6 +214,12 @@ export function CreateCharacter() {
         };
 
         const docRef = await addDoc(collection(db, 'characters'), charData);
+        
+        // If it was a local character being made public, delete the local one
+        if (characterId?.startsWith('local_')) {
+          deleteLocalCharacter(characterId);
+        }
+        
         navigate(`/chat/${docRef.id}`);
       }
     } catch (err: any) {
