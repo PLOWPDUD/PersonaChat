@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot } from 'lucide-react';
@@ -134,14 +134,68 @@ export function Admin() {
     }
   };
 
-  const handleReportStatus = async (reportId: string, newStatus: string) => {
+  const handleReportStatus = async (reportId: string, newStatus: string, targetCreatorId?: string, targetName?: string) => {
     setUpdatingId(reportId);
     try {
       const reportRef = doc(db, 'reports', reportId);
       await setDoc(reportRef, { status: newStatus, updatedAt: serverTimestamp() }, { merge: true });
       setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: newStatus } : r));
+
+      // Notify creator
+      if (targetCreatorId) {
+        let title = '';
+        let message = '';
+        let type: 'character_reviewed' | 'character_banned' = 'character_reviewed';
+
+        if (newStatus === 'reviewed') {
+          title = 'Character Under Review';
+          message = `Your character "${targetName || 'Unknown'}" is currently being reviewed by our moderation team.`;
+        } else if (newStatus === 'resolved') {
+          title = 'Report Resolved';
+          message = `The report against your character "${targetName || 'Unknown'}" has been resolved. Action may have been taken to ensure community safety.`;
+        } else if (newStatus === 'dismissed') {
+          title = 'Report Dismissed';
+          message = `The report against your character "${targetName || 'Unknown'}" was reviewed and dismissed. No action was taken.`;
+        }
+
+        if (title && message) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: targetCreatorId,
+            type,
+            title,
+            message,
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `reports/${reportId}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleDeleteCharacter = async (charId: string, creatorId: string, charName: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${charName}"? This will also notify the creator.`)) return;
+    setUpdatingId(charId);
+    try {
+      await deleteDoc(doc(db, 'characters', charId));
+      
+      // Notify creator
+      await addDoc(collection(db, 'notifications'), {
+        userId: creatorId,
+        type: 'character_banned',
+        title: 'Character Deleted',
+        message: `Your character "${charName}" has been deleted for violating our community guidelines.`,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
+      // Refresh data
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `characters/${charId}`);
     } finally {
       setUpdatingId(null);
     }
@@ -266,18 +320,27 @@ export function Admin() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {profile.characters && profile.characters.length > 0 ? (
                       profile.characters.map((char: any) => (
-                        <div key={char.id} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 flex items-center gap-3 group hover:border-indigo-500/50 transition-all">
-                          {char.avatarUrl ? (
-                            <img src={char.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center">
-                              <Bot className="w-5 h-5 text-zinc-500" />
+                        <div key={char.id} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 flex items-center justify-between group hover:border-indigo-500/50 transition-all">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {char.avatarUrl ? (
+                              <img src={char.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center">
+                                <Bot className="w-5 h-5 text-zinc-500" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-white text-sm font-bold truncate">{char.name}</p>
+                              <p className="text-zinc-500 text-[10px] uppercase font-bold">{char.visibility}</p>
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-white text-sm font-bold truncate">{char.name}</p>
-                            <p className="text-zinc-500 text-[10px] uppercase font-bold">{char.visibility}</p>
                           </div>
+                          <button
+                            onClick={() => handleDeleteCharacter(char.id, profile.id, char.name)}
+                            disabled={updatingId === char.id}
+                            className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       ))
                     ) : (
@@ -324,6 +387,7 @@ export function Admin() {
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
                       report.status === 'pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
                       report.status === 'reviewed' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                      report.status === 'dismissed' ? 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20' :
                       'bg-green-500/10 text-green-400 border border-green-500/20'
                     }`}>
                       {report.status}
@@ -349,25 +413,33 @@ export function Admin() {
                     <span>{report.createdAt?.toDate ? new Date(report.createdAt.toDate()).toLocaleDateString() : 'Recently'}</span>
                   </div>
                 </div>
-                
-                <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px]">
+                                <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px]">
                   {report.status === 'pending' && (
                     <button
-                      onClick={() => handleReportStatus(report.id, 'reviewed')}
+                      onClick={() => handleReportStatus(report.id, 'reviewed', report.creatorId, report.targetName)}
                       disabled={updatingId === report.id}
                       className="w-full px-6 py-3 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
                     >
                       Mark Reviewed
                     </button>
                   )}
-                  {report.status !== 'resolved' && (
-                    <button
-                      onClick={() => handleReportStatus(report.id, 'resolved')}
-                      disabled={updatingId === report.id}
-                      className="w-full px-6 py-3 bg-green-600/10 text-green-400 hover:bg-green-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                    >
-                      Mark Resolved
-                    </button>
+                  {report.status !== 'resolved' && report.status !== 'dismissed' && (
+                    <>
+                      <button
+                        onClick={() => handleReportStatus(report.id, 'resolved', report.creatorId, report.targetName)}
+                        disabled={updatingId === report.id}
+                        className="w-full px-6 py-3 bg-green-600/10 text-green-400 hover:bg-green-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        Mark Resolved
+                      </button>
+                      <button
+                        onClick={() => handleReportStatus(report.id, 'dismissed', report.creatorId, report.targetName)}
+                        disabled={updatingId === report.id}
+                        className="w-full px-6 py-3 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        Dismiss Report
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

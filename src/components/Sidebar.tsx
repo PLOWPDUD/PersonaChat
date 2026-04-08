@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { NotificationBell } from './NotificationBell';
 
 interface SidebarProps {
   onClose?: () => void;
@@ -39,14 +40,19 @@ export function Sidebar({ onClose }: SidebarProps) {
           <MessageSquare className="w-8 h-8 text-theme-primary" />
           <span>PersonaChat</span>
         </Link>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="lg:hidden p-2 text-zinc-400 hover:text-white transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="hidden lg:block">
+            <NotificationBell />
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="lg:hidden p-2 text-zinc-400 hover:text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto">

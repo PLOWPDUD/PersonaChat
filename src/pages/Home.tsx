@@ -59,6 +59,8 @@ export function Home() {
   const [reportReason, setReportReason] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
+  const [reportTargetName, setReportTargetName] = useState<string | null>(null);
+  const [reportTargetCreatorId, setReportTargetCreatorId] = useState<string | null>(null);
 
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
@@ -69,6 +71,8 @@ export function Home() {
       await addDoc(collection(db, 'reports'), {
         reporterId: user.uid,
         targetId: reportTargetId,
+        targetName: reportTargetName,
+        creatorId: reportTargetCreatorId,
         type: 'character',
         reason: reportReason.trim(),
         status: 'pending',
@@ -77,6 +81,8 @@ export function Home() {
       setIsReportModalOpen(false);
       setReportReason('');
       setReportTargetId(null);
+      setReportTargetName(null);
+      setReportTargetCreatorId(null);
       alert('Report submitted successfully.');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'reports');
@@ -85,10 +91,12 @@ export function Home() {
     }
   };
 
-  const openReportModal = (e: React.MouseEvent, charId: string) => {
+  const openReportModal = (e: React.MouseEvent, char: Character) => {
     e.preventDefault();
     e.stopPropagation();
-    setReportTargetId(charId);
+    setReportTargetId(char.id);
+    setReportTargetName(char.name);
+    setReportTargetCreatorId(char.creatorId);
     setIsReportModalOpen(true);
   };
 
@@ -749,7 +757,7 @@ export function Home() {
                   <Heart className={`w-4 h-4 ${favorites.has(char.id) ? 'fill-red-500 text-red-500' : 'text-zinc-400'}`} />
                 </button>
               <button
-                  onClick={(e) => openReportModal(e, char.id)}
+                  onClick={(e) => openReportModal(e, char)}
                   className="absolute top-2 right-2 p-2 rounded-full bg-zinc-800/80 backdrop-blur-sm hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-colors z-10 opacity-0 group-hover:opacity-100"
                   title="Report Character"
                 >

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Menu, X, MessageSquare } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 export function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -14,12 +15,15 @@ export function Layout() {
           <MessageSquare className="w-6 h-6 text-theme-primary" />
           <span>PersonaChat</span>
         </Link>
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="p-2 text-zinc-400 hover:text-white transition-colors"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 text-zinc-400 hover:text-white transition-colors"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        </div>
       </header>
 
       {/* Sidebar Overlay (Mobile) */}

@@ -143,6 +143,34 @@
         "userCount": { "type": "number" },
         "visitorCount": { "type": "number" }
       }
+    },
+    "Notification": {
+      "title": "User Notification",
+      "description": "A notification for a specific user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["character_banned", "character_reviewed", "new_character"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "characterId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "title", "message", "read", "createdAt"]
+    },
+    "GlobalNotification": {
+      "title": "Global Notification",
+      "description": "A notification for all users.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "characterId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "title", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -154,6 +182,8 @@
     "/favorites/{favoriteId}": { "schema": "Favorite", "description": "User favorites." },
     "/characters/{characterId}/ratings/{userId}": { "schema": "Rating", "description": "Character ratings." },
     "/reports/{reportId}": { "schema": "Report", "description": "Content reports." },
-    "/siteStats/{docId}": { "schema": "SiteStats", "description": "Global site statistics." }
+    "/siteStats/{docId}": { "schema": "SiteStats", "description": "Global site statistics." },
+    "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." },
+    "/global_notifications/{notificationId}": { "schema": "GlobalNotification", "description": "Global notifications." }
   }
 }
