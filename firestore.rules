@@ -31,8 +31,15 @@ service cloud.firestore {
 
     function isValidCommunityPost(data) {
       return data.authorId is string &&
+             data.authorName is string &&
+             (!('title' in data) || data.title == null || (data.title is string && data.title.size() <= 100)) &&
              data.content is string && data.content.size() <= 2000 &&
-             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 1000));
+             data.likesCount is number &&
+             data.commentsCount is number &&
+             data.createdAt is timestamp &&
+             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
+             (!('link' in data) || data.link == null || (data.link is string && data.link.size() < 1000)) &&
+             (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string);
     }
 
     // ===============================================================

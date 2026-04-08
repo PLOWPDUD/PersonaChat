@@ -47,8 +47,9 @@ interface Post {
   authorId: string;
   authorName: string;
   authorPhoto?: string;
+  title?: string;
   content: string;
-  imageUrl?: string;
+  imageUrls?: string[];
   link?: string;
   likesCount: number;
   commentsCount: number;
@@ -71,11 +72,12 @@ export default function PersonaCommunity() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostImage, setNewPostImage] = useState('');
   const [newPostLink, setNewPostLink] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -191,21 +193,29 @@ export default function PersonaCommunity() {
     setIsSubmitting(true);
 
     try {
-      let finalImageUrl = newPostImage.trim() || null;
+      let finalImageUrls: string[] = [];
+      if (newPostImage.trim()) {
+        finalImageUrls.push(newPostImage.trim());
+      }
 
-      // Upload file if selected
-      if (selectedFile) {
-        const fileRef = ref(storage, `community_posts/${user.uid}/${Date.now()}_${selectedFile.name}`);
-        const uploadResult = await uploadBytes(fileRef, selectedFile);
-        finalImageUrl = await getDownloadURL(uploadResult.ref);
+      // Upload files if selected
+      if (selectedFiles.length > 0) {
+        const uploadPromises = selectedFiles.map(async (file) => {
+          const fileRef = ref(storage, `community_posts/${user.uid}/${Date.now()}_${file.name}`);
+          const uploadResult = await uploadBytes(fileRef, file);
+          return getDownloadURL(uploadResult.ref);
+        });
+        const uploadedUrls = await Promise.all(uploadPromises);
+        finalImageUrls = [...finalImageUrls, ...uploadedUrls];
       }
 
       await addDoc(collection(db, 'community_posts'), {
         authorId: user.uid,
         authorName: profile.displayName,
         authorPhoto: profile.photoURL || '',
+        title: newPostTitle.trim() || null,
         content: newPostContent.trim(),
-        imageUrl: finalImageUrl,
+        imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null,
         link: newPostLink.trim() || null,
         likesCount: 0,
         commentsCount: 0,
@@ -214,11 +224,12 @@ export default function PersonaCommunity() {
       });
 
       setIsCreateModalOpen(false);
+      setNewPostTitle('');
       setNewPostContent('');
       setNewPostImage('');
       setNewPostLink('');
-      setSelectedFile(null);
-      setImagePreview(null);
+      setSelectedFiles([]);
+      setImagePreviews([]);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'community_posts');
     } finally {
@@ -233,20 +244,38 @@ export default function PersonaCommunity() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const totalFiles = selectedFiles.length + files.length;
+    if (totalFiles > 5) {
+      alert('You can only upload a maximum of 5 images.');
+      return;
+    }
+
+    const validFiles = files.filter(file => {
       if (file.size > 5 * 1024 * 1024) {
-        alert('File is too large. Max size is 5MB.');
-        return;
+        alert(`File ${file.name} is too large. Max size is 5MB.`);
+        return false;
       }
-      setSelectedFile(file);
-      setNewPostImage(''); // Clear URL if file is selected
+      return true;
+    });
+
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+    setNewPostImage(''); // Clear URL if file is selected
+
+    validFiles.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+        setImagePreviews(prev => [...prev, reader.result as string]);
       };
       reader.readAsDataURL(file);
-    }
+    });
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleToggleLike = async (postId: string) => {
@@ -433,6 +462,9 @@ export default function PersonaCommunity() {
 
             {/* Post Content */}
             <div className="px-4 pb-4 space-y-4">
+              {post.title && (
+                <h3 className="text-xl font-bold text-white tracking-tight">{post.title}</h3>
+              )}
               <p className="text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
               
               {post.link && (
@@ -469,9 +501,25 @@ export default function PersonaCommunity() {
                 </div>
               )}
 
-              {post.imageUrl && (
-                <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950">
-                  <img src={post.imageUrl} alt="" className="w-full h-auto max-h-[500px] object-contain" referrerPolicy="no-referrer" />
+              {post.imageUrls && post.imageUrls.length > 0 && (
+                <div className={`grid gap-2 ${
+                  post.imageUrls.length === 1 ? 'grid-cols-1' : 
+                  post.imageUrls.length === 2 ? 'grid-cols-2' : 
+                  'grid-cols-2 sm:grid-cols-3'
+                }`}>
+                  {post.imageUrls.map((url, idx) => (
+                    <div key={idx} className={`rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 ${
+                      post.imageUrls?.length === 1 ? '' : 'aspect-square'
+                    }`}>
+                      <img 
+                        src={url} 
+                        alt="" 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer" 
+                        onClick={() => window.open(url, '_blank')}
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -615,6 +663,16 @@ export default function PersonaCommunity() {
               </div>
               <div className="p-6 space-y-6">
                 <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Title (Optional)</label>
+                  <input
+                    type="text"
+                    value={newPostTitle}
+                    onChange={(e) => setNewPostTitle(e.target.value)}
+                    placeholder="Give your post a title..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
+                  />
+                </div>
+                <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Content</label>
                   <textarea
                     value={newPostContent}
@@ -660,8 +718,8 @@ export default function PersonaCommunity() {
                         value={newPostImage}
                         onChange={(e) => {
                           setNewPostImage(e.target.value);
-                          setSelectedFile(null);
-                          setImagePreview(null);
+                          setSelectedFiles([]);
+                          setImagePreviews([]);
                         }}
                         placeholder="Paste Image URL..."
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all text-sm"
@@ -673,41 +731,49 @@ export default function PersonaCommunity() {
                         ref={fileInputRef}
                         onChange={handleFileChange}
                         accept="image/*"
+                        multiple
                         className="hidden"
                       />
                       <button
                         onClick={() => fileInputRef.current?.click()}
+                        disabled={selectedFiles.length >= 5}
                         className={`w-full py-3 px-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all text-sm font-bold ${
-                          selectedFile 
+                          selectedFiles.length > 0 
                             ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400' 
                             : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
-                        }`}
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
-                        {selectedFile ? <Check className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
-                        {selectedFile ? 'Image Selected' : 'Upload from Gallery'}
+                        {selectedFiles.length >= 5 ? <Check className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                        {selectedFiles.length > 0 ? `${selectedFiles.length}/5 Images Selected` : 'Upload from Gallery'}
                       </button>
                     </div>
                   </div>
                 </div>
                 
-                {(imagePreview || newPostImage) && (
-                  <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 h-48 group">
-                    <img 
-                      src={imagePreview || newPostImage} 
-                      alt="Preview" 
-                      className="w-full h-full object-contain" 
-                      referrerPolicy="no-referrer" 
-                    />
-                    <button
-                      onClick={() => {
-                        setSelectedFile(null);
-                        setImagePreview(null);
-                        setNewPostImage('');
-                      }}
-                      className="absolute top-2 right-2 p-2 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                {(imagePreviews.length > 0 || newPostImage) && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {newPostImage && (
+                      <div className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
+                        <img src={newPostImage} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <button
+                          onClick={() => setNewPostImage('')}
+                          className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    {imagePreviews.map((preview, idx) => (
+                      <div key={idx} className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
+                        <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+                        <button
+                          onClick={() => removeImage(idx)}
+                          className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
 
