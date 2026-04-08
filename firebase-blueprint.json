@@ -171,6 +171,38 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["type", "title", "message", "createdAt"]
+    },
+    "CommunityPost": {
+      "title": "Community Post",
+      "description": "A post shared by a user in the PersonaCommunity.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "link": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "content", "createdAt"]
+    },
+    "CommunityComment": {
+      "title": "Community Comment",
+      "description": "A comment on a community post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "authorName", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -184,6 +216,10 @@
     "/reports/{reportId}": { "schema": "Report", "description": "Content reports." },
     "/siteStats/{docId}": { "schema": "SiteStats", "description": "Global site statistics." },
     "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." },
-    "/global_notifications/{notificationId}": { "schema": "GlobalNotification", "description": "Global notifications." }
+    "/global_notifications/{notificationId}": { "schema": "GlobalNotification", "description": "Global notifications." },
+    "/community_posts/{postId}": { "schema": "CommunityPost", "description": "Community posts." },
+    "/community_posts/{postId}/comments/{commentId}": { "schema": "CommunityComment", "description": "Comments on posts." },
+    "/community_posts/{postId}/likes/{userId}": { "schema": "object", "description": "Tracking likes on posts." },
+    "/users/{userId}/saved_posts/{postId}": { "schema": "object", "description": "Tracking saved posts for users." }
   }
 }

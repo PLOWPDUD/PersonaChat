@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings, Globe } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationBell } from './NotificationBell';
 
@@ -24,6 +24,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     { path: '/search', label: 'Search', icon: Search },
     { path: '/create', label: 'Create', icon: PlusCircle },
     { path: '/personas', label: 'Personas', icon: UserCircle },
+    { path: '/community', label: 'Community', icon: Globe },
     { path: '/stats', label: 'Stats', icon: Users },
     { path: '/settings', label: 'Settings', icon: Settings },
     { path: '/admin', label: 'Admin', icon: Shield },

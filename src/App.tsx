@@ -20,6 +20,7 @@ import { Stats } from './pages/Stats';
 import { Search } from './pages/Search';
 import { Admin } from './pages/Admin';
 import { Settings } from './pages/Settings';
+import PersonaCommunity from './pages/PersonaCommunity';
 import { NotFound } from './pages/NotFound';
 
 // Protected Route wrapper
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="profile" element={<Profile />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="stats" element={<Stats />} />
+                <Route path="community" element={<PersonaCommunity />} />
                 <Route path="admin" element={<Admin />} />
                 <Route path="chat/:characterId" element={<Chat />} />
                 <Route path="chat/:characterId/:chatId" element={<Chat />} />

@@ -610,6 +610,12 @@ export function Home() {
             >
               My Characters
             </button>
+            <Link
+              to="/community"
+              className="flex-1 sm:flex-none px-3 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-zinc-400 hover:text-zinc-200"
+            >
+              Community
+            </Link>
           </div>
 
           <button

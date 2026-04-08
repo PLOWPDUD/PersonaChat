@@ -1,0 +1,729 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  limit, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp, 
+  doc, 
+  updateDoc, 
+  increment, 
+  setDoc, 
+  deleteDoc, 
+  getDoc,
+  where,
+  startAfter,
+  getDocs
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { 
+  MessageSquare, 
+  Heart, 
+  Share2, 
+  Bookmark, 
+  Plus, 
+  Image as ImageIcon, 
+  Send, 
+  MoreHorizontal, 
+  Trash2, 
+  User,
+  Loader2,
+  X,
+  Check,
+  Upload,
+  Paperclip,
+  Link as LinkIcon,
+  Youtube,
+  ExternalLink
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface Post {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorPhoto?: string;
+  content: string;
+  imageUrl?: string;
+  link?: string;
+  likesCount: number;
+  commentsCount: number;
+  createdAt: any;
+  updatedAt?: any;
+}
+
+interface Comment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorName: string;
+  authorPhoto?: string;
+  content: string;
+  createdAt: any;
+}
+
+export default function PersonaCommunity() {
+  const { user, profile } = useAuth();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newPostContent, setNewPostContent] = useState('');
+  const [newPostImage, setNewPostImage] = useState('');
+  const [newPostLink, setNewPostLink] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [userLikes, setUserLikes] = useState<Set<string>>(new Set());
+  const [userSaves, setUserSaves] = useState<Set<string>>(new Set());
+  
+  const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  // Fetch initial posts
+  useEffect(() => {
+    const q = query(
+      collection(db, 'community_posts'),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const newPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Post));
+      
+      setPosts(newPosts);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 10);
+      setLoading(false);
+
+      // Fetch likes for these posts
+      if (user) {
+        const postIds = newPosts.map(p => p.id);
+        // We can't easily do a "where id in" for subcollections across different docs
+        // So we'll check each one or fetch the user's global likes if we had a central collection.
+        // Since we store likes in /community_posts/{postId}/likes/{userId}, 
+        // we have to check each one. To save quota, we'll only do this once per post.
+        
+        for (const postId of postIds) {
+          if (!userLikes.has(postId)) {
+            const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
+            if (likeDoc.exists()) {
+              setUserLikes(prev => new Set(prev).add(postId));
+            }
+          }
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'community_posts');
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch user likes and saves
+  useEffect(() => {
+    if (!user) return;
+
+    // This is a bit heavy on quota if done for every post, 
+    // but we'll fetch them once and keep them in state.
+    // For a real app, we might fetch these per post or in batches.
+    // To optimize, we'll only fetch the likes for the visible posts if needed,
+    // but for now, we'll just track them as the user interacts.
+    
+    // Actually, let's fetch the user's saved posts list
+    const fetchSaves = async () => {
+      try {
+        const savesSnap = await getDocs(collection(db, `users/${user.uid}/saved_posts`));
+        const savesSet = new Set(savesSnap.docs.map(doc => doc.id));
+        setUserSaves(savesSet);
+      } catch (e) {
+        console.error("Error fetching saves:", e);
+      }
+    };
+    fetchSaves();
+  }, [user]);
+
+  const fetchMorePosts = async () => {
+    if (!hasMore || isFetchingMore || !lastVisible) return;
+    setIsFetchingMore(true);
+
+    try {
+      const q = query(
+        collection(db, 'community_posts'),
+        orderBy('createdAt', 'desc'),
+        startAfter(lastVisible),
+        limit(10)
+      );
+
+      const snapshot = await getDocs(q);
+      const newPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Post));
+
+      setPosts(prev => [...prev, ...newPosts]);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 10);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'community_posts');
+    } finally {
+      setIsFetchingMore(false);
+    }
+  };
+
+  const handleCreatePost = async () => {
+    if (!user || !profile || !newPostContent.trim()) return;
+    setIsSubmitting(true);
+
+    try {
+      let finalImageUrl = newPostImage.trim() || null;
+
+      // Upload file if selected
+      if (selectedFile) {
+        const fileRef = ref(storage, `community_posts/${user.uid}/${Date.now()}_${selectedFile.name}`);
+        const uploadResult = await uploadBytes(fileRef, selectedFile);
+        finalImageUrl = await getDownloadURL(uploadResult.ref);
+      }
+
+      await addDoc(collection(db, 'community_posts'), {
+        authorId: user.uid,
+        authorName: profile.displayName,
+        authorPhoto: profile.photoURL || '',
+        content: newPostContent.trim(),
+        imageUrl: finalImageUrl,
+        link: newPostLink.trim() || null,
+        likesCount: 0,
+        commentsCount: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setIsCreateModalOpen(false);
+      setNewPostContent('');
+      setNewPostImage('');
+      setNewPostLink('');
+      setSelectedFile(null);
+      setImagePreview(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'community_posts');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getYoutubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File is too large. Max size is 5MB.');
+        return;
+      }
+      setSelectedFile(file);
+      setNewPostImage(''); // Clear URL if file is selected
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleToggleLike = async (postId: string) => {
+    if (!user) return;
+
+    const isLiked = userLikes.has(postId);
+    const likeRef = doc(db, `community_posts/${postId}/likes/${user.uid}`);
+    const postRef = doc(db, 'community_posts', postId);
+
+    try {
+      if (isLiked) {
+        await deleteDoc(likeRef);
+        await updateDoc(postRef, { likesCount: increment(-1) });
+        setUserLikes(prev => {
+          const next = new Set(prev);
+          next.delete(postId);
+          return next;
+        });
+      } else {
+        await setDoc(likeRef, { createdAt: serverTimestamp() });
+        await updateDoc(postRef, { likesCount: increment(1) });
+        setUserLikes(prev => {
+          const next = new Set(prev);
+          next.add(postId);
+          return next;
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `community_posts/${postId}/likes`);
+    }
+  };
+
+  const handleToggleSave = async (postId: string) => {
+    if (!user) return;
+
+    const isSaved = userSaves.has(postId);
+    const saveRef = doc(db, `users/${user.uid}/saved_posts/${postId}`);
+
+    try {
+      if (isSaved) {
+        await deleteDoc(saveRef);
+        setUserSaves(prev => {
+          const next = new Set(prev);
+          next.delete(postId);
+          return next;
+        });
+      } else {
+        await setDoc(saveRef, { createdAt: serverTimestamp() });
+        setUserSaves(prev => {
+          const next = new Set(prev);
+          next.add(postId);
+          return next;
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/saved_posts`);
+    }
+  };
+
+  const handleShare = (post: Post) => {
+    const shareUrl = `${window.location.origin}/community?post=${post.id}`;
+    if (navigator.share) {
+      navigator.share({
+        title: `Post by ${post.authorName}`,
+        text: post.content,
+        url: shareUrl
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(shareUrl);
+      alert('Link copied to clipboard!');
+    }
+  };
+
+  const fetchComments = (postId: string) => {
+    setActiveCommentsPostId(postId);
+    const q = query(
+      collection(db, `community_posts/${postId}/comments`),
+      orderBy('createdAt', 'asc')
+    );
+
+    return onSnapshot(q, (snapshot) => {
+      const newComments = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Comment));
+      setComments(newComments);
+    });
+  };
+
+  const handleAddComment = async () => {
+    if (!user || !profile || !activeCommentsPostId || !newComment.trim()) return;
+    setIsSubmittingComment(true);
+
+    try {
+      await addDoc(collection(db, `community_posts/${activeCommentsPostId}/comments`), {
+        postId: activeCommentsPostId,
+        authorId: user.uid,
+        authorName: profile.displayName,
+        authorPhoto: profile.photoURL || '',
+        content: newComment.trim(),
+        createdAt: serverTimestamp()
+      });
+
+      await updateDoc(doc(db, 'community_posts', activeCommentsPostId), {
+        commentsCount: increment(1)
+      });
+
+      setNewComment('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `community_posts/${activeCommentsPostId}/comments`);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return;
+    try {
+      await deleteDoc(doc(db, 'community_posts', postId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `community_posts/${postId}`);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8 pb-20">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-white tracking-tight">PersonaCommunity</h1>
+          <p className="text-zinc-400 mt-1">Share your experiences and connect with others.</p>
+        </div>
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="hidden sm:inline">New Post</span>
+        </button>
+      </div>
+
+      {/* Posts Feed */}
+      <div className="space-y-6">
+        {posts.map(post => (
+          <motion.div
+            key={post.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden group hover:border-zinc-700 transition-all"
+          >
+            {/* Post Header */}
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {post.authorPhoto ? (
+                  <img src={post.authorPhoto} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                    <User className="w-5 h-5 text-zinc-500" />
+                  </div>
+                )}
+                <div>
+                  <p className="text-white font-bold text-sm">{post.authorName}</p>
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">
+                    {post.createdAt?.toDate ? new Date(post.createdAt.toDate()).toLocaleDateString() : 'Just now'}
+                  </p>
+                </div>
+              </div>
+              {user?.uid === post.authorId && (
+                <button 
+                  onClick={() => handleDeletePost(post.id)}
+                  className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Post Content */}
+            <div className="px-4 pb-4 space-y-4">
+              <p className="text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
+              
+              {post.link && (
+                <div className="space-y-3">
+                  {getYoutubeId(post.link) ? (
+                    <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-video">
+                      <iframe
+                        width="100%"
+                        height="100%"
+                        src={`https://www.youtube.com/embed/${getYoutubeId(post.link)}`}
+                        title="YouTube video player"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="w-full h-full"
+                      ></iframe>
+                    </div>
+                  ) : (
+                    <a 
+                      href={post.link} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-zinc-950 border border-zinc-800 rounded-2xl hover:border-indigo-500/50 transition-all group/link"
+                    >
+                      <div className="p-2 bg-zinc-900 rounded-lg">
+                        <ExternalLink className="w-5 h-5 text-zinc-400 group-hover/link:text-indigo-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-zinc-300 text-sm font-medium truncate">{post.link}</p>
+                        <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">External Link</p>
+                      </div>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {post.imageUrl && (
+                <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950">
+                  <img src={post.imageUrl} alt="" className="w-full h-auto max-h-[500px] object-contain" referrerPolicy="no-referrer" />
+                </div>
+              )}
+            </div>
+
+            {/* Post Actions */}
+            <div className="px-4 py-3 border-t border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => handleToggleLike(post.id)}
+                  className={`flex items-center gap-1.5 text-sm font-bold transition-all ${
+                    userLikes.has(post.id) ? 'text-red-500' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <Heart className={`w-5 h-5 ${userLikes.has(post.id) ? 'fill-current' : ''}`} />
+                  <span>{post.likesCount || 0}</span>
+                </button>
+                <button
+                  onClick={() => activeCommentsPostId === post.id ? setActiveCommentsPostId(null) : fetchComments(post.id)}
+                  className={`flex items-center gap-1.5 text-sm font-bold transition-all ${
+                    activeCommentsPostId === post.id ? 'text-indigo-400' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <MessageSquare className="w-5 h-5" />
+                  <span>{post.commentsCount || 0}</span>
+                </button>
+                <button
+                  onClick={() => handleShare(post)}
+                  className="p-2 text-zinc-400 hover:text-white transition-all"
+                >
+                  <Share2 className="w-5 h-5" />
+                </button>
+              </div>
+              <button
+                onClick={() => handleToggleSave(post.id)}
+                className={`p-2 transition-all ${
+                  userSaves.has(post.id) ? 'text-yellow-500' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Bookmark className={`w-5 h-5 ${userSaves.has(post.id) ? 'fill-current' : ''}`} />
+              </button>
+            </div>
+
+            {/* Comments Section */}
+            <AnimatePresence>
+              {activeCommentsPostId === post.id && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="border-t border-zinc-800 bg-zinc-950/50"
+                >
+                  <div className="p-4 space-y-4">
+                    <div className="space-y-4 max-h-[300px] overflow-y-auto no-scrollbar">
+                      {comments.length === 0 ? (
+                        <p className="text-center py-4 text-zinc-500 text-sm italic">No comments yet. Be the first!</p>
+                      ) : (
+                        comments.map(comment => (
+                          <div key={comment.id} className="flex gap-3">
+                            {comment.authorPhoto ? (
+                              <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
+                                <User className="w-4 h-4 text-zinc-500" />
+                              </div>
+                            )}
+                            <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-white text-xs font-bold">{comment.authorName}</span>
+                                <span className="text-zinc-600 text-[10px]">
+                                  {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                </span>
+                              </div>
+                              <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment..."
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                      />
+                      <button
+                        onClick={handleAddComment}
+                        disabled={isSubmittingComment || !newComment.trim()}
+                        className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all"
+                      >
+                        {isSubmittingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        ))}
+
+        {hasMore && (
+          <button
+            onClick={fetchMorePosts}
+            disabled={isFetchingMore}
+            className="w-full py-4 text-zinc-500 hover:text-white text-sm font-bold transition-all flex items-center justify-center gap-2"
+          >
+            {isFetchingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Load More Posts'}
+          </button>
+        )}
+
+        {!hasMore && posts.length > 0 && (
+          <p className="text-center py-8 text-zinc-600 text-sm italic">You've reached the end of the community feed.</p>
+        )}
+
+        {!loading && posts.length === 0 && (
+          <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
+            <MessageSquare className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+            <p className="text-zinc-400 text-lg">No posts yet. Start the conversation!</p>
+          </div>
+        )}
+      </div>
+
+      {/* Create Post Modal */}
+      <AnimatePresence>
+        {isCreateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white">Create Community Post</h2>
+                <button onClick={() => setIsCreateModalOpen(false)} className="p-2 text-zinc-500 hover:text-white transition-all">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Content</label>
+                  <textarea
+                    value={newPostContent}
+                    onChange={(e) => setNewPostContent(e.target.value)}
+                    placeholder="What's on your mind?"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white focus:outline-none focus:border-indigo-500/50 transition-all min-h-[150px] resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Link (Optional)</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                    <input
+                      type="text"
+                      value={newPostLink}
+                      onChange={(e) => setNewPostLink(e.target.value)}
+                      placeholder="Paste YouTube or any link..."
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all text-sm"
+                    />
+                  </div>
+                </div>
+
+                {newPostLink && getYoutubeId(newPostLink) && (
+                  <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-video">
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src={`https://www.youtube.com/embed/${getYoutubeId(newPostLink)}`}
+                      title="YouTube preview"
+                      frameBorder="0"
+                      className="w-full h-full pointer-events-none"
+                    ></iframe>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Image</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="relative">
+                      <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                      <input
+                        type="text"
+                        value={newPostImage}
+                        onChange={(e) => {
+                          setNewPostImage(e.target.value);
+                          setSelectedFile(null);
+                          setImagePreview(null);
+                        }}
+                        placeholder="Paste Image URL..."
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all text-sm"
+                      />
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`w-full py-3 px-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all text-sm font-bold ${
+                          selectedFile 
+                            ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                        }`}
+                      >
+                        {selectedFile ? <Check className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                        {selectedFile ? 'Image Selected' : 'Upload from Gallery'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {(imagePreview || newPostImage) && (
+                  <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 h-48 group">
+                    <img 
+                      src={imagePreview || newPostImage} 
+                      alt="Preview" 
+                      className="w-full h-full object-contain" 
+                      referrerPolicy="no-referrer" 
+                    />
+                    <button
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setImagePreview(null);
+                        setNewPostImage('');
+                      }}
+                      className="absolute top-2 right-2 p-2 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleCreatePost}
+                  disabled={isSubmitting || !newPostContent.trim()}
+                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  Post to Community
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
