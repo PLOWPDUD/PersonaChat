@@ -568,7 +568,7 @@ export function Search() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4"
+                className="fixed bottom-8 left-1/2 lg:left-[calc(50%+8rem)] -translate-x-1/2 z-50 w-full max-w-md px-4"
               >
                 <button
                   onClick={startGroupChat}

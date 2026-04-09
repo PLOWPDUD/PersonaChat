@@ -18,8 +18,9 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { QuotaExceeded } from '../components/QuotaExceeded';
 import { 
   MessageSquare, 
   Heart, 
@@ -68,9 +69,10 @@ interface Comment {
 }
 
 export default function PersonaCommunity() {
-  const { user, profile } = useAuth();
+  const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
@@ -111,31 +113,43 @@ export default function PersonaCommunity() {
       setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
       setHasMore(snapshot.docs.length === 10);
       setLoading(false);
-
-      // Fetch likes for these posts
-      if (user) {
-        const postIds = newPosts.map(p => p.id);
-        // We can't easily do a "where id in" for subcollections across different docs
-        // So we'll check each one or fetch the user's global likes if we had a central collection.
-        // Since we store likes in /community_posts/{postId}/likes/{userId}, 
-        // we have to check each one. To save quota, we'll only do this once per post.
-        
-        for (const postId of postIds) {
-          if (!userLikes.has(postId)) {
-            const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
-            if (likeDoc.exists()) {
-              setUserLikes(prev => new Set(prev).add(postId));
-            }
-          }
-        }
-      }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'community_posts');
+      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        setLocalQuotaExceeded(true);
+      } else {
+        handleFirestoreError(error, OperationType.LIST, 'community_posts');
+      }
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
+
+  // Fetch likes for posts separately to avoid loop in onSnapshot
+  useEffect(() => {
+    if (!user || posts.length === 0) return;
+
+    const fetchLikes = async () => {
+      const postIds = posts.map(p => p.id);
+      for (const postId of postIds) {
+        if (!userLikes.has(postId)) {
+          try {
+            const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
+            if (likeDoc.exists()) {
+              setUserLikes(prev => new Set(prev).add(postId));
+            }
+          } catch (error) {
+            if (isQuotaError(error)) {
+              setLocalQuotaExceeded(true);
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    fetchLikes();
+  }, [user, posts.length]); // Only run when posts length changes
 
   // Fetch user likes and saves
   useEffect(() => {
@@ -392,7 +406,6 @@ export default function PersonaCommunity() {
   };
 
   const handleDeletePost = async (postId: string) => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return;
     try {
       await deleteDoc(doc(db, 'community_posts', postId));
     } catch (error) {
@@ -400,10 +413,20 @@ export default function PersonaCommunity() {
     }
   };
 
+  const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (quotaExceeded) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-8">
+        <QuotaExceeded />
       </div>
     );
   }
@@ -514,9 +537,8 @@ export default function PersonaCommunity() {
                       <img 
                         src={url} 
                         alt="" 
-                        className="w-full h-full object-cover" 
+                        className="w-full h-full object-cover cursor-pointer" 
                         referrerPolicy="no-referrer" 
-                        onClick={() => window.open(url, '_blank')}
                       />
                     </div>
                   ))}

@@ -42,9 +42,16 @@ export function Layout() {
         <Sidebar onClose={() => setIsSidebarOpen(false)} />
       </div>
 
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">
-        <Outlet />
-      </main>
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Desktop Header */}
+        <header className="hidden lg:flex h-16 border-b border-zinc-800 items-center justify-end px-8 sticky top-0 bg-zinc-950/50 backdrop-blur-md z-40">
+          <NotificationBell />
+        </header>
+
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

@@ -42,9 +42,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           <span>PersonaChat</span>
         </Link>
         <div className="flex items-center gap-2">
-          <div className="hidden lg:block">
-            <NotificationBell />
-          </div>
           {onClose && (
             <button
               onClick={onClose}

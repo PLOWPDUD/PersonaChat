@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 
@@ -38,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [loading, setLoading] = useState(true);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const isSyncing = useRef(false);
 
   // Use sessionStorage to cache roles for the session
   const [roles, setRoles] = useState<{ isOwner: boolean; isModerator: boolean }> (() => {
@@ -86,12 +87,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }
 
-        // Skip if already synced in this session
-        const isSynced = sessionStorage.getItem(`profile_synced_${currentUser.uid}`);
-        if (isSynced) {
+        // Skip if already synced recently (within 1 hour) to save quota
+        const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
+        const now = Date.now();
+        const oneHour = 60 * 60 * 1000;
+        
+        if (lastSync && (now - parseInt(lastSync)) < oneHour) {
+          console.log("Profile already synced recently, skipping Firestore fetch");
           setLoading(false);
           return;
         }
+
+        if (isSyncing.current || quotaExceeded) {
+          setLoading(false);
+          return;
+        }
+
+        isSyncing.current = true;
 
         try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
@@ -167,26 +179,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
           }
 
-          // Mark as synced for this session
-          sessionStorage.setItem(`profile_synced_${currentUser.uid}`, 'true');
+          // Mark as synced with TTL
+          localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
 
           // Increment visitor count only once per 24 hours per device to save writes
           const lastIncrement = localStorage.getItem('last_visitor_increment');
-          const now = Date.now();
+          const nowTime = Date.now();
           const oneDay = 24 * 60 * 60 * 1000;
           
-          if (!lastIncrement || (now - parseInt(lastIncrement)) > oneDay) {
+          if (!lastIncrement || (nowTime - parseInt(lastIncrement)) > oneDay) {
             const statsRef = doc(db, 'siteStats', 'global');
             await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
-            localStorage.setItem('last_visitor_increment', now.toString());
+            localStorage.setItem('last_visitor_increment', nowTime.toString());
             console.log("Visitor count incremented (once per 24h)");
           }
 
         } catch (error: any) {
-          if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+          if (isQuotaError(error)) {
             setQuotaExceeded(true);
           }
           console.error('Error syncing profile:', error);
+        } finally {
+          isSyncing.current = false;
         }
       } else {
         setProfile(null);

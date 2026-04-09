@@ -42,53 +42,71 @@ export function NotificationBell() {
         ...doc.data()
       } as Notification));
       
-      // 2. Fetch global notifications (one-time or periodic to save quota)
-      fetchGlobalNotifications(userNotifs);
+      setNotifications(prev => {
+        const globalNotifs = prev.filter(n => n.type === 'global');
+        const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        return allNotifs;
+      });
+      setUnreadCount(prev => {
+        // We need to recalculate based on the new merged list
+        // But to be safe and simple, we'll just let the merge handle it
+        return 0; // Will be updated by the next line's effect or similar
+      });
+      setLoading(false);
     }, (error) => {
       if (isQuotaError(error)) {
         console.warn("Quota exceeded for notifications");
       }
     });
 
+    // 2. Fetch global notifications once on mount
+    const fetchGlobalOnce = async () => {
+      try {
+        const gq = query(
+          collection(db, 'global_notifications'),
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
+        const gSnap = await getDocs(gq);
+        const globalNotifs = gSnap.docs.map(doc => {
+          const data = doc.data();
+          const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
+          return {
+            id: doc.id,
+            type: 'global',
+            ...data,
+            read: seenGlobal.includes(doc.id)
+          } as Notification;
+        });
+
+        setNotifications(prev => {
+          const userNotifs = prev.filter(n => n.type !== 'global');
+          const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+          return allNotifs;
+        });
+      } catch (error) {
+        if (!isQuotaError(error)) {
+          console.error("Error fetching global notifications:", error);
+        }
+      }
+    };
+
+    fetchGlobalOnce();
+
     return () => unsubscribe();
   }, [user]);
 
-  const fetchGlobalNotifications = async (userNotifs: Notification[]) => {
-    try {
-      const gq = query(
-        collection(db, 'global_notifications'),
-        orderBy('createdAt', 'desc'),
-        limit(10)
-      );
-      const gSnap = await getDocs(gq);
-      const globalNotifs = gSnap.docs.map(doc => {
-        const data = doc.data();
-        // Check if seen in localStorage
-        const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-        return {
-          id: doc.id,
-          type: 'global',
-          ...data,
-          read: seenGlobal.includes(doc.id)
-        } as Notification;
-      });
-
-      const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
-        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
-        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
-        return timeB - timeA;
-      });
-
-      setNotifications(allNotifs);
-      setUnreadCount(allNotifs.filter(n => !n.read).length);
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching global notifications:", error);
-      setNotifications(userNotifs);
-      setUnreadCount(userNotifs.filter(n => !n.read).length);
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    setUnreadCount(notifications.filter(n => !n.read).length);
+  }, [notifications]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

@@ -23,12 +23,22 @@ import { Settings } from './pages/Settings';
 import PersonaCommunity from './pages/PersonaCommunity';
 import { NotFound } from './pages/NotFound';
 
+import { QuotaExceeded } from './components/QuotaExceeded';
+
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, quotaExceeded } = useAuth();
   
   if (loading) {
     return <LoadingScreen />;
+  }
+
+  if (quotaExceeded) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <QuotaExceeded />
+      </div>
+    );
   }
   
   if (!user) {

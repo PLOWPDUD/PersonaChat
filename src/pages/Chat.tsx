@@ -1529,7 +1529,7 @@ export function Chat() {
 
       {/* Notification Toast */}
       {notification && (
-        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-6 py-4 rounded-2xl shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-md w-[90%] ${
+        <div className={`fixed bottom-24 left-1/2 lg:left-[calc(50%+8rem)] -translate-x-1/2 z-50 px-6 py-4 rounded-2xl shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-md w-[90%] ${
           notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           <div className="flex items-start gap-3">
