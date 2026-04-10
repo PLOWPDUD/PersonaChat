@@ -100,12 +100,22 @@ export default function PersonaCommunity() {
       // For URLs, we try to fetch and convert to base64 to moderate
       const response = await fetch(url);
       const blob = await response.blob();
-      const base64 = await new Promise<string>((resolve) => {
+      const base64 = await new Promise<string | null>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
         reader.readAsDataURL(blob);
       });
+
+      if (!base64) {
+        throw new Error("Failed to read image data");
+      }
+
       const base64Data = base64.split(',')[1];
+      if (!base64Data) {
+        throw new Error("Invalid image data format");
+      }
+
       const result = await moderateImage(base64Data, blob.type);
       if (!result.isAppropriate) {
         setModerationError(result.suggestion || 'This image contains inappropriate content and cannot be used.');
@@ -319,13 +329,19 @@ export default function PersonaCommunity() {
 
     try {
       for (const file of validFiles) {
-        const base64 = await new Promise<string>((resolve) => {
+        const base64 = await new Promise<string | null>((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
           reader.readAsDataURL(file);
         });
 
-        const base64Data = base64.split(',')[1];
+        if (!base64) continue;
+
+        const parts = base64.split(',');
+        if (parts.length < 2) continue;
+        
+        const base64Data = parts[1];
         const result = await moderateImage(base64Data, file.type);
 
         if (!result.isAppropriate) {
