@@ -21,6 +21,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { QuotaExceeded } from '../components/QuotaExceeded';
+import { moderateImage, ModerationResult } from '../services/aiService';
 import { 
   MessageSquare, 
   Heart, 
@@ -39,7 +40,8 @@ import {
   Paperclip,
   Link as LinkIcon,
   Youtube,
-  ExternalLink
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -69,7 +71,12 @@ interface Comment {
 }
 
 export default function PersonaCommunity() {
-  const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportPostId, setReportPostId] = useState<string | null>(null);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+
+  const { user, profile, quotaExceeded: globalQuotaExceeded, isOwner, isModerator } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
@@ -82,6 +89,36 @@ export default function PersonaCommunity() {
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isModerating, setIsModerating] = useState(false);
+  const [moderationError, setModerationError] = useState<string | null>(null);
+
+  const handleModerateUrl = async (url: string) => {
+    if (!url.trim()) return;
+    setIsModerating(true);
+    setModerationError(null);
+    try {
+      // For URLs, we try to fetch and convert to base64 to moderate
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      const base64Data = base64.split(',')[1];
+      const result = await moderateImage(base64Data, blob.type);
+      if (!result.isAppropriate) {
+        setModerationError(result.suggestion || 'This image contains inappropriate content and cannot be used.');
+        setNewPostImage('');
+      }
+    } catch (error) {
+      console.error("URL Moderation error:", error);
+      // If CORS blocks us, we might have to skip or use a different approach
+      // For now, we'll just log it.
+    } finally {
+      setIsModerating(false);
+    }
+  };
   
   const [userLikes, setUserLikes] = useState<Set<string>>(new Set());
   const [userSaves, setUserSaves] = useState<Set<string>>(new Set());
@@ -257,7 +294,7 @@ export default function PersonaCommunity() {
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
@@ -275,16 +312,41 @@ export default function PersonaCommunity() {
       return true;
     });
 
-    setSelectedFiles(prev => [...prev, ...validFiles]);
-    setNewPostImage(''); // Clear URL if file is selected
+    if (validFiles.length === 0) return;
 
-    validFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreviews(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsModerating(true);
+    setModerationError(null);
+
+    try {
+      for (const file of validFiles) {
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+
+        const base64Data = base64.split(',')[1];
+        const result = await moderateImage(base64Data, file.type);
+
+        if (!result.isAppropriate) {
+          setModerationError(result.suggestion || 'This image contains inappropriate content and cannot be used.');
+          setIsModerating(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        setSelectedFiles(prev => [...prev, file]);
+        setImagePreviews(prev => [...prev, base64]);
+      }
+      setNewPostImage(''); // Clear URL if file is selected
+    } catch (error) {
+      console.error("Moderation error:", error);
+      // If moderation fails, we'll allow it but log it. 
+      // Or we could block it to be safe. Let's allow for now to not break UX on AI hiccups.
+    } finally {
+      setIsModerating(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const removeImage = (index: number) => {
@@ -405,11 +467,48 @@ export default function PersonaCommunity() {
     }
   };
 
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this comment?')) return;
+    try {
+      await deleteDoc(doc(db, `community_posts/${postId}/comments`, commentId));
+      await updateDoc(doc(db, 'community_posts', postId), {
+        commentsCount: increment(-1)
+      });
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `community_posts/${postId}/comments/${commentId}`);
+    }
+  };
+
   const handleDeletePost = async (postId: string) => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return;
     try {
       await deleteDoc(doc(db, 'community_posts', postId));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `community_posts/${postId}`);
+    }
+  };
+
+  const handleReportPost = async () => {
+    if (!user || !reportPostId || !reportReason.trim()) return;
+    setIsSubmittingReport(true);
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId: user.uid,
+        targetId: reportPostId,
+        type: 'post',
+        reason: reportReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      setIsReportModalOpen(false);
+      setReportReason('');
+      setReportPostId(null);
+      alert('Report submitted successfully. Thank you for helping keep our community safe!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'reports');
+    } finally {
+      setIsSubmittingReport(false);
     }
   };
 
@@ -473,10 +572,11 @@ export default function PersonaCommunity() {
                   </p>
                 </div>
               </div>
-              {user?.uid === post.authorId && (
+              {(user?.uid === post.authorId || isModerator) && (
                 <button 
                   onClick={() => handleDeletePost(post.id)}
-                  className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                  className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                  title="Delete Post"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -570,9 +670,22 @@ export default function PersonaCommunity() {
                 <button
                   onClick={() => handleShare(post)}
                   className="p-2 text-zinc-400 hover:text-white transition-all"
+                  title="Share"
                 >
                   <Share2 className="w-5 h-5" />
                 </button>
+                {user?.uid !== post.authorId && (
+                  <button
+                    onClick={() => {
+                      setReportPostId(post.id);
+                      setIsReportModalOpen(true);
+                    }}
+                    className="p-2 text-zinc-400 hover:text-red-400 transition-all"
+                    title="Report Post"
+                  >
+                    <ShieldAlert className="w-5 h-5" />
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => handleToggleSave(post.id)}
@@ -610,9 +723,20 @@ export default function PersonaCommunity() {
                             <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
                               <div className="flex items-center justify-between mb-1">
                                 <span className="text-white text-xs font-bold">{comment.authorName}</span>
-                                <span className="text-zinc-600 text-[10px]">
-                                  {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-zinc-600 text-[10px]">
+                                    {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                  </span>
+                                  {(user?.uid === comment.authorId || isModerator) && (
+                                    <button
+                                      onClick={() => handleDeleteComment(post.id, comment.id)}
+                                      className="text-zinc-600 hover:text-red-500 transition-colors"
+                                      title="Delete Comment"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
                             </div>
@@ -666,6 +790,59 @@ export default function PersonaCommunity() {
           </div>
         )}
       </div>
+
+      {/* Report Modal */}
+      <AnimatePresence>
+        {isReportModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-red-500/10 rounded-2xl">
+                  <ShieldAlert className="w-6 h-6 text-red-500" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Report Post</h2>
+                  <p className="text-zinc-400 text-sm">Help us understand what's wrong.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <textarea
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  placeholder="Why are you reporting this post? (e.g. Spam, Harassment, Inappropriate content...)"
+                  className="w-full h-32 bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all resize-none"
+                />
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setIsReportModalOpen(false);
+                      setReportReason('');
+                      setReportPostId(null);
+                    }}
+                    className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReportPost}
+                    disabled={isSubmittingReport || !reportReason.trim()}
+                    className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit Report'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Create Post Modal */}
       <AnimatePresence>
@@ -742,7 +919,9 @@ export default function PersonaCommunity() {
                           setNewPostImage(e.target.value);
                           setSelectedFiles([]);
                           setImagePreviews([]);
+                          setModerationError(null);
                         }}
+                        onBlur={(e) => handleModerateUrl(e.target.value)}
                         placeholder="Paste Image URL..."
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all text-sm"
                       />
@@ -772,36 +951,54 @@ export default function PersonaCommunity() {
                   </div>
                 </div>
                 
-                {(imagePreviews.length > 0 || newPostImage) && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {newPostImage && (
-                      <div className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
-                        <img src={newPostImage} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        <button
-                          onClick={() => setNewPostImage('')}
-                          className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                {(imagePreviews.length > 0 || newPostImage || isModerating || moderationError) && (
+                  <div className="space-y-4">
+                    {isModerating && (
+                      <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl animate-pulse">
+                        <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+                        <p className="text-indigo-400 text-sm font-bold">AI is checking your image for safety...</p>
                       </div>
                     )}
-                    {imagePreviews.map((preview, idx) => (
-                      <div key={idx} className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
-                        <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                          onClick={() => removeImage(idx)}
-                          className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                    
+                    {moderationError && (
+                      <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
+                        <ShieldAlert className="w-5 h-5 text-red-500" />
+                        <p className="text-red-500 text-sm font-bold">{moderationError}</p>
                       </div>
-                    ))}
+                    )}
+
+                    {(imagePreviews.length > 0 || newPostImage) && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {newPostImage && (
+                          <div className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
+                            <img src={newPostImage} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <button
+                              onClick={() => setNewPostImage('')}
+                              className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full transition-all hover:bg-red-500"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                        {imagePreviews.map((preview, idx) => (
+                          <div key={idx} className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-square group">
+                            <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removeImage(idx)}
+                              className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full transition-all hover:bg-red-500"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <button
                   onClick={handleCreatePost}
-                  disabled={isSubmitting || !newPostContent.trim()}
+                  disabled={isSubmitting || isModerating || !newPostContent.trim()}
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}

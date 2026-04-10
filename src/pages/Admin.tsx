@@ -201,6 +201,20 @@ export function Admin() {
     }
   };
 
+  const handleDeletePost = async (postId: string) => {
+    if (!window.confirm(`Are you sure you want to delete post "${postId}"?`)) return;
+    setUpdatingId(postId);
+    try {
+      await deleteDoc(doc(db, 'community_posts', postId));
+      alert('Post deleted successfully.');
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `community_posts/${postId}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   if (!isModerator) {
     return (
       <div className="max-w-md mx-auto mt-20">
@@ -337,7 +351,7 @@ export function Admin() {
                           <button
                             onClick={() => handleDeleteCharacter(char.id, profile.id, char.name)}
                             disabled={updatingId === char.id}
-                            className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -413,8 +427,18 @@ export function Admin() {
                     <span>{report.createdAt?.toDate ? new Date(report.createdAt.toDate()).toLocaleDateString() : 'Recently'}</span>
                   </div>
                 </div>
-                                <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px]">
-                  {report.status === 'pending' && (
+                                  <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px]">
+                    {report.type === 'post' && (
+                      <button
+                        onClick={() => handleDeletePost(report.targetId)}
+                        disabled={updatingId === report.targetId}
+                        className="w-full px-6 py-3 bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Post
+                      </button>
+                    )}
+                    {report.status === 'pending' && (
                     <button
                       onClick={() => handleReportStatus(report.id, 'reviewed', report.creatorId, report.targetName)}
                       disabled={updatingId === report.id}
