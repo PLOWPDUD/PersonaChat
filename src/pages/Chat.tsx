@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
 import { generateCharacterResponse } from '../lib/gemini';
+import { checkAndAwardBadges } from '../services/badgeService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search } from 'lucide-react';
@@ -1341,6 +1342,11 @@ export function Chat() {
               await updateDoc(doc(db, 'characters', char.id), {
                 interactionsCount: (char.interactionsCount || 0) + 1
               });
+              
+              // Trigger badge check for the creator if the character is public
+              if (char.visibility === 'public' && char.creatorId) {
+                checkAndAwardBadges(char.creatorId);
+              }
             }
           } catch (e: any) {
             if (isQuotaError(e)) {

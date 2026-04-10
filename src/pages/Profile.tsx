@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award } from 'lucide-react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
+import { BADGES } from '../services/badgeService';
 
 export function Profile() {
   const { user, updateProfile, isOwner, isModerator } = useAuth();
@@ -17,7 +18,8 @@ export function Profile() {
     displayName: '',
     photoURL: '',
     userPersona: '',
-    personas: [] as { id: string; name: string; description: string; personality?: string }[]
+    personas: [] as { id: string; name: string; description: string; personality?: string }[],
+    badges: [] as string[]
   });
   const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
@@ -118,7 +120,8 @@ export function Profile() {
             displayName: data.displayName || '',
             photoURL: data.photoURL || '',
             userPersona: data.userPersona || '',
-            personas: data.personas || []
+            personas: data.personas || [],
+            badges: data.badges || []
           });
         }
       } catch (err: any) {
@@ -188,11 +191,32 @@ export function Profile() {
 
   return (
     <div className="max-w-md mx-auto space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-white">Edit Profile</h1>
-        <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${getRankInfo().color}`}>
-          {getRankInfo().label}
-        </span>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-white">Edit Profile</h1>
+          <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${getRankInfo().color}`}>
+            {getRankInfo().label}
+          </span>
+        </div>
+        
+        {formData.badges.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {formData.badges.map(badgeId => {
+              const badge = BADGES.find(b => b.id === badgeId);
+              if (!badge) return null;
+              return (
+                <div 
+                  key={badgeId} 
+                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-500 text-xs font-bold"
+                  title={badge.description}
+                >
+                  <span>{badge.icon}</span>
+                  <span>{badge.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl">{error}</div>}

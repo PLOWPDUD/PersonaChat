@@ -22,6 +22,7 @@ import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '
 import { useAuth } from '../contexts/AuthContext';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { moderateImage, ModerationResult } from '../services/aiService';
+import { BADGES } from '../services/badgeService';
 import { 
   MessageSquare, 
   Heart, 
@@ -50,6 +51,7 @@ interface Post {
   authorId: string;
   authorName: string;
   authorPhoto?: string;
+  authorBadges?: string[];
   title?: string;
   content: string;
   imageUrls?: string[];
@@ -274,6 +276,7 @@ export default function PersonaCommunity() {
         authorId: user.uid,
         authorName: profile.displayName,
         authorPhoto: profile.photoURL || '',
+        authorBadges: profile.badges || [],
         title: newPostTitle.trim() || null,
         content: newPostContent.trim(),
         imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null,
@@ -582,7 +585,22 @@ export default function PersonaCommunity() {
                   </div>
                 )}
                 <div>
-                  <p className="text-white font-bold text-sm">{post.authorName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-bold text-sm">{post.authorName}</p>
+                    {post.authorBadges && post.authorBadges.length > 0 && (
+                      <div className="flex gap-0.5">
+                        {post.authorBadges.map((badgeId: string) => {
+                          const badge = BADGES.find(b => b.id === badgeId);
+                          if (!badge) return null;
+                          return (
+                            <span key={badgeId} className="text-[10px]" title={badge.label}>
+                              {badge.icon}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">
                     {post.createdAt?.toDate ? new Date(post.createdAt.toDate()).toLocaleDateString() : 'Just now'}
                   </p>

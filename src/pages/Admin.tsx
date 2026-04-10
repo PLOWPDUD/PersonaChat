@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot, Award } from 'lucide-react';
+import { BADGES } from '../services/badgeService';
 import { useNavigate } from 'react-router-dom';
 
 interface UserProfile {
@@ -11,6 +12,7 @@ interface UserProfile {
   email: string;
   photoURL: string;
   role: string;
+  badges?: string[];
   createdAt: any;
   characters?: any[];
 }
@@ -300,6 +302,19 @@ export function Admin() {
                     <div>
                       <h3 className="text-white font-bold text-lg">{profile.displayName}</h3>
                       <p className="text-zinc-500 text-sm">{profile.email}</p>
+                      {profile.badges && profile.badges.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {profile.badges.map((badgeId: string) => {
+                            const badge = BADGES.find(b => b.id === badgeId);
+                            if (!badge) return null;
+                            return (
+                              <span key={badgeId} className="text-xs" title={badge.label}>
+                                {badge.icon}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                   

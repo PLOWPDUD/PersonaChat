@@ -3,6 +3,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
+import { checkAndAwardBadges } from '../services/badgeService';
 
 interface AuthContextType {
   user: User | null;
@@ -181,6 +182,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Mark as synced with TTL
           localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
+
+          // Retroactive badge check
+          checkAndAwardBadges(currentUser.uid);
 
           // Increment visitor count only once per 24 hours per device to save writes
           const lastIncrement = localStorage.getItem('last_visitor_increment');

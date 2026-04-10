@@ -11,6 +11,11 @@
         "photoURL": { "type": "string", "description": "The URL to the user's profile photo." },
         "email": { "type": "string", "format": "email", "description": "The user's email address." },
         "role": { "type": "string", "enum": ["user", "moderator", "owner"], "description": "The user's role in the application." },
+        "badges": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "A list of badge IDs the user has earned."
+        },
         "userPersona": { "type": "string", "description": "A description of the user's persona for AI interactions." },
         "personas": { 
           "type": "array", 
@@ -150,10 +155,11 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
-        "type": { "type": "string", "enum": ["character_banned", "character_reviewed", "new_character"] },
+        "type": { "type": "string", "enum": ["character_banned", "character_reviewed", "new_character", "badge_earned"] },
         "title": { "type": "string" },
         "message": { "type": "string" },
         "characterId": { "type": "string" },
+        "badgeId": { "type": "string" },
         "read": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
@@ -180,6 +186,7 @@
         "authorId": { "type": "string" },
         "authorName": { "type": "string" },
         "authorPhoto": { "type": "string" },
+        "authorBadges": { "type": "array", "items": { "type": "string" } },
         "title": { "type": "string" },
         "content": { "type": "string" },
         "imageUrls": { "type": "array", "items": { "type": "string" } },
