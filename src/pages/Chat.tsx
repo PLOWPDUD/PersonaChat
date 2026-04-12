@@ -510,9 +510,10 @@ export function Chat() {
     const newMessages: Message[] = [];
 
     // Save each message sequentially to help with ordering
-    for (const msg of currentMessages) {
+    for (let i = 0; i < currentMessages.length; i++) {
+      const msg = currentMessages[i];
       const newMessage = {
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2),
         chatId,
         role: 'model' as const,
         characterId: msg.charId || characters[0].id,
@@ -524,7 +525,7 @@ export function Chat() {
 
       try {
         if (!isLocalMode && !chatId.startsWith('local_chat_')) {
-          await addDoc(collection(db, `chats/${chatId}/messages`), {
+          await setDoc(doc(db, `chats/${chatId}/messages`, newMessage.id), {
             ...newMessage,
             createdAt: serverTimestamp()
           });
@@ -1069,7 +1070,7 @@ export function Chat() {
               
               // Add initial greeting to local messages
               const initialMessage = {
-                id: `msg_${Date.now()}`,
+                id: `msg_${Date.now().toString(36) + Math.random().toString(36).substring(2)}`,
                 chatId: currentChatId,
                 role: 'model',
                 characterId: primaryChar.id,
@@ -1080,18 +1081,18 @@ export function Chat() {
             }
             navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           } else {
-            // Try to find the latest chat for this character (single chat)
+            // Try to find the latest chat for this character (including group chats)
             const chatsRef = collection(db, 'chats');
             const q = query(
               chatsRef, 
               where('userId', '==', user.uid), 
-              where('characterId', '==', characterId),
+              where('characterIds', 'array-contains', characterId),
               orderBy('updatedAt', 'desc'),
               limit(1)
             );
             
             const chatDocs = await getDocs(q);
-            if (!chatDocs.empty && !chatDocs.docs[0].data().characterIds) {
+            if (!chatDocs.empty) {
               currentChatId = chatDocs.docs[0].id;
               navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
             } else {
@@ -1142,7 +1143,7 @@ export function Chat() {
                   saveLocalChat(newLocalChat);
                   
                   const localInitialMsg = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now().toString(36) + Math.random().toString(36).substring(2)}`,
                     chatId: currentChatId,
                     role: 'model',
                     characterId: primaryChar.id,
@@ -1320,7 +1321,7 @@ export function Chat() {
     // 1. Save user message to localStorage
     const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
     const newUserMessage = {
-      id: Date.now().toString(),
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
       chatId,
       role: 'user',
       content: userMessage,
@@ -1334,11 +1335,8 @@ export function Chat() {
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'user',
-          content: userMessage,
-          imageUrl: userImageUrl || null,
+        await setDoc(doc(db, `chats/${chatId}/messages`, newUserMessage.id), {
+          ...newUserMessage,
           createdAt: serverTimestamp()
         });
         await updateDoc(doc(db, 'chats', chatId), {

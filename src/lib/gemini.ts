@@ -8,7 +8,7 @@ export async function* generateCharacterResponseStream(
   userMessage: string,
   userImageUrl?: string,
   memories: string[] = [],
-  model: string = 'gemini-flash-latest',
+  model: string = 'gemini-1.5-flash',
   userPersona?: string
 ) {
   try {
@@ -115,7 +115,7 @@ Name2: Message
     }
 
     const responseStream = await ai.models.generateContentStream({
-      model: model || "gemini-3-flash-preview",
+      model: model || "gemini-1.5-flash",
       contents,
       config: {
         systemInstruction,
@@ -158,7 +158,7 @@ export async function generateCharacterResponse(
   userMessage: string,
   userImageUrl?: string,
   memories: string[] = [],
-  model: string = 'gemini-3-flash-preview',
+  model: string = 'gemini-1.5-flash',
   userPersona?: string
 ) {
   let fullText = "";
