@@ -5,7 +5,7 @@ import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/fi
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
-import { generateCharacterResponse } from '../lib/gemini';
+import { generateCharacterResponse, generateCharacterResponseStream } from '../lib/gemini';
 import { checkAndAwardBadges } from '../services/badgeService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -88,6 +88,8 @@ export function Chat() {
   const [searchResults, setSearchResults] = useState<Character[]>([]);
   const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
   const [isLocalMode, setIsLocalMode] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const [streamingCharId, setStreamingCharId] = useState<string | null>(null);
 
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
@@ -505,22 +507,44 @@ export function Chat() {
       }
     }
 
+    const newMessages: Message[] = [];
+
     // Save each message sequentially to help with ordering
     for (const msg of currentMessages) {
+      const newMessage = {
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+        chatId,
+        role: 'model' as const,
+        characterId: msg.charId || characters[0].id,
+        content: msg.content,
+        createdAt: new Date().toISOString()
+      };
+      
+      newMessages.push(newMessage);
+
       try {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-          chatId,
-          role: 'model',
-          characterId: msg.charId || characters[0].id,
-          content: msg.content,
-          createdAt: serverTimestamp()
-        });
+        if (!isLocalMode && !chatId.startsWith('local_chat_')) {
+          await addDoc(collection(db, `chats/${chatId}/messages`), {
+            ...newMessage,
+            createdAt: serverTimestamp()
+          });
+        }
         // Small delay to ensure distinct timestamps
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        if (isQuotaError(e)) {
+          setIsLocalMode(true);
+        } else {
+          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+        }
       }
     }
+
+    // Update local state and storage
+    const updatedLocalMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+    updatedLocalMessages.push(...newMessages);
+    localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
+    setMessages(prev => [...prev, ...newMessages]);
   };
 
   const confirmDeleteChat = async () => {
@@ -664,11 +688,28 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, userImageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
+        
+        let fullAiResponse = '';
+        setStreamingText('');
+        
+        const stream = generateCharacterResponseStream(
+          characters, 
+          finalHistory, 
+          prompt, 
+          userImageUrl || undefined, 
+          memoryList, 
+          selectedModel, 
+          getCurrentPersona()
+        );
+
+        for await (const chunk of stream) {
+          fullAiResponse += chunk;
+          setStreamingText(fullAiResponse);
+        }
 
         const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
-          content: aiResponse,
+          content: fullAiResponse,
           updatedAt: serverTimestamp()
         }, { merge: true });
       } else {
@@ -681,11 +722,27 @@ export function Chat() {
         }));
         
         const memoryList = memories.map(m => m.content);
-        const aiResponse = await generateCharacterResponse(characters, finalHistory, prompt, undefined, memoryList, selectedModel);
+        
+        let fullAiResponse = '';
+        setStreamingText('');
+        
+        const stream = generateCharacterResponseStream(
+          characters, 
+          finalHistory, 
+          prompt, 
+          undefined, 
+          memoryList, 
+          selectedModel
+        );
+
+        for await (const chunk of stream) {
+          fullAiResponse += chunk;
+          setStreamingText(fullAiResponse);
+        }
 
         const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
-          content: aiResponse,
+          content: fullAiResponse,
           updatedAt: serverTimestamp()
         }, { merge: true });
       }
@@ -762,10 +819,42 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, skipPrompt, undefined, memoryList, selectedModel, getCurrentPersona());
+      let fullAiResponse = '';
+      setStreamingText('');
+      
+      const stream = generateCharacterResponseStream(
+        characters, 
+        historyForGemini, 
+        skipPrompt, 
+        undefined, 
+        memoryList, 
+        selectedModel, 
+        getCurrentPersona()
+      );
 
-      if (aiResponse) {
-        await saveSplitMessages(chatId, aiResponse, targetCharId);
+      for await (const chunk of stream) {
+        fullAiResponse += chunk;
+        setStreamingText(fullAiResponse);
+        
+        // Try to detect character ID for streaming avatar
+        if (!targetCharId) {
+          const firstLine = fullAiResponse.split('\n')[0];
+          const colonIndex = firstLine.indexOf(':');
+          if (colonIndex !== -1 && colonIndex < 30) {
+            const name = firstLine.substring(0, colonIndex).trim();
+            const char = characters.find(c => 
+              c.name.toLowerCase() === name.toLowerCase() || 
+              c.name.split(' ')[0].toLowerCase() === name.toLowerCase()
+            );
+            if (char) setStreamingCharId(char.id);
+          }
+        } else {
+          setStreamingCharId(targetCharId);
+        }
+      }
+
+      if (fullAiResponse) {
+        await saveSplitMessages(chatId, fullAiResponse, targetCharId);
       }
 
       try {
@@ -1303,40 +1392,47 @@ export function Chat() {
         }
       }
 
-      const aiResponse = await generateCharacterResponse(characters, historyForGemini, enhancedPrompt, userImageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
+      let fullAiResponse = '';
+      setStreamingText('');
+      
+      const stream = generateCharacterResponseStream(
+        characters, 
+        historyForGemini, 
+        enhancedPrompt, 
+        userImageUrl || undefined, 
+        memoryList, 
+        selectedModel, 
+        getCurrentPersona()
+      );
 
-      // 3. Save AI message to localStorage
-      if (aiResponse) {
-        const newAiMessages = aiResponse.split('\n').filter(line => line.trim()).map((line, index) => {
-          const colonIndex = line.indexOf(':');
-          const name = colonIndex !== -1 ? line.substring(0, colonIndex).trim() : null;
-          const char = name ? characters.find(c => c.name.toLowerCase() === name.toLowerCase()) : null;
-          
-          return {
-            id: Date.now().toString() + index,
-            chatId,
-            role: 'model',
-            characterId: char?.id || characters[0].id,
-            content: colonIndex !== -1 ? line.substring(colonIndex + 1).trim() : line,
-            createdAt: new Date().toISOString()
-          };
-        });
+      for await (const chunk of stream) {
+        fullAiResponse += chunk;
+        setStreamingText(fullAiResponse);
         
-        const updatedLocalMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-        updatedLocalMessages.push(...newAiMessages);
-        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
-        setMessages(prev => [...prev, ...newAiMessages as Message[]]);
+        // Try to detect character ID for streaming avatar
+        if (!targetCharId) {
+          const firstLine = fullAiResponse.split('\n')[0];
+          const colonIndex = firstLine.indexOf(':');
+          if (colonIndex !== -1 && colonIndex < 30) {
+            const name = firstLine.substring(0, colonIndex).trim();
+            const char = characters.find(c => 
+              c.name.toLowerCase() === name.toLowerCase() || 
+              c.name.split(' ')[0].toLowerCase() === name.toLowerCase()
+            );
+            if (char) setStreamingCharId(char.id);
+          }
+        } else {
+          setStreamingCharId(targetCharId);
+        }
+      }
+
+      // 3. Save AI message
+      if (fullAiResponse) {
+        await saveSplitMessages(chatId, fullAiResponse, targetCharId);
         
         // Firestore sync (only if not local mode)
         if (!isLocalMode && !chatId.startsWith('local_chat_')) {
           try {
-            for (const msg of newAiMessages) {
-              await addDoc(collection(db, `chats/${chatId}/messages`), {
-                ...msg,
-                createdAt: serverTimestamp()
-              });
-            }
-            
             // Update interactionsCount for all characters in the chat
             for (const char of characters) {
               await updateDoc(doc(db, 'characters', char.id), {
@@ -1350,10 +1446,8 @@ export function Chat() {
             }
           } catch (e: any) {
             if (isQuotaError(e)) {
-              console.warn("Quota exceeded during AI message save, switching to local mode");
+              console.warn("Quota exceeded during interaction count update, switching to local mode");
               setIsLocalMode(true);
-            } else {
-              console.error("Failed to save AI message to Firestore:", e);
             }
           }
         }
@@ -1367,6 +1461,8 @@ export function Chat() {
       setNotification({ message: isQuotaError ? errorMessage : `Error: ${errorMessage}`, type: 'error' });
     } finally {
       setIsTyping(false);
+      setStreamingText('');
+      setStreamingCharId(null);
     }
   };
 
@@ -1900,14 +1996,33 @@ export function Chat() {
               {isTyping && (
                 <div className="flex gap-4 flex-row">
                   <div className="flex-shrink-0 mt-1">
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                      <Bot className="w-4 h-4 text-zinc-400" />
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden">
+                      {streamingCharId ? (
+                        <img 
+                          src={characters.find(c => c.id === streamingCharId)?.avatarUrl} 
+                          alt="Avatar" 
+                          className="w-full h-full object-cover" 
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <Bot className="w-4 h-4 text-zinc-400" />
+                      )}
                     </div>
                   </div>
-                  <div className="bg-zinc-800 text-zinc-100 rounded-2xl rounded-tl-sm border border-zinc-700/50 p-4 flex items-center gap-1.5">
-                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  <div className="bg-zinc-800 text-zinc-100 rounded-2xl rounded-tl-sm border border-zinc-700/50 p-4 flex flex-col gap-2 min-w-[100px]">
+                    {streamingText ? (
+                      <div className="markdown-body prose prose-invert max-w-none text-[15px] leading-relaxed">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {streamingText}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
