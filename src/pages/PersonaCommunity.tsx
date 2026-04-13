@@ -69,6 +69,7 @@ interface Comment {
   authorName: string;
   authorPhoto?: string;
   content: string;
+  imageUrls?: string[];
   createdAt: any;
 }
 
@@ -138,6 +139,8 @@ export default function PersonaCommunity() {
   const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [commentImage, setCommentImage] = useState<File | null>(null);
+  const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   const [lastVisible, setLastVisible] = useState<any>(null);
@@ -461,16 +464,25 @@ export default function PersonaCommunity() {
   };
 
   const handleAddComment = async () => {
-    if (!user || !profile || !activeCommentsPostId || !newComment.trim()) return;
+    if (!user || !profile || !activeCommentsPostId || (!newComment.trim() && !commentImage)) return;
     setIsSubmittingComment(true);
 
     try {
+      let imageUrls: string[] = [];
+      if (commentImage) {
+        const fileRef = ref(storage, `community_comments/${user.uid}/${Date.now()}_${commentImage.name}`);
+        const uploadResult = await uploadBytes(fileRef, commentImage);
+        const url = await getDownloadURL(uploadResult.ref);
+        imageUrls.push(url);
+      }
+
       await addDoc(collection(db, `community_posts/${activeCommentsPostId}/comments`), {
         postId: activeCommentsPostId,
         authorId: user.uid,
         authorName: profile.displayName,
         authorPhoto: profile.photoURL || '',
         content: newComment.trim(),
+        imageUrls: imageUrls.length > 0 ? imageUrls : null,
         createdAt: serverTimestamp()
       });
 
@@ -479,10 +491,52 @@ export default function PersonaCommunity() {
       });
 
       setNewComment('');
+      setCommentImage(null);
+      setCommentImagePreview(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `community_posts/${activeCommentsPostId}/comments`);
     } finally {
       setIsSubmittingComment(false);
+    }
+  };
+
+  const handleCommentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File is too large. Max size is 5MB.');
+      return;
+    }
+
+    setIsModerating(true);
+    setModerationError(null);
+
+    try {
+      const base64 = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+
+      if (!base64) throw new Error("Failed to read image");
+
+      const base64Data = base64.split(',')[1];
+      const result = await moderateImage(base64Data, file.type);
+
+      if (!result.isAppropriate) {
+        setModerationError(result.suggestion || 'This image contains inappropriate content.');
+        setIsModerating(false);
+        return;
+      }
+
+      setCommentImage(file);
+      setCommentImagePreview(base64);
+    } catch (error) {
+      console.error("Moderation error:", error);
+    } finally {
+      setIsModerating(false);
     }
   };
 
@@ -773,6 +827,13 @@ export default function PersonaCommunity() {
                                 </div>
                               </div>
                               <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
+                              {comment.imageUrls && comment.imageUrls.length > 0 && (
+                                <div className="mt-2 grid grid-cols-1 gap-2">
+                                  {comment.imageUrls.map((url, idx) => (
+                                    <img key={idx} src={url} alt="Comment attachment" className="rounded-lg max-h-60 object-contain" referrerPolicy="no-referrer" />
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))
@@ -780,6 +841,19 @@ export default function PersonaCommunity() {
                     </div>
 
                     <div className="flex gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCommentFileChange}
+                        className="hidden"
+                        id="comment-image-upload"
+                      />
+                      <label
+                        htmlFor="comment-image-upload"
+                        className="p-2 text-zinc-400 hover:text-white cursor-pointer transition-colors"
+                      >
+                        <ImageIcon className="w-5 h-5" />
+                      </label>
                       <input
                         type="text"
                         value={newComment}
@@ -790,12 +864,26 @@ export default function PersonaCommunity() {
                       />
                       <button
                         onClick={handleAddComment}
-                        disabled={isSubmittingComment || !newComment.trim()}
+                        disabled={isSubmittingComment || (!newComment.trim() && !commentImage)}
                         className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all"
                       >
                         {isSubmittingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       </button>
                     </div>
+                    {commentImagePreview && (
+                      <div className="relative w-20 h-20 mt-2">
+                        <img src={commentImagePreview} alt="Preview" className="w-full h-full object-cover rounded-lg" />
+                        <button
+                          onClick={() => { setCommentImage(null); setCommentImagePreview(null); }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    {moderationError && (
+                      <p className="text-red-500 text-xs mt-2">{moderationError}</p>
+                    )}
                   </div>
                 </motion.div>
               )}
