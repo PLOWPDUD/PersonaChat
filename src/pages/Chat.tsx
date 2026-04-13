@@ -1178,7 +1178,10 @@ export function Chat() {
         
         const unsubscribe = onSnapshot(mq, (snapshot) => {
           const msgs: Message[] = [];
+          const seenIds = new Set<string>();
           snapshot.forEach((doc) => {
+            if (seenIds.has(doc.id)) return;
+            seenIds.add(doc.id);
             const data = doc.data();
             if (data.createdAt || !doc.metadata.hasPendingWrites) {
               msgs.push({ id: doc.id, ...data } as Message);
@@ -1192,7 +1195,7 @@ export function Chat() {
           
           // Only add local messages that aren't in Firestore yet
           const merged = [...msgs];
-          const seenIds = new Set(msgs.map(m => m.id));
+          const seenLocalIds = new Set(msgs.map(m => m.id));
           
           localMsgs.forEach((lm: any) => {
             // Check if this local message has been synced (content match fallback if ID differs)
@@ -1201,12 +1204,12 @@ export function Chat() {
               (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
             );
 
-            if (!isSynced && !seenIds.has(lm.id)) {
+            if (!isSynced && !seenLocalIds.has(lm.id)) {
               merged.push({
                 ...lm,
                 createdAt: { toDate: () => new Date(lm.createdAt) }
               });
-              seenIds.add(lm.id);
+              seenLocalIds.add(lm.id);
             }
           });
           
@@ -1433,12 +1436,13 @@ export function Chat() {
           try {
             // Update interactionsCount for all characters in the chat
             for (const char of characters) {
+              const newCount = (char.interactionsCount || 0) + 1;
               await updateDoc(doc(db, 'characters', char.id), {
-                interactionsCount: (char.interactionsCount || 0) + 1
+                interactionsCount: newCount
               });
               
               // Trigger badge check for the creator if the character is public
-              if (char.visibility === 'public' && char.creatorId) {
+              if (char.visibility === 'public' && char.creatorId && newCount % 10 === 0) {
                 checkAndAwardBadges(char.creatorId);
               }
             }

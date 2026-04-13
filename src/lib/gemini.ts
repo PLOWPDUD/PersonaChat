@@ -43,6 +43,7 @@ ${userPersonaContext}
    - PREFER ONE CHARACTER PER TURN: Unless the user mentions multiple characters or the scene absolutely requires it, only ONE character should speak in this turn.
    - Choose the most relevant character to respond.
    - Always respond with a single cohesive block of text that can be split by "Name: " if needed.
+   - NEVER include meta-commentary, turn-taking prompts, or instructions like "(Character, talk with Character)".
 4. MENTIONS & TURN-TAKING: 
    - STRICT MENTIONS: If the user mentions specific characters by name (e.g., "Hey Character1"), ONLY those characters should respond. Other characters MUST remain silent. This is a HARD constraint.
    - CHARACTER-TO-CHARACTER: When a character addresses another, they should use their name. Characters should interact naturally and instantly without needing to invite others to speak.
