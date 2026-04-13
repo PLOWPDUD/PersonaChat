@@ -541,11 +541,10 @@ export function Chat() {
       }
     }
 
-    // Update local state and storage
+    // Update local storage
     const updatedLocalMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
     updatedLocalMessages.push(...newMessages);
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
-    setMessages(prev => [...prev, ...newMessages]);
   };
 
   const confirmDeleteChat = async () => {
@@ -1333,8 +1332,6 @@ export function Chat() {
     };
     localMessages.push(newUserMessage);
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(localMessages));
-    setMessages(prev => [...prev, newUserMessage as Message]);
-
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
@@ -1349,10 +1346,13 @@ export function Chat() {
         if (isQuotaError(e)) {
           console.warn("Quota exceeded during message save, switching to local mode");
           setIsLocalMode(true);
+          setMessages(prev => [...prev, newUserMessage as Message]);
         } else {
           console.error("Failed to save message to Firestore:", e);
         }
       }
+    } else {
+      setMessages(prev => [...prev, newUserMessage as Message]);
     }
 
     try {
