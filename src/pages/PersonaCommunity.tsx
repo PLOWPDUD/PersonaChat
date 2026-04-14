@@ -23,6 +23,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { moderateImage, ModerationResult } from '../services/aiService';
 import { BADGES } from '../services/badgeService';
+import { LevelProgress } from '../components/LevelProgress';
+import { addXP, addNotification, checkAchievement, ACHIEVEMENTS } from '../lib/gamification';
+import { playSound } from '../lib/sounds';
 import { 
   MessageSquare, 
   Heart, 
@@ -42,7 +45,8 @@ import {
   Link as LinkIcon,
   Youtube,
   ExternalLink,
-  ShieldAlert
+  ShieldAlert,
+  Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -65,6 +69,7 @@ interface Post {
 interface Comment {
   id: string;
   postId: string;
+  parentId?: string;
   authorId: string;
   authorName: string;
   authorPhoto?: string;
@@ -93,6 +98,8 @@ export default function PersonaCommunity() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModerating, setIsModerating] = useState(false);
   const [moderationError, setModerationError] = useState<string | null>(null);
+  const [feedFilter, setFeedFilter] = useState<'recent' | 'trending'>('recent');
+  const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
 
   const compressImage = (file: File): Promise<{ blob: Blob, base64: string }> => {
     return new Promise((resolve, reject) => {
@@ -183,6 +190,7 @@ export default function PersonaCommunity() {
   const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [commentImage, setCommentImage] = useState<File | null>(null);
   const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -220,6 +228,25 @@ export default function PersonaCommunity() {
 
     return () => unsubscribe();
   }, [user]);
+
+  // Fetch trending posts
+  useEffect(() => {
+    const q = query(
+      collection(db, 'community_posts'),
+      orderBy('likesCount', 'desc'),
+      limit(5)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const trending = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Post));
+      setTrendingPosts(trending);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Fetch likes for posts separately to avoid loop in onSnapshot
   useEffect(() => {
@@ -331,6 +358,11 @@ export default function PersonaCommunity() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // Gamification
+      await addXP(user.uid, 50);
+      await checkAchievement(user.uid, ACHIEVEMENTS.FIRST_POST.id, ACHIEVEMENTS.FIRST_POST.name, ACHIEVEMENTS.FIRST_POST.description, ACHIEVEMENTS.FIRST_POST.icon, ACHIEVEMENTS.FIRST_POST.xp);
+      playSound('success');
 
       setIsCreateModalOpen(false);
       setNewPostTitle('');
@@ -473,6 +505,21 @@ export default function PersonaCommunity() {
           next.add(postId);
           return next;
         });
+        
+        // Notify author and award XP
+        const postSnap = await getDoc(postRef);
+        if (postSnap.exists()) {
+          const postData = postSnap.data();
+          if (postData.authorId !== user.uid) {
+            await addNotification(postData.authorId, 'post_liked', 'New Like!', `${profile?.displayName || 'Someone'} liked your post.`, { postId });
+            await addXP(postData.authorId, 10);
+          }
+          
+          if (postData.likesCount + 1 >= 10) {
+            await checkAchievement(postData.authorId, ACHIEVEMENTS.POPULAR_POST.id, ACHIEVEMENTS.POPULAR_POST.name, ACHIEVEMENTS.POPULAR_POST.description, ACHIEVEMENTS.POPULAR_POST.icon, ACHIEVEMENTS.POPULAR_POST.xp);
+          }
+        }
+        playSound('like');
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `community_posts/${postId}/likes`);
@@ -500,6 +547,12 @@ export default function PersonaCommunity() {
           next.add(postId);
           return next;
         });
+
+        // Notify author
+        const post = posts.find(p => p.id === postId);
+        if (post && post.authorId !== user.uid) {
+          await addNotification(post.authorId, 'post_saved', 'Post Saved', `${profile?.displayName || 'Someone'} saved your post.`, { postId });
+        }
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/saved_posts`);
@@ -547,7 +600,7 @@ export default function PersonaCommunity() {
         imageUrls.push(commentImagePreview);
       }
 
-      await addDoc(collection(db, `community_posts/${activeCommentsPostId}/comments`), {
+      const commentData: any = {
         postId: activeCommentsPostId,
         authorId: user.uid,
         authorName: profile.displayName,
@@ -555,7 +608,14 @@ export default function PersonaCommunity() {
         content: newComment.trim(),
         imageUrls: imageUrls.length > 0 ? imageUrls : null,
         createdAt: serverTimestamp()
-      });
+      };
+
+      if (replyingTo) {
+        commentData.parentId = replyingTo.id;
+        commentData.content = `@${replyingTo.authorName} ${commentData.content}`;
+      }
+
+      await addDoc(collection(db, `community_posts/${activeCommentsPostId}/comments`), commentData);
 
       await updateDoc(doc(db, 'community_posts', activeCommentsPostId), {
         commentsCount: increment(1)
@@ -564,6 +624,23 @@ export default function PersonaCommunity() {
       setNewComment('');
       setCommentImage(null);
       setCommentImagePreview(null);
+      setReplyingTo(null);
+      
+      // Award XP for commenting
+      await addXP(user.uid, 10);
+      
+      // Notify post author
+      const post = posts.find(p => p.id === activeCommentsPostId);
+      if (post && post.authorId !== user.uid) {
+        await addNotification(post.authorId, 'post_commented', 'New Comment', `${profile?.displayName || 'Someone'} commented on your post.`, { postId: activeCommentsPostId });
+      }
+
+      // Notify parent comment author if it's a reply
+      if (replyingTo && replyingTo.authorId !== user.uid) {
+        await addNotification(replyingTo.authorId, 'comment_replied', 'New Reply', `${profile?.displayName || 'Someone'} replied to your comment.`, { postId: activeCommentsPostId });
+      }
+
+      playSound('success');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `community_posts/${activeCommentsPostId}/comments`);
     } finally {
@@ -687,24 +764,39 @@ export default function PersonaCommunity() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold text-white tracking-tight">PersonaCommunity</h1>
-          <p className="text-zinc-400 mt-1">Share your experiences and connect with others.</p>
+    <React.Fragment>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
+        <div className="lg:col-span-2 space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-white tracking-tight">Community</h1>
+            <div className="flex items-center gap-4 mt-2">
+              <button 
+                onClick={() => setFeedFilter('recent')}
+                className={`text-sm font-bold uppercase tracking-widest transition-colors ${feedFilter === 'recent' ? 'text-indigo-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                Recent
+              </button>
+              <button 
+                onClick={() => setFeedFilter('trending')}
+                className={`text-sm font-bold uppercase tracking-widest transition-colors ${feedFilter === 'trending' ? 'text-indigo-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                Trending
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">New Post</span>
+          </button>
         </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
-        >
-          <Plus className="w-5 h-5" />
-          <span className="hidden sm:inline">New Post</span>
-        </button>
-      </div>
 
-      {/* Posts Feed */}
-      <div className="space-y-6">
-        {posts.map(post => (
+        {/* Posts Feed */}
+        <div className="space-y-6">
+          {(feedFilter === 'recent' ? posts : trendingPosts).map(post => (
           <motion.div
             key={post.id}
             initial={{ opacity: 0, y: 20 }}
@@ -878,81 +970,143 @@ export default function PersonaCommunity() {
                   className="border-t border-zinc-800 bg-zinc-950/50"
                 >
                   <div className="p-4 space-y-4">
-                    <div className="space-y-4 max-h-[300px] overflow-y-auto no-scrollbar">
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
                       {comments.length === 0 ? (
                         <p className="text-center py-4 text-zinc-500 text-sm italic">No comments yet. Be the first!</p>
                       ) : (
-                        comments.map(comment => (
-                          <div key={comment.id} className="flex gap-3">
-                            {comment.authorPhoto ? (
-                              <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-                                <User className="w-4 h-4 text-zinc-500" />
+                        comments.filter(c => !c.parentId).map(comment => (
+                          <div key={comment.id} className="space-y-3">
+                            <div className="flex gap-3">
+                              {comment.authorPhoto ? (
+                                <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
+                                  <User className="w-4 h-4 text-zinc-500" />
+                                </div>
+                              )}
+                              <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-white text-xs font-bold">{comment.authorName}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-zinc-600 text-[10px]">
+                                      {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                    </span>
+                                    {(user?.uid === comment.authorId || isModerator) && (
+                                      <button
+                                        onClick={() => handleDeleteComment(post.id, comment.id)}
+                                        className="text-zinc-600 hover:text-red-500 transition-colors"
+                                        title="Delete Comment"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
+                                {comment.imageUrls && comment.imageUrls.length > 0 && (
+                                  <div className="mt-2 grid grid-cols-1 gap-2">
+                                    {comment.imageUrls.map((url, idx) => (
+                                      <img key={idx} src={url} alt="Comment attachment" className="rounded-lg max-h-60 object-contain" referrerPolicy="no-referrer" />
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="mt-2 flex items-center gap-4">
+                                  <button 
+                                    onClick={() => setReplyingTo(comment)}
+                                    className="text-[10px] font-bold text-zinc-500 hover:text-indigo-400 uppercase tracking-widest transition-colors"
+                                  >
+                                    Reply
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                            <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-white text-xs font-bold">{comment.authorName}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-zinc-600 text-[10px]">
-                                    {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-                                  </span>
-                                  {(user?.uid === comment.authorId || isModerator) && (
-                                    <button
-                                      onClick={() => handleDeleteComment(post.id, comment.id)}
-                                      className="text-zinc-600 hover:text-red-500 transition-colors"
-                                      title="Delete Comment"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                            </div>
+
+                            {/* Replies */}
+                            {comments.filter(r => r.parentId === comment.id).map(reply => (
+                              <div key={reply.id} className="flex gap-3 ml-8">
+                                {reply.authorPhoto ? (
+                                  <img src={reply.authorPhoto} alt="" className="w-6 h-6 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
+                                    <User className="w-3 h-3 text-zinc-500" />
+                                  </div>
+                                )}
+                                <div className="flex-1 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-3">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-white text-[10px] font-bold">{reply.authorName}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-zinc-600 text-[10px]">
+                                        {reply.createdAt?.toDate ? new Date(reply.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                      </span>
+                                      {(user?.uid === reply.authorId || isModerator) && (
+                                        <button
+                                          onClick={() => handleDeleteComment(post.id, reply.id)}
+                                          className="text-zinc-600 hover:text-red-500 transition-colors"
+                                          title="Delete Reply"
+                                        >
+                                          <Trash2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <p className="text-zinc-300 text-xs leading-relaxed">{reply.content}</p>
+                                  {reply.imageUrls && reply.imageUrls.length > 0 && (
+                                    <div className="mt-2 grid grid-cols-1 gap-2">
+                                      {reply.imageUrls.map((url, idx) => (
+                                        <img key={idx} src={url} alt="Reply attachment" className="rounded-lg max-h-40 object-contain" referrerPolicy="no-referrer" />
+                                      ))}
+                                    </div>
                                   )}
                                 </div>
                               </div>
-                              <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
-                              {comment.imageUrls && comment.imageUrls.length > 0 && (
-                                <div className="mt-2 grid grid-cols-1 gap-2">
-                                  {comment.imageUrls.map((url, idx) => (
-                                    <img key={idx} src={url} alt="Comment attachment" className="rounded-lg max-h-60 object-contain" referrerPolicy="no-referrer" />
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            ))}
                           </div>
                         ))
                       )}
                     </div>
 
-                    <div className="flex gap-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleCommentFileChange}
-                        className="hidden"
-                        id="comment-image-upload"
-                      />
-                      <label
-                        htmlFor="comment-image-upload"
-                        className="p-2 text-zinc-400 hover:text-white cursor-pointer transition-colors"
-                      >
-                        <ImageIcon className="w-5 h-5" />
-                      </label>
-                      <input
-                        type="text"
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="Add a comment..."
-                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                      />
-                      <button
-                        onClick={handleAddComment}
-                        disabled={isSubmittingComment || isModerating || (!newComment.trim() && !commentImage)}
-                        className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all min-w-[40px] flex items-center justify-center"
-                      >
-                        {isSubmittingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      </button>
-                    </div>
+                    <div className="space-y-2">
+                      {replyingTo && (
+                        <div className="flex items-center justify-between px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                          <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">
+                            Replying to @{replyingTo.authorName}
+                          </p>
+                          <button onClick={() => setReplyingTo(null)} className="text-zinc-500 hover:text-white">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleCommentFileChange}
+                          className="hidden"
+                          id="comment-image-upload"
+                        />
+                        <label
+                          htmlFor="comment-image-upload"
+                          className="p-2 text-zinc-400 hover:text-white cursor-pointer transition-colors"
+                        >
+                          <ImageIcon className="w-5 h-5" />
+                        </label>
+                        <input
+                          type="text"
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
+                          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                        />
+                        <button
+                          onClick={handleAddComment}
+                          disabled={isSubmittingComment || isModerating || (!newComment.trim() && !commentImage)}
+                          className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all min-w-[40px] flex items-center justify-center"
+                        >
+                          {isSubmittingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        </button>
+                      </div>
                     {isModerating && (
                       <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-bold animate-pulse px-2">
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -974,9 +1128,10 @@ export default function PersonaCommunity() {
                       <p className="text-red-500 text-xs mt-2">{moderationError}</p>
                     )}
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           </motion.div>
         ))}
 
@@ -1001,8 +1156,61 @@ export default function PersonaCommunity() {
           </div>
         )}
       </div>
+    </div>
 
-      {/* Report Modal */}
+    {/* Sidebar / Trending Section */}
+      <div className="hidden lg:block space-y-8">
+        {/* User Stats Card */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+          <div className="flex items-center gap-4 mb-6">
+            {profile?.photoURL ? (
+              <img src={profile.photoURL} alt="" className="w-12 h-12 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center">
+                <User className="w-6 h-6 text-zinc-500" />
+              </div>
+            )}
+            <div>
+              <p className="text-white font-bold">{profile?.displayName || 'User'}</p>
+              <p className="text-zinc-500 text-xs">Level {profile?.level || 1}</p>
+            </div>
+          </div>
+          <LevelProgress level={profile?.level || 1} xp={profile?.xp || 0} />
+        </div>
+
+        {/* Trending Section */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+          <div className="p-6 border-b border-zinc-800">
+            <h3 className="text-white font-bold flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              Trending Now
+            </h3>
+          </div>
+          <div className="divide-y divide-zinc-800">
+            {trendingPosts.slice(0, 5).map((post, index) => (
+              <button
+                key={post.id}
+                onClick={() => {
+                  const element = document.getElementById(post.id);
+                  element?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="w-full p-4 text-left hover:bg-zinc-800/50 transition-colors flex gap-3"
+              >
+                <span className="text-zinc-700 font-bold text-xl">0{index + 1}</span>
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-bold truncate">{post.title || post.content}</p>
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-widest mt-1">
+                    {post.authorName} • {post.likesCount} likes
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Report Modal */}
       <AnimatePresence>
         {isReportModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -1207,6 +1415,6 @@ export default function PersonaCommunity() {
           </div>
         )}
       </AnimatePresence>
-    </div>
+    </React.Fragment>
   );
 }

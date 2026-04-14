@@ -25,6 +25,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     { path: '/create', label: 'Create', icon: PlusCircle },
     { path: '/personas', label: 'Personas', icon: UserCircle },
     { path: '/community', label: 'Community', icon: Globe },
+    { path: '/messages', label: 'Messages', icon: MessageSquare },
     { path: '/stats', label: 'Stats', icon: Users },
     { path: '/settings', label: 'Settings', icon: Settings },
     { path: '/admin', label: 'Admin', icon: Shield },

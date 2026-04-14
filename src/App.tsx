@@ -21,6 +21,7 @@ import { Search } from './pages/Search';
 import { Admin } from './pages/Admin';
 import { Settings } from './pages/Settings';
 import PersonaCommunity from './pages/PersonaCommunity';
+import Messages from './pages/Messages';
 import { NotFound } from './pages/NotFound';
 
 import { QuotaExceeded } from './components/QuotaExceeded';
@@ -68,9 +69,11 @@ export default function App() {
                 <Route path="edit/:characterId" element={<CreateCharacter />} />
                 <Route path="personas" element={<Personas />} />
                 <Route path="profile" element={<Profile />} />
+                <Route path="profile/:userId" element={<Profile />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="stats" element={<Stats />} />
                 <Route path="community" element={<PersonaCommunity />} />
+                <Route path="messages" element={<Messages />} />
                 <Route path="admin" element={<Admin />} />
                 <Route path="chat/:characterId" element={<Chat />} />
                 <Route path="chat/:characterId/:chatId" element={<Chat />} />

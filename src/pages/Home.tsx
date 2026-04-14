@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { addNotification } from '../lib/gamification';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
 import { getLocalCharacters } from '../lib/localStorage';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
@@ -26,7 +27,7 @@ interface Character {
 }
 
 export function Home() {
-  const { user, quotaExceeded: globalQuotaExceeded } = useAuth();
+  const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -134,6 +135,12 @@ export function Home() {
         await updateDoc(doc(db, 'characters', charId), {
           likesCount: (characters.find(c => c.id === charId)?.likesCount || 0) + 1
         });
+
+        // Notify creator
+        const char = characters.find(c => c.id === charId);
+        if (char && char.creatorId !== user.uid) {
+          await addNotification(char.creatorId, 'character_favorited', 'Character Favorited!', `${profile?.displayName || 'Someone'} favorited your character ${char.name}.`, { characterId: charId });
+        }
       } catch (error) {
         console.error('Error adding favorite:', error);
         setFavorites(favorites); // Revert

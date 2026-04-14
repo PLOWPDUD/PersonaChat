@@ -9,8 +9,14 @@
         "displayName": { "type": "string", "description": "The user's display name." },
         "displayName_lowercase": { "type": "string", "description": "The user's display name in lowercase for searching." },
         "photoURL": { "type": "string", "description": "The URL to the user's profile photo." },
+        "bannerURL": { "type": "string", "description": "The URL to the user's profile banner." },
+        "themeColor": { "type": "string", "description": "The user's preferred theme color." },
         "email": { "type": "string", "format": "email", "description": "The user's email address." },
         "role": { "type": "string", "enum": ["user", "moderator", "owner"], "description": "The user's role in the application." },
+        "level": { "type": "number", "description": "The user's current level." },
+        "xp": { "type": "number", "description": "The user's current experience points." },
+        "followersCount": { "type": "number", "description": "Number of users following this user." },
+        "followingCount": { "type": "number", "description": "Number of users this user is following." },
         "badges": { 
           "type": "array", 
           "items": { "type": "string" },
@@ -200,17 +206,70 @@
     },
     "CommunityComment": {
       "title": "Community Comment",
-      "description": "A comment on a community post.",
+      "description": "A comment on a community post or a reply to another comment.",
       "type": "object",
       "properties": {
         "postId": { "type": "string" },
+        "parentId": { "type": "string", "description": "The ID of the parent comment if this is a reply." },
         "authorId": { "type": "string" },
         "authorName": { "type": "string" },
         "authorPhoto": { "type": "string" },
         "content": { "type": "string" },
+        "imageUrls": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["postId", "authorId", "authorName", "content", "createdAt"]
+    },
+    "PrivateChat": {
+      "title": "Private Chat",
+      "description": "A private conversation between users and potentially bots.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["direct", "group"], "description": "The type of chat." },
+        "name": { "type": "string", "description": "The name of the group chat." },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "User UIDs in the chat." },
+        "characterIds": { "type": "array", "items": { "type": "string" }, "description": "AI Character IDs in the chat." },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["type", "participants", "updatedAt"]
+    },
+    "PrivateMessage": {
+      "title": "Private Message",
+      "description": "A single message in a private chat.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "senderId", "content", "createdAt"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "A badge or achievement that can be earned.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "xpReward": { "type": "number" }
+      },
+      "required": ["name", "description", "icon"]
+    },
+    "Follower": {
+      "title": "Follower Relationship",
+      "description": "Tracks who follows whom.",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followingId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["followerId", "followingId", "createdAt"]
     }
   },
   "firestore": {
@@ -228,6 +287,11 @@
     "/community_posts/{postId}": { "schema": "CommunityPost", "description": "Community posts." },
     "/community_posts/{postId}/comments/{commentId}": { "schema": "CommunityComment", "description": "Comments on posts." },
     "/community_posts/{postId}/likes/{userId}": { "schema": "object", "description": "Tracking likes on posts." },
-    "/users/{userId}/saved_posts/{postId}": { "schema": "object", "description": "Tracking saved posts for users." }
+    "/users/{userId}/saved_posts/{postId}": { "schema": "object", "description": "Tracking saved posts for users." },
+    "/private_chats/{chatId}": { "schema": "PrivateChat", "description": "Private conversations." },
+    "/private_chats/{chatId}/messages/{messageId}": { "schema": "PrivateMessage", "description": "Private messages." },
+    "/achievements/{achievementId}": { "schema": "Achievement", "description": "Available achievements." },
+    "/users/{userId}/achievements/{achievementId}": { "schema": "object", "description": "Earned achievements." },
+    "/followers/{followId}": { "schema": "Follower", "description": "Follower relationships." }
   }
 }

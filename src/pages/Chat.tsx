@@ -7,6 +7,7 @@ import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
 import { generateCharacterResponse, generateCharacterResponseStream } from '../lib/gemini';
 import { checkAndAwardBadges } from '../services/badgeService';
+import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search } from 'lucide-react';
@@ -45,7 +46,7 @@ interface Memory {
 
 export function Chat() {
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
-  const { user, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
+  const { user, profile, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
@@ -324,6 +325,11 @@ export function Chat() {
           totalRatingScore: newTotalScore,
           averageRating: newAverage
         }, { merge: true });
+
+        // Notify creator
+        if (primaryChar.creatorId && primaryChar.creatorId !== user.uid) {
+          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${score} stars.`, { characterId: primaryChar.id });
+        }
       }
       
       setUserRating(score);

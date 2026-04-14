@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { Users, Loader2, User, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Users, Loader2, User, AlertCircle, ShieldAlert, Award, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Stats() {
+  const navigate = useNavigate();
   const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const [stats, setStats] = useState<{ visitorCount: number; userCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,41 +85,95 @@ export function Stats() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-zinc-900 border border-zinc-800 rounded-3xl space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="p-3 bg-indigo-500/10 rounded-2xl">
-          <Users className="w-8 h-8 text-indigo-500" />
-        </div>
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Website Statistics</h1>
-          <p className="text-zinc-400">Total users and visitors to this site</p>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
+          <p className="text-zinc-400 mt-1">Overview of the community and your activity</p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
-          <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Total Users</p>
-          <p className="text-5xl font-bold text-white tracking-tight">{stats?.userCount || 0}</p>
-        </div>
-        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
-          <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Total Visitors</p>
-          <p className="text-5xl font-bold text-white tracking-tight">{stats?.visitorCount || 0}</p>
-        </div>
-      </div>
-
-      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex items-center gap-4">
-        {profile?.photoURL ? (
-          <img src={profile.photoURL} alt="Profile" className="w-16 h-16 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-        ) : (
-          <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-            <User className="w-8 h-8 text-zinc-400" />
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-zinc-900 border border-zinc-800 rounded-xl">
+            <Users className="w-5 h-5 text-indigo-500" />
           </div>
-        )}
-        <div>
-          <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Current User</p>
-          <p className="text-2xl font-bold text-white">
-            {user?.isAnonymous ? 'Guest' : (profile?.displayName || 'User')}
-          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Main Stats Card */}
+        <div className="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-8 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Users className="w-32 h-32 text-indigo-500" />
+          </div>
+          <div className="relative z-10">
+            <h3 className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-6">Community Growth</h3>
+            <div className="flex items-end gap-8">
+              <div>
+                <p className="text-5xl font-bold text-white tracking-tighter">{stats?.userCount || 0}</p>
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">Total Members</p>
+              </div>
+              <div className="h-12 w-px bg-zinc-800" />
+              <div>
+                <p className="text-5xl font-bold text-white tracking-tighter">{stats?.visitorCount || 0}</p>
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">Total Visitors</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Profile Card */}
+        <div className="bg-indigo-600 rounded-3xl p-6 text-white flex flex-col justify-between relative overflow-hidden group">
+          <div className="absolute -bottom-4 -right-4 opacity-20 group-hover:scale-110 transition-transform duration-500">
+            <User className="w-32 h-32" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-4">
+              {profile?.photoURL ? (
+                <img src={profile.photoURL} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-white/20" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center border-2 border-white/20">
+                  <User className="w-6 h-6" />
+                </div>
+              )}
+              <div>
+                <p className="font-bold truncate">{profile?.displayName || 'User'}</p>
+                <p className="text-indigo-200 text-xs">Level {profile?.level || 1}</p>
+              </div>
+            </div>
+            <p className="text-indigo-100 text-sm leading-relaxed">
+              Keep interacting with characters and the community to earn XP and level up!
+            </p>
+          </div>
+          <button 
+            onClick={() => navigate('/profile')}
+            className="mt-6 w-full py-3 bg-white text-indigo-600 rounded-2xl text-sm font-bold hover:bg-indigo-50 transition-colors relative z-10"
+          >
+            View Profile
+          </button>
+        </div>
+
+        {/* Small Cards */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-center items-center text-center">
+          <div className="p-3 bg-amber-500/10 rounded-2xl mb-3">
+            <Award className="w-6 h-6 text-amber-500" />
+          </div>
+          <p className="text-white font-bold">{profile?.badges?.length || 0}</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Badges Earned</p>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-center items-center text-center">
+          <div className="p-3 bg-purple-500/10 rounded-2xl mb-3">
+            <Users className="w-6 h-6 text-purple-500" />
+          </div>
+          <p className="text-white font-bold">{profile?.followersCount || 0}</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Followers</p>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-center items-center text-center">
+          <div className="p-3 bg-green-500/10 rounded-2xl mb-3">
+            <Zap className="w-6 h-6 text-green-500" />
+          </div>
+          <p className="text-white font-bold">{profile?.xp || 0}</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Total XP</p>
         </div>
       </div>
     </div>

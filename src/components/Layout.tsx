@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Menu, X, MessageSquare } from 'lucide-react';
-import { NotificationBell } from './NotificationBell';
+import { NotificationCenter } from './NotificationCenter';
 
 export function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -16,7 +16,7 @@ export function Layout() {
           <span>PersonaChat</span>
         </Link>
         <div className="flex items-center gap-2">
-          <NotificationBell />
+          <NotificationCenter />
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="p-2 text-zinc-400 hover:text-white transition-colors"
@@ -45,7 +45,7 @@ export function Layout() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Desktop Header */}
         <header className="hidden lg:flex h-16 border-b border-zinc-800 items-center justify-end px-8 sticky top-0 bg-zinc-950/50 backdrop-blur-md z-40">
-          <NotificationBell />
+          <NotificationCenter />
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">
