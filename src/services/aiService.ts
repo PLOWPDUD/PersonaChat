@@ -10,8 +10,13 @@ export interface ModerationResult {
 
 export async function moderateImage(base64Data: string, mimeType: string): Promise<ModerationResult> {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    // Add a timeout to the moderation call
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error("Moderation timeout")), 20000)
+    );
+
+    const moderationPromise = ai.models.generateContent({
+      model: "gemini-flash-latest",
       contents: [{
         role: "user",
         parts: [
@@ -33,11 +38,21 @@ export async function moderateImage(base64Data: string, mimeType: string): Promi
       },
     });
 
+    const response = await Promise.race([moderationPromise, timeoutPromise]) as any;
+
     const text = response.text;
     return JSON.parse(text || "{}");
   } catch (error) {
-    console.error("Error moderating image:", error);
-    // Default to appropriate if AI fails to avoid blocking users unnecessarily
-    return { isAppropriate: true };
+    if (error instanceof Error && error.message === "Moderation timeout") {
+      console.warn("Moderation timed out, defaulting to appropriate.");
+    } else {
+      console.error("Error moderating image:", error);
+    }
+    // Default to appropriate if AI fails or times out to avoid blocking users unnecessarily
+    return { 
+      isAppropriate: true, 
+      reason: "Timeout or error", 
+      suggestion: "" 
+    };
   }
 }

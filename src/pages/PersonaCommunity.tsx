@@ -17,7 +17,7 @@ import {
   startAfter,
   getDocs
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { QuotaExceeded } from '../components/QuotaExceeded';
@@ -87,13 +87,57 @@ export default function PersonaCommunity() {
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostImage, setNewPostImage] = useState('');
-  const [newPostLink, setNewPostLink] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<{ file: File, base64: string }[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModerating, setIsModerating] = useState(false);
   const [moderationError, setModerationError] = useState<string | null>(null);
+
+  const compressImage = (file: File): Promise<{ blob: Blob, base64: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 800; // Reduced for base64 storage
+
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          const base64 = canvas.toDataURL('image/jpeg', 0.5); // Reduced quality for base64 storage
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve({ blob, base64 });
+            } else {
+              reject(new Error('Canvas to Blob failed'));
+            }
+          }, 'image/jpeg', 0.5);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  };
 
   const handleModerateUrl = async (url: string) => {
     if (!url.trim()) return;
@@ -264,16 +308,14 @@ export default function PersonaCommunity() {
         finalImageUrls.push(newPostImage.trim());
       }
 
-      // Upload files if selected
+      // Use base64 strings directly for "instant" loading
       if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const fileRef = ref(storage, `community_posts/${user.uid}/${Date.now()}_${file.name}`);
-          const uploadResult = await uploadBytes(fileRef, file);
-          return getDownloadURL(uploadResult.ref);
-        });
-        const uploadedUrls = await Promise.all(uploadPromises);
-        finalImageUrls = [...finalImageUrls, ...uploadedUrls];
+        console.log(`Processing ${selectedFiles.length} images for instant posting...`);
+        const base64Urls = selectedFiles.map(f => f.base64);
+        finalImageUrls = [...finalImageUrls, ...base64Urls];
       }
+
+      const detectedLink = extractLink(newPostContent);
 
       await addDoc(collection(db, 'community_posts'), {
         authorId: user.uid,
@@ -283,7 +325,7 @@ export default function PersonaCommunity() {
         title: newPostTitle.trim() || null,
         content: newPostContent.trim(),
         imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null,
-        link: newPostLink.trim() || null,
+        link: detectedLink,
         likesCount: 0,
         commentsCount: 0,
         createdAt: serverTimestamp(),
@@ -294,7 +336,6 @@ export default function PersonaCommunity() {
       setNewPostTitle('');
       setNewPostContent('');
       setNewPostImage('');
-      setNewPostLink('');
       setSelectedFiles([]);
       setImagePreviews([]);
     } catch (error) {
@@ -305,9 +346,16 @@ export default function PersonaCommunity() {
   };
 
   const getYoutubeId = (url: string) => {
+    if (!url) return null;
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const extractLink = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matches = text.match(urlRegex);
+    return matches ? matches[0] : null;
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,32 +382,57 @@ export default function PersonaCommunity() {
     setModerationError(null);
 
     try {
-      for (const file of validFiles) {
-        const base64 = await new Promise<string | null>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
-        });
+      const moderationPromises = validFiles.map(async (file) => {
+        try {
+          console.log(`Processing file: ${file.name}`);
+          const { blob, base64 } = await compressImage(file);
+          const base64Data = base64.split(',')[1];
+          console.log(`Moderating file: ${file.name}`);
+          const result = await moderateImage(base64Data, 'image/jpeg');
+          console.log(`Moderation result for ${file.name}:`, result.isAppropriate);
+          
+          // Create a new File from the compressed blob
+          const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+          
+          return { file: compressedFile, result, base64 };
+        } catch (err) {
+          console.error("Compression/Moderation error for file:", file.name, err);
+          // If compression or moderation fails, we'll try to use the original file to avoid blocking the user
+          return { file, result: { isAppropriate: true }, base64: null };
+        }
+      });
 
-        if (!base64) continue;
+      const results = await Promise.all(moderationPromises);
 
-        const parts = base64.split(',');
-        if (parts.length < 2) continue;
-        
-        const base64Data = parts[1];
-        const result = await moderateImage(base64Data, file.type);
+      const newSelectedFiles: { file: File, base64: string }[] = [];
+      const newPreviews: string[] = [];
 
+      for (const { file, result, base64 } of results) {
         if (!result.isAppropriate) {
-          setModerationError(result.suggestion || 'This image contains inappropriate content and cannot be used.');
+          setModerationError(result.suggestion || `Image ${file.name} contains inappropriate content.`);
           setIsModerating(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
           return;
         }
+        // If base64 is null (from catch block), we'll try to get it now for preview
+        let finalBase64 = base64;
+        if (!finalBase64) {
+          finalBase64 = await new Promise<string | null>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file as File);
+          });
+        }
 
-        setSelectedFiles(prev => [...prev, file]);
-        setImagePreviews(prev => [...prev, base64]);
+        if (finalBase64) {
+          newSelectedFiles.push({ file: file as File, base64: finalBase64 });
+          newPreviews.push(finalBase64);
+        }
       }
+      
+      setSelectedFiles(prev => [...prev, ...newSelectedFiles]);
+      setImagePreviews(prev => [...prev, ...newPreviews]);
       setNewPostImage(''); // Clear URL if file is selected
     } catch (error) {
       console.error("Moderation error:", error);
@@ -469,11 +542,9 @@ export default function PersonaCommunity() {
 
     try {
       let imageUrls: string[] = [];
-      if (commentImage) {
-        const fileRef = ref(storage, `community_comments/${user.uid}/${Date.now()}_${commentImage.name}`);
-        const uploadResult = await uploadBytes(fileRef, commentImage);
-        const url = await getDownloadURL(uploadResult.ref);
-        imageUrls.push(url);
+      if (commentImage && commentImagePreview) {
+        console.log("Using base64 for instant comment image loading...");
+        imageUrls.push(commentImagePreview);
       }
 
       await addDoc(collection(db, `community_posts/${activeCommentsPostId}/comments`), {
@@ -513,17 +584,28 @@ export default function PersonaCommunity() {
     setModerationError(null);
 
     try {
-      const base64 = await new Promise<string | null>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(file);
-      });
-
-      if (!base64) throw new Error("Failed to read image");
+      console.log(`Processing comment image: ${file.name}`);
+      let blob: Blob;
+      let base64: string;
+      try {
+        const compressed = await compressImage(file);
+        blob = compressed.blob;
+        base64 = compressed.base64;
+      } catch (compressErr) {
+        console.error("Comment image compression error:", compressErr);
+        // Fallback to original file
+        blob = file;
+        base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
 
       const base64Data = base64.split(',')[1];
-      const result = await moderateImage(base64Data, file.type);
+      console.log(`Moderating comment image: ${file.name}`);
+      const result = await moderateImage(base64Data, 'image/jpeg');
+      console.log(`Moderation result for comment image ${file.name}:`, result.isAppropriate);
 
       if (!result.isAppropriate) {
         setModerationError(result.suggestion || 'This image contains inappropriate content.');
@@ -531,7 +613,8 @@ export default function PersonaCommunity() {
         return;
       }
 
-      setCommentImage(file);
+      const finalFile = new File([blob], file.name, { type: blob.type || 'image/jpeg' });
+      setCommentImage(finalFile);
       setCommentImagePreview(base64);
     } catch (error) {
       console.error("Moderation error:", error);
@@ -864,12 +947,18 @@ export default function PersonaCommunity() {
                       />
                       <button
                         onClick={handleAddComment}
-                        disabled={isSubmittingComment || (!newComment.trim() && !commentImage)}
-                        className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all"
+                        disabled={isSubmittingComment || isModerating || (!newComment.trim() && !commentImage)}
+                        className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all min-w-[40px] flex items-center justify-center"
                       >
                         {isSubmittingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       </button>
                     </div>
+                    {isModerating && (
+                      <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-bold animate-pulse px-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>AI is checking your image for safety...</span>
+                      </div>
+                    )}
                     {commentImagePreview && (
                       <div className="relative w-20 h-20 mt-2">
                         <img src={commentImagePreview} alt="Preview" className="w-full h-full object-cover rounded-lg" />
@@ -998,30 +1087,17 @@ export default function PersonaCommunity() {
                   <textarea
                     value={newPostContent}
                     onChange={(e) => setNewPostContent(e.target.value)}
-                    placeholder="What's on your mind?"
+                    placeholder="What's on your mind? (Paste a YouTube link here for a preview!)"
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white focus:outline-none focus:border-indigo-500/50 transition-all min-h-[150px] resize-none"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Link (Optional)</label>
-                  <div className="relative">
-                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-                    <input
-                      type="text"
-                      value={newPostLink}
-                      onChange={(e) => setNewPostLink(e.target.value)}
-                      placeholder="Paste YouTube or any link..."
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all text-sm"
-                    />
-                  </div>
-                </div>
 
-                {newPostLink && getYoutubeId(newPostLink) && (
+                {extractLink(newPostContent) && getYoutubeId(extractLink(newPostContent)!) && (
                   <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 aspect-video">
                     <iframe
                       width="100%"
                       height="100%"
-                      src={`https://www.youtube.com/embed/${getYoutubeId(newPostLink)}`}
+                      src={`https://www.youtube.com/embed/${getYoutubeId(extractLink(newPostContent)!)}`}
                       title="YouTube preview"
                       frameBorder="0"
                       className="w-full h-full pointer-events-none"
@@ -1124,7 +1200,7 @@ export default function PersonaCommunity() {
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                  Post to Community
+                  {isSubmitting ? (selectedFiles.length > 0 ? 'Uploading Images...' : 'Posting...') : 'Post to Community'}
                 </button>
               </div>
             </motion.div>
