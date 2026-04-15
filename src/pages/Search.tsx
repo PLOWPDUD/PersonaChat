@@ -7,26 +7,7 @@ import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
-
-interface Profile {
-  uid: string;
-  displayName: string;
-  photoURL: string;
-  role?: string;
-  email?: string;
-}
-
-interface Character {
-  id: string;
-  name: string;
-  avatarUrl: string;
-  description: string;
-  creatorId: string;
-  creatorName?: string;
-  averageRating?: number;
-  visibility: string;
-  category?: string;
-}
+import { Profile, Character } from '../types';
 
 export function Search() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -216,29 +197,8 @@ export function Search() {
     }
   };
 
-  const handleUserClick = async (profile: Profile) => {
-    setSelectedUser(profile);
-    setIsLoading(true);
-    try {
-      const charRef = collection(db, 'characters');
-      const q = query(
-        charRef,
-        where('creatorId', '==', profile.uid),
-        where('visibility', '==', 'public')
-      );
-      
-      const snap = await getDocs(q);
-      const userChars = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Character));
-      
-      setUserCharacters(userChars.map(char => ({ 
-        ...char,
-        creatorName: profile.displayName 
-      })));
-    } catch (error) {
-      console.error('Error fetching user characters:', error);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleUserClick = (profile: Profile) => {
+    navigate(`/profile/${profile.uid}`);
   };
 
   const handleCharacterClick = (charId: string) => {
@@ -335,7 +295,6 @@ export function Search() {
             <button
               onClick={() => {
                 setActiveTab('characters');
-                setSelectedUser(null);
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === 'characters' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
@@ -347,7 +306,6 @@ export function Search() {
             <button
               onClick={() => {
                 setActiveTab('users');
-                setSelectedUser(null);
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === 'users' ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:text-zinc-300'
@@ -368,98 +326,7 @@ export function Search() {
           <div className="p-4">
             <QuotaExceeded />
           </div>
-        ) : selectedUser ? (
-              <motion.div
-                key="user-detail"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-6"
-              >
-                <div className="flex items-center gap-4 p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
-                  <button
-                    onClick={() => setSelectedUser(null)}
-                    className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400"
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-                  <div className="flex items-center gap-3">
-                    {selectedUser.photoURL ? (
-                      <img src={selectedUser.photoURL} alt="" className="w-12 h-12 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                        <User className="w-6 h-6 text-zinc-500" />
-                      </div>
-                    )}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-white">{selectedUser.displayName}</h2>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getRankInfo(selectedUser).color}`}>
-                          {getRankInfo(selectedUser).label}
-                        </span>
-                      </div>
-                      <p className="text-zinc-500 text-sm">Public Characters</p>
-                    </div>
-                  </div>
-                </div>
-
-                {isLoading ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                  </div>
-                ) : userCharacters.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {userCharacters.map((char) => (
-                          <button
-                            key={char.id}
-                            onClick={() => handleCharacterClick(char.id)}
-                            className={`flex items-center gap-4 p-4 bg-zinc-900 border rounded-2xl transition-all text-left group relative ${
-                              selectedCharIds.includes(char.id) 
-                                ? 'border-indigo-500 bg-indigo-500/5' 
-                                : 'border-zinc-800 hover:border-indigo-500/50'
-                            }`}
-                          >
-                            {isGroupMode && (
-                              <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                                selectedCharIds.includes(char.id)
-                                  ? 'bg-indigo-600 border-indigo-600'
-                                  : 'border-zinc-700'
-                              }`}>
-                                {selectedCharIds.includes(char.id) && <ChevronRight className="w-3 h-3 text-white rotate-90" />}
-                              </div>
-                            )}
-                            {char.avatarUrl ? (
-                              <img src={char.avatarUrl} alt="" className="w-14 h-14 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-14 h-14 rounded-xl bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                                <Bot className="w-7 h-7 text-zinc-500" />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
-                                {char.name}
-                                {char.averageRating && (
-                                  <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
-                                    <Star className="w-3 h-3 fill-current" />
-                                    {char.averageRating.toFixed(1)}
-                                  </span>
-                                )}
-                              </h3>
-                              <p className="text-zinc-500 text-[10px] mb-1">By {char.creatorName || 'Unknown'}</p>
-                              <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
-                            </div>
-                            {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
-                          </button>
-                        ))}
-                      </div>
-                ) : (
-                  <div className="text-center py-12 bg-zinc-900/30 rounded-3xl border border-zinc-800 border-dashed">
-                    <Bot className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
-                    <p className="text-zinc-500">This user hasn't created any public characters yet.</p>
-                  </div>
-                )}
-              </motion.div>
-            ) : (
+        ) : (
               <motion.div
                 key={activeTab}
                 initial={{ opacity: 0, y: 10 }}
@@ -545,7 +412,7 @@ export function Search() {
                                 {getRankInfo(profile).label}
                               </span>
                             </div>
-                            <p className="text-zinc-500 text-sm mt-1">View characters</p>
+                            <p className="text-zinc-500 text-sm mt-1">View profile</p>
                           </div>
                           <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
                         </button>

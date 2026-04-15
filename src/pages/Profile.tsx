@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, updateDoc, increment, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2 } from 'lucide-react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { BADGES } from '../services/badgeService';
 import { LevelProgress } from '../components/LevelProgress';
 import { FollowButton } from '../components/FollowButton';
 import { playSound } from '../lib/sounds';
+import { getCachedData, updateGlobalCache, getCachedProfile, setCachedProfile } from '../lib/cache';
+import { Character } from '../types';
 
 export function Profile() {
   const { userId: paramUserId } = useParams();
@@ -39,6 +41,8 @@ export function Profile() {
   });
   const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
+  const [userCharacters, setUserCharacters] = useState<Character[]>([]);
+  const [loadingChars, setLoadingChars] = useState(false);
 
   const getRankInfo = () => {
     if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
@@ -127,17 +131,37 @@ export function Profile() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !targetUserId) return;
 
     const fetchProfile = async () => {
-      if (!targetUserId) return;
+      // Try cache first
+      const cached = getCachedProfile(targetUserId);
+      if (cached && typeof cached === 'object') {
+        const data = cached as any;
+        setFormData({
+          displayName: data.displayName || '',
+          photoURL: data.photoURL || '',
+          bannerURL: data.bannerURL || '',
+          themeColor: data.themeColor || '',
+          userPersona: data.userPersona || '',
+          personas: data.personas || [],
+          badges: data.badges || [],
+          level: data.level || 1,
+          xp: data.xp || 0,
+          followersCount: data.followersCount || 0,
+          followingCount: data.followingCount || 0,
+          role: data.role || 'user'
+        });
+        setFetching(false);
+      }
+
       try {
         const profileRef = doc(db, 'profiles', targetUserId);
         const profileSnap = await getDoc(profileRef);
         
         if (profileSnap.exists()) {
           const data = profileSnap.data();
-          setFormData({
+          const profileData = {
             displayName: data.displayName || '',
             photoURL: data.photoURL || '',
             bannerURL: data.bannerURL || '',
@@ -150,7 +174,9 @@ export function Profile() {
             followersCount: data.followersCount || 0,
             followingCount: data.followingCount || 0,
             role: data.role || 'user'
-          });
+          };
+          setFormData(profileData);
+          setCachedProfile(targetUserId, profileData);
         }
       } catch (err: any) {
         if (isQuotaError(err)) {
@@ -164,8 +190,43 @@ export function Profile() {
       }
     };
 
+    const fetchUserCharacters = async () => {
+      // Try cache first
+      const cacheKey = `user_chars_${targetUserId}`;
+      const cached = getCachedData(cacheKey);
+      if (cached) {
+        setUserCharacters(cached as Character[]);
+        return;
+      }
+
+      setLoadingChars(true);
+      try {
+        const charRef = collection(db, 'characters');
+        const q = query(
+          charRef,
+          where('creatorId', '==', targetUserId),
+          where('visibility', '==', 'public'),
+          limit(20)
+        );
+        
+        const snap = await getDocs(q);
+        const chars = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+        setUserCharacters(chars);
+        updateGlobalCache(cacheKey, chars);
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          setQuotaExceeded(true);
+        } else {
+          console.error('Error fetching characters:', err);
+        }
+      } finally {
+        setLoadingChars(false);
+      }
+    };
+
     fetchProfile();
-  }, [user]);
+    fetchUserCharacters();
+  }, [user, targetUserId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -442,6 +503,61 @@ export function Profile() {
           </form>
         </div>
       )}
+
+      {/* Public Characters Section */}
+      <div className="mt-12 space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Bot className="w-6 h-6 text-indigo-500" />
+            Public Characters
+          </h2>
+          <span className="text-zinc-500 text-sm font-medium bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
+            {userCharacters.length} Total
+          </span>
+        </div>
+
+        {loadingChars ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+          </div>
+        ) : userCharacters.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {userCharacters.map((char) => (
+              <button
+                key={char.id}
+                onClick={() => navigate(`/chat/${char.id}`)}
+                className="flex items-center gap-4 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-indigo-500/50 transition-all text-left group relative"
+              >
+                {char.avatarUrl ? (
+                  <img src={char.avatarUrl} alt="" className="w-14 h-14 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-14 h-14 rounded-xl bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                    <Bot className="w-7 h-7 text-zinc-500" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-white font-bold truncate group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                    {char.name}
+                    {char.averageRating && (
+                      <span className="flex items-center gap-1 text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                        <Star className="w-3 h-3 fill-current" />
+                        {char.averageRating.toFixed(1)}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-zinc-900/30 rounded-3xl border border-zinc-800 border-dashed">
+            <Bot className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
+            <p className="text-zinc-500">No public characters found.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -9,22 +9,7 @@ import { getLocalCharacters } from '../lib/localStorage';
 import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { QuotaExceeded } from '../components/QuotaExceeded';
-
-interface Character {
-  id: string;
-  name: string;
-  avatarUrl: string;
-  greeting: string;
-  description: string;
-  visibility: 'public' | 'private' | 'unlisted';
-  category?: string;
-  creatorId: string;
-  creatorName?: string;
-  likesCount: number;
-  interactionsCount: number;
-  averageRating?: number;
-  updatedAt?: any;
-}
+import { Character, Chat } from '../types';
 
 export function Home() {
   const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
