@@ -1166,79 +1166,6 @@ export function Chat() {
         }
         
         setChatId(currentChatId);
-        
-        if (isLocalMode || currentChatId.startsWith('local_chat_')) {
-          const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
-          setMessages(localMsgs.map((lm: any) => ({
-            ...lm,
-            createdAt: { toDate: () => new Date(lm.createdAt) }
-          })));
-          setLoading(false);
-          return;
-        }
-
-        // 3. Listen to messages
-        const messagesRef = collection(db, `chats/${currentChatId}/messages`);
-        const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
-        
-        const unsubscribe = onSnapshot(mq, (snapshot) => {
-          const msgs: Message[] = [];
-          const seenIds = new Set<string>();
-          snapshot.forEach((doc) => {
-            if (seenIds.has(doc.id)) return;
-            seenIds.add(doc.id);
-            const data = doc.data();
-            if (data.createdAt || !doc.metadata.hasPendingWrites) {
-              msgs.push({ id: doc.id, ...data } as Message);
-            } else {
-              msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
-            }
-          });
-          
-          // Merge with local messages if any
-          const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
-          
-          // Only add local messages that aren't in Firestore yet
-          const merged = [...msgs];
-          const seenLocalIds = new Set(msgs.map(m => m.id));
-          
-          localMsgs.forEach((lm: any) => {
-            // Check if this local message has been synced (content match fallback if ID differs)
-            const isSynced = msgs.some(fm => 
-              fm.id === lm.id || 
-              (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
-            );
-
-            if (!isSynced && !seenLocalIds.has(lm.id)) {
-              merged.push({
-                ...lm,
-                createdAt: { toDate: () => new Date(lm.createdAt) }
-              });
-              seenLocalIds.add(lm.id);
-            }
-          });
-          
-          setMessages(merged.sort((a, b) => {
-            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-            return dateA.getTime() - dateB.getTime();
-          }));
-          setLoading(false);
-        }, (error) => {
-          console.error("onSnapshot error:", error);
-          if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
-            setIsLocalMode(true);
-            // Load from localStorage only
-            const localMsgs = JSON.parse(localStorage.getItem(`chat_${currentChatId}`) || '[]');
-            setMessages(localMsgs.map((lm: any) => ({
-              ...lm,
-              createdAt: { toDate: () => new Date(lm.createdAt) }
-            })));
-            setLoading(false);
-          } else {
-            handleFirestoreError(error, OperationType.LIST, `chats/${currentChatId}/messages`);
-          }
-        });
 
         // 4. Fetch memories (one-time)
         const memoriesRef = collection(db, `chats/${currentChatId}/memories`);
@@ -1265,9 +1192,6 @@ export function Chat() {
         }));
         setChatHistory(history);
 
-        return () => {
-          unsubscribe();
-        };
       } catch (error: any) {
         console.error('Chat initialization error:', error);
         if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
@@ -1278,12 +1202,87 @@ export function Chat() {
             type: 'error' 
           });
         }
+      } finally {
         setLoading(false);
       }
     };
 
     initChat();
   }, [user, characterId, urlChatId, navigate]);
+
+  // Handle message subscription separately to avoid listener leaks
+  useEffect(() => {
+    if (!chatId || isLocalMode || chatId.startsWith('local_chat_')) {
+      if (chatId) {
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        setMessages(localMsgs.map((lm: any) => ({
+          ...lm,
+          createdAt: { toDate: () => new Date(lm.createdAt) }
+        })));
+        setLoading(false);
+      }
+      return;
+    }
+
+    const messagesRef = collection(db, `chats/${chatId}/messages`);
+    const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
+    
+    const unsubscribe = onSnapshot(mq, (snapshot) => {
+      const msgs: Message[] = [];
+      const seenIds = new Set<string>();
+      snapshot.forEach((doc) => {
+        if (seenIds.has(doc.id)) return;
+        seenIds.add(doc.id);
+        const data = doc.data();
+        if (data.createdAt || !doc.metadata.hasPendingWrites) {
+          msgs.push({ id: doc.id, ...data } as Message);
+        } else {
+          msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
+        }
+      });
+      
+      const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+      const merged = [...msgs];
+      const seenLocalIds = new Set(msgs.map(m => m.id));
+      
+      localMsgs.forEach((lm: any) => {
+        const isSynced = msgs.some(fm => 
+          fm.id === lm.id || 
+          (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
+        );
+
+        if (!isSynced && !seenLocalIds.has(lm.id)) {
+          merged.push({
+            ...lm,
+            createdAt: { toDate: () => new Date(lm.createdAt) }
+          });
+          seenLocalIds.add(lm.id);
+        }
+      });
+      
+      setMessages(merged.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+        return dateA.getTime() - dateB.getTime();
+      }));
+      setLoading(false);
+    }, (error) => {
+      console.error("onSnapshot error:", error);
+      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        setIsLocalMode(true);
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        setMessages(localMsgs.map((lm: any) => ({
+          ...lm,
+          createdAt: { toDate: () => new Date(lm.createdAt) }
+        })));
+        setLoading(false);
+      } else {
+        handleFirestoreError(error, OperationType.LIST, `chats/${chatId}/messages`);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [chatId, isLocalMode]);
 
   const getCurrentPersona = () => {
     if (selectedPersonaId === 'default') return userPersona;

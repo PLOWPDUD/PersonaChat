@@ -2,6 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Simple in-memory cache for moderation results
+const moderationCache = new Map<string, ModerationResult>();
+
 export interface ModerationResult {
   isAppropriate: boolean;
   reason?: string;
@@ -9,6 +12,14 @@ export interface ModerationResult {
 }
 
 export async function moderateImage(base64Data: string, mimeType: string): Promise<ModerationResult> {
+  // Use a simple hash of the base64 data for caching
+  // We'll just use the first 1000 characters + length as a weak but fast "hash"
+  const cacheKey = `${base64Data.length}_${base64Data.substring(0, 500)}_${base64Data.substring(base64Data.length - 500)}`;
+  
+  if (moderationCache.has(cacheKey)) {
+    return moderationCache.get(cacheKey)!;
+  }
+
   try {
     // Add a timeout to the moderation call
     const timeoutPromise = new Promise<never>((_, reject) => 
@@ -41,7 +52,13 @@ export async function moderateImage(base64Data: string, mimeType: string): Promi
     const response = await Promise.race([moderationPromise, timeoutPromise]) as any;
 
     const text = response.text;
-    return JSON.parse(text || "{}");
+    const result = JSON.parse(text || "{}");
+    
+    // Cache the result
+    const cacheKey = `${base64Data.length}_${base64Data.substring(0, 500)}_${base64Data.substring(base64Data.length - 500)}`;
+    moderationCache.set(cacheKey, result);
+    
+    return result;
   } catch (error) {
     if (error instanceof Error && error.message === "Moderation timeout") {
       console.warn("Moderation timed out, defaulting to appropriate.");

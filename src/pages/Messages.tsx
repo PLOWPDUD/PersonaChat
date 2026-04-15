@@ -8,6 +8,7 @@ import { addNotification } from '../lib/gamification';
 import { playSound } from '../lib/sounds';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { moderateImage } from '../services/aiService';
+import { getCachedProfile, setCachedProfile } from '../lib/cache';
 
 interface Chat {
   id: string;
@@ -79,18 +80,25 @@ export default function Messages() {
         if (data.type !== 'group') {
           const otherUserId = data.participants.find((id: string) => id !== user.uid);
           if (otherUserId) {
-            try {
-              const userSnap = await getDoc(doc(db, 'profiles', otherUserId));
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                otherUser = {
-                  uid: otherUserId,
-                  displayName: userData.displayName || 'User',
-                  photoURL: userData.photoURL || ''
-                };
+            // Check cache first
+            const cached = getCachedProfile(otherUserId);
+            if (cached) {
+              otherUser = cached;
+            } else {
+              try {
+                const userSnap = await getDoc(doc(db, 'profiles', otherUserId));
+                if (userSnap.exists()) {
+                  const userData = userSnap.data();
+                  otherUser = {
+                    uid: otherUserId,
+                    displayName: userData.displayName || 'User',
+                    photoURL: userData.photoURL || ''
+                  };
+                  setCachedProfile(otherUserId, otherUser);
+                }
+              } catch (err) {
+                console.error('Error fetching chat user:', err);
               }
-            } catch (err) {
-              console.error('Error fetching chat user:', err);
             }
           }
         }
@@ -118,31 +126,23 @@ export default function Messages() {
           const interactedUids = new Set<string>();
 
           if (isOwner) {
-            // Owner can talk to everyone
-            const allProfilesSnap = await getDocs(query(collection(db, 'profiles'), limit(50)));
+            // Owner can talk to everyone - limit to 30 to save quota
+            const allProfilesSnap = await getDocs(query(collection(db, 'profiles'), limit(30)));
             allProfilesSnap.docs.forEach(doc => interactedUids.add(doc.id));
           } else {
-            // 1. Fetch followers (people who follow the current user)
-            const followersSnap = await getDocs(query(collection(db, 'followers'), where('followingId', '==', user.uid)));
+            // 1. Fetch followers - limit to 20
+            const followersSnap = await getDocs(query(collection(db, 'followers'), where('followingId', '==', user.uid), limit(20)));
             followersSnap.docs.forEach(doc => interactedUids.add(doc.data().followerId));
 
-            // 2. Fetch people who interacted with posts
-            const postsSnap = await getDocs(query(collection(db, 'community_posts'), where('authorId', '==', user.uid), limit(10)));
+            // 2. Fetch people who interacted with posts - simplified
+            const postsSnap = await getDocs(query(collection(db, 'community_posts'), where('authorId', '==', user.uid), limit(5)));
             for (const postDoc of postsSnap.docs) {
-              // Likes
-              const likesSnap = await getDocs(collection(db, `community_posts/${postDoc.id}/likes`));
+              // Just fetch a few likes/comments to save quota
+              const likesSnap = await getDocs(query(collection(db, `community_posts/${postDoc.id}/likes`), limit(5)));
               likesSnap.docs.forEach(doc => interactedUids.add(doc.id));
               
-              // Comments
-              const commentsSnap = await getDocs(collection(db, `community_posts/${postDoc.id}/comments`));
+              const commentsSnap = await getDocs(query(collection(db, `community_posts/${postDoc.id}/comments`), limit(5)));
               commentsSnap.docs.forEach(doc => interactedUids.add(doc.data().authorId));
-            }
-
-            // 3. Fetch people who favorited characters
-            const charactersSnap = await getDocs(query(collection(db, 'characters'), where('creatorId', '==', user.uid), limit(10)));
-            for (const charDoc of charactersSnap.docs) {
-              const favoritesSnap = await getDocs(query(collection(db, 'favorites'), where('characterId', '==', charDoc.id)));
-              favoritesSnap.docs.forEach(doc => interactedUids.add(doc.data().userId));
             }
           }
 
@@ -154,18 +154,32 @@ export default function Messages() {
           const profiles: any[] = [];
           
           if (uidsArray.length > 0) {
-            // Firestore 'in' query limit is 10, so we batch if needed
-            for (let i = 0; i < uidsArray.length; i += 10) {
-              const batch = uidsArray.slice(i, i + 10);
-              const profilesSnap = await getDocs(query(collection(db, 'profiles'), where('__name__', 'in', batch)));
-              profilesSnap.docs.forEach(doc => profiles.push({ uid: doc.id, ...doc.data() }));
+            // Check cache first for each UID
+            const uncachedUids: string[] = [];
+            uidsArray.forEach(uid => {
+              const cached = getCachedProfile(uid);
+              if (cached) profiles.push(cached);
+              else uncachedUids.push(uid);
+            });
+
+            if (uncachedUids.length > 0) {
+              // Firestore 'in' query limit is 10
+              for (let i = 0; i < uncachedUids.length; i += 10) {
+                const batch = uncachedUids.slice(i, i + 10);
+                const profilesSnap = await getDocs(query(collection(db, 'profiles'), where('__name__', 'in', batch)));
+                profilesSnap.docs.forEach(doc => {
+                  const pData = { uid: doc.id, ...doc.data() };
+                  profiles.push(pData);
+                  setCachedProfile(doc.id, pData);
+                });
+              }
             }
           }
 
           setAvailableUsers(profiles);
           
-          // Fetch bots (all bots are usually available to be added)
-          const botsSnap = await getDocs(query(collection(db, 'characters'), limit(20)));
+          // Fetch bots - limit to 10
+          const botsSnap = await getDocs(query(collection(db, 'characters'), limit(10)));
           setAvailableBots(botsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } catch (err) {
           console.error('Error fetching available users/bots:', err);

@@ -20,6 +20,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCachedData, updateGlobalCache } from '../lib/cache';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { moderateImage, ModerationResult } from '../services/aiService';
 import { BADGES } from '../services/badgeService';
@@ -201,101 +202,102 @@ export default function PersonaCommunity() {
 
   // Fetch initial posts
   useEffect(() => {
-    const q = query(
-      collection(db, 'community_posts'),
-      orderBy('createdAt', 'desc'),
-      limit(10)
-    );
-
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const newPosts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Post));
-      
-      setPosts(newPosts);
-      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      setHasMore(snapshot.docs.length === 10);
-      setLoading(false);
-    }, (error) => {
-      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
-        setLocalQuotaExceeded(true);
-      } else {
-        handleFirestoreError(error, OperationType.LIST, 'community_posts');
+    const fetchPosts = async () => {
+      // Check cache first
+      const cached = getCachedData('community_posts');
+      if (cached && cached.length > 0) {
+        setPosts(cached);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-    });
 
-    return () => unsubscribe();
-  }, [user]);
+      try {
+        const q = query(
+          collection(db, 'community_posts'),
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
 
-  // Fetch trending posts
-  useEffect(() => {
-    const q = query(
-      collection(db, 'community_posts'),
-      orderBy('likesCount', 'desc'),
-      limit(5)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const trending = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Post));
-      setTrendingPosts(trending);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch likes for posts separately to avoid loop in onSnapshot
-  useEffect(() => {
-    if (!user || posts.length === 0) return;
-
-    const fetchLikes = async () => {
-      const postIds = posts.map(p => p.id);
-      for (const postId of postIds) {
-        if (!userLikes.has(postId)) {
-          try {
-            const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
-            if (likeDoc.exists()) {
-              setUserLikes(prev => new Set(prev).add(postId));
-            }
-          } catch (error) {
-            if (isQuotaError(error)) {
-              setLocalQuotaExceeded(true);
-              break;
-            }
-          }
+        const snapshot = await getDocs(q);
+        const newPosts = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Post));
+        
+        setPosts(newPosts);
+        updateGlobalCache('community_posts', newPosts);
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+        setHasMore(snapshot.docs.length === 10);
+      } catch (error: any) {
+        if (isQuotaError(error)) {
+          setLocalQuotaExceeded(true);
+        } else {
+          handleFirestoreError(error, OperationType.LIST, 'community_posts');
         }
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchLikes();
-  }, [user, posts.length]); // Only run when posts length changes
+    fetchPosts();
+  }, [user]);
 
-  // Fetch user likes and saves
+  // Fetch trending posts - use getDocs instead of onSnapshot for feed
+  useEffect(() => {
+    const fetchTrending = async () => {
+      try {
+        const q = query(
+          collection(db, 'community_posts'),
+          orderBy('likesCount', 'desc'),
+          limit(5)
+        );
+
+        const snapshot = await getDocs(q);
+        const trending = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Post));
+        setTrendingPosts(trending);
+      } catch (e) {
+        console.error("Error fetching trending:", e);
+      }
+    };
+
+    fetchTrending();
+  }, []);
+
+  // Fetch user likes and saves - Optimized to reduce reads
   useEffect(() => {
     if (!user) return;
 
-    // This is a bit heavy on quota if done for every post, 
-    // but we'll fetch them once and keep them in state.
-    // For a real app, we might fetch these per post or in batches.
-    // To optimize, we'll only fetch the likes for the visible posts if needed,
-    // but for now, we'll just track them as the user interacts.
-    
-    // Actually, let's fetch the user's saved posts list
-    const fetchSaves = async () => {
+    const fetchUserInteractions = async () => {
       try {
+        // Fetch saves
         const savesSnap = await getDocs(collection(db, `users/${user.uid}/saved_posts`));
-        const savesSet = new Set(savesSnap.docs.map(doc => doc.id));
-        setUserSaves(savesSet);
+        setUserSaves(new Set(savesSnap.docs.map(doc => doc.id)));
+
+        // Fetch likes for current posts in one go if possible
+        // Since we can't easily do a multi-collection check, we'll at least cache them
+        const postIds = posts.map(p => p.id);
+        if (postIds.length > 0) {
+          // We'll only check likes for posts we haven't checked yet
+          for (const postId of postIds) {
+            if (!userLikes.has(postId)) {
+              const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
+              if (likeDoc.exists()) {
+                setUserLikes(prev => new Set(prev).add(postId));
+              }
+            }
+          }
+        }
       } catch (e) {
-        console.error("Error fetching saves:", e);
+        if (isQuotaError(e)) setLocalQuotaExceeded(true);
+        console.error("Error fetching interactions:", e);
       }
     };
-    fetchSaves();
-  }, [user]);
+    
+    fetchUserInteractions();
+  }, [user, posts.length]);
 
   const fetchMorePosts = async () => {
     if (!hasMore || isFetchingMore || !lastVisible) return;
@@ -580,14 +582,29 @@ export default function PersonaCommunity() {
       orderBy('createdAt', 'asc')
     );
 
-    return onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const newComments = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as Comment));
       setComments(newComments);
     });
+
+    return unsubscribe;
   };
+
+  // Handle comment subscription cleanup
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    if (activeCommentsPostId) {
+      unsubscribe = fetchComments(activeCommentsPostId);
+    } else {
+      setComments([]);
+    }
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [activeCommentsPostId]);
 
   const handleAddComment = async () => {
     if (!user || !profile || !activeCommentsPostId || (!newComment.trim() && !commentImage)) return;
@@ -922,7 +939,7 @@ export default function PersonaCommunity() {
                   <span>{post.likesCount || 0}</span>
                 </button>
                 <button
-                  onClick={() => activeCommentsPostId === post.id ? setActiveCommentsPostId(null) : fetchComments(post.id)}
+                  onClick={() => activeCommentsPostId === post.id ? setActiveCommentsPostId(null) : setActiveCommentsPostId(post.id)}
                   className={`flex items-center gap-1.5 text-sm font-bold transition-all ${
                     activeCommentsPostId === post.id ? 'text-indigo-400' : 'text-zinc-400 hover:text-white'
                   }`}
