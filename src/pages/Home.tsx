@@ -248,7 +248,7 @@ export function Home() {
     try {
       if (tab === 'recent') {
         const chatsRef = collection(db, 'chats');
-        const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(30));
+        const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(15));
         const snapshot = await getDocs(q);
         
         const chats: any[] = [];
@@ -322,7 +322,7 @@ export function Home() {
             q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), limit(pageSize));
           }
         } else {
-          q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'), limit(50));
+          q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'), limit(20));
         }
 
         const snapshot = await getDocs(q);

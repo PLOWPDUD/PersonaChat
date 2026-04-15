@@ -37,9 +37,20 @@ service cloud.firestore {
              data.likesCount is number &&
              data.commentsCount is number &&
              data.createdAt is timestamp &&
-             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
+             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 10)) &&
              (!('link' in data) || data.link == null || (data.link is string && data.link.size() < 1000)) &&
              (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string);
+    }
+
+    function isValidComment(data) {
+      return data.authorId is string &&
+             data.authorName is string &&
+             data.content is string && data.content.size() <= 1000 &&
+             data.createdAt is timestamp &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
+             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
+             (!('parentId' in data) || data.parentId is string);
     }
 
     // ===============================================================
@@ -124,7 +135,8 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
+        allow create: if isAuthenticated() && isValidComment(request.resource.data) && request.resource.data.authorId == request.auth.uid;
+        allow update: if isAuthenticated() && resource.data.authorId == request.auth.uid && isValidComment(request.resource.data);
         allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isModerator());
       }
 

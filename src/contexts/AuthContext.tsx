@@ -4,6 +4,7 @@ import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { checkAndAwardBadges } from '../services/badgeService';
+import { setCachedProfile } from '../lib/cache';
 
 interface AuthContextType {
   user: User | null;
@@ -13,7 +14,7 @@ interface AuthContextType {
   isModerator: boolean;
   quotaExceeded: boolean;
   becomeModerator: (password: string) => boolean;
-  updateProfile: (newProfile: any) => void;
+  updateProfile: (newProfile: any) => Promise<void>;
   logOut: () => Promise<void>;
 }
 
@@ -25,7 +26,7 @@ const AuthContext = createContext<AuthContextType>({
   isModerator: false,
   quotaExceeded: false,
   becomeModerator: () => false,
-  updateProfile: () => {},
+  updateProfile: async () => {},
   logOut: async () => {}
 });
 
@@ -61,12 +62,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
-  const updateProfile = (newProfile: any) => {
-    setProfile((prev: any) => {
-      const updated = { ...prev, ...newProfile };
-      localStorage.setItem('cached_profile', JSON.stringify(updated));
-      return updated;
-    });
+  const updateProfile = async (newProfile: any) => {
+    if (!user) return;
+
+    try {
+      const profileRef = doc(db, 'profiles', user.uid);
+      const updates = { ...newProfile, updatedAt: serverTimestamp() };
+      
+      if (newProfile.displayName) {
+        updates.displayName_lowercase = newProfile.displayName.toLowerCase();
+      }
+      
+      await updateDoc(profileRef, updates);
+      
+      const updatedProfile = { ...profile, ...newProfile };
+      setCachedProfile(user.uid, updatedProfile);
+      
+      setProfile((prev: any) => {
+        const updated = { ...prev, ...newProfile };
+        localStorage.setItem('cached_profile', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      throw error;
+    }
   };
 
   const logOut = async () => {

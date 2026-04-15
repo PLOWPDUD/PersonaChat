@@ -20,7 +20,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { getCachedData, updateGlobalCache } from '../lib/cache';
+import { getCachedData, updateGlobalCache, getCachedUserLikes, setCachedUserLikes, getCachedUserSaves, setCachedUserSaves } from '../lib/cache';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { moderateImage, ModerationResult } from '../services/aiService';
 import { BADGES } from '../services/badgeService';
@@ -47,7 +47,9 @@ import {
   Youtube,
   ExternalLink,
   ShieldAlert,
-  Zap
+  Zap,
+  Edit2,
+  Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -99,6 +101,16 @@ export default function PersonaCommunity() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModerating, setIsModerating] = useState(false);
   const [moderationError, setModerationError] = useState<string | null>(null);
+
+  // Editing State
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editImageUrls, setEditImageUrls] = useState<string[]>([]);
+  const [editFiles, setEditFiles] = useState<{ file: File, base64: string }[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [feedFilter, setFeedFilter] = useState<'recent' | 'trending'>('recent');
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
 
@@ -245,6 +257,12 @@ export default function PersonaCommunity() {
   // Fetch trending posts - use getDocs instead of onSnapshot for feed
   useEffect(() => {
     const fetchTrending = async () => {
+      const cachedTrending = getCachedData('trending_posts');
+      if (cachedTrending) {
+        setTrendingPosts(cachedTrending);
+        return;
+      }
+
       try {
         const q = query(
           collection(db, 'community_posts'),
@@ -258,6 +276,7 @@ export default function PersonaCommunity() {
           ...doc.data()
         } as Post));
         setTrendingPosts(trending);
+        updateGlobalCache('trending_posts', trending);
       } catch (e) {
         console.error("Error fetching trending:", e);
       }
@@ -266,6 +285,8 @@ export default function PersonaCommunity() {
     fetchTrending();
   }, []);
 
+  const [checkedPostIds, setCheckedPostIds] = useState<Set<string>>(new Set());
+
   // Fetch user likes and saves - Optimized to reduce reads
   useEffect(() => {
     if (!user) return;
@@ -273,22 +294,44 @@ export default function PersonaCommunity() {
     const fetchUserInteractions = async () => {
       try {
         // Fetch saves
-        const savesSnap = await getDocs(collection(db, `users/${user.uid}/saved_posts`));
-        setUserSaves(new Set(savesSnap.docs.map(doc => doc.id)));
+        const cachedSaves = getCachedUserSaves();
+        if (cachedSaves) {
+          setUserSaves(cachedSaves);
+        } else {
+          const savesSnap = await getDocs(collection(db, `users/${user.uid}/saved_posts`));
+          const savesSet = new Set(savesSnap.docs.map(doc => doc.id));
+          setUserSaves(savesSet);
+          setCachedUserSaves(savesSet);
+        }
 
-        // Fetch likes for current posts in one go if possible
-        // Since we can't easily do a multi-collection check, we'll at least cache them
+        // Fetch likes
+        const cachedLikes = getCachedUserLikes();
+        const currentLikes = cachedLikes || new Set<string>();
+        if (cachedLikes) {
+          setUserLikes(cachedLikes);
+        }
+
         const postIds = posts.map(p => p.id);
-        if (postIds.length > 0) {
-          // We'll only check likes for posts we haven't checked yet
-          for (const postId of postIds) {
-            if (!userLikes.has(postId)) {
+        const newUncheckedIds = postIds.filter(id => !checkedPostIds.has(id));
+        
+        if (newUncheckedIds.length > 0) {
+          const updatedLikes = new Set(currentLikes);
+          const updatedChecked = new Set(checkedPostIds);
+          
+          for (const postId of newUncheckedIds) {
+            updatedChecked.add(postId);
+            // Only fetch if it's not already known to be liked from cache
+            if (!updatedLikes.has(postId)) {
               const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
               if (likeDoc.exists()) {
-                setUserLikes(prev => new Set(prev).add(postId));
+                updatedLikes.add(postId);
               }
             }
           }
+          
+          setCheckedPostIds(updatedChecked);
+          setUserLikes(updatedLikes);
+          setCachedUserLikes(updatedLikes);
         }
       } catch (e) {
         if (isQuotaError(e)) setLocalQuotaExceeded(true);
@@ -497,6 +540,7 @@ export default function PersonaCommunity() {
         setUserLikes(prev => {
           const next = new Set(prev);
           next.delete(postId);
+          setCachedUserLikes(next);
           return next;
         });
       } else {
@@ -505,6 +549,7 @@ export default function PersonaCommunity() {
         setUserLikes(prev => {
           const next = new Set(prev);
           next.add(postId);
+          setCachedUserLikes(next);
           return next;
         });
         
@@ -540,6 +585,7 @@ export default function PersonaCommunity() {
         setUserSaves(prev => {
           const next = new Set(prev);
           next.delete(postId);
+          setCachedUserSaves(next);
           return next;
         });
       } else {
@@ -547,6 +593,7 @@ export default function PersonaCommunity() {
         setUserSaves(prev => {
           const next = new Set(prev);
           next.add(postId);
+          setCachedUserSaves(next);
           return next;
         });
 
@@ -579,7 +626,8 @@ export default function PersonaCommunity() {
     setActiveCommentsPostId(postId);
     const q = query(
       collection(db, `community_posts/${postId}/comments`),
-      orderBy('createdAt', 'asc')
+      orderBy('createdAt', 'asc'),
+      limit(20)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -762,6 +810,114 @@ export default function PersonaCommunity() {
     }
   };
 
+  // Editing Logic
+  const startEditingPost = (post: Post) => {
+    setEditingPostId(post.id);
+    setEditTitle(post.title || '');
+    setEditContent(post.content);
+    setEditImageUrls(post.imageUrls || []);
+    setEditFiles([]);
+  };
+
+  const startEditingComment = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditContent(comment.content);
+    setEditImageUrls(comment.imageUrls || []);
+    setEditFiles([]);
+  };
+
+  const handleEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newFiles: { file: File, base64: string }[] = [];
+    setIsModerating(true);
+    setModerationError(null);
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.size > 5 * 1024 * 1024) continue;
+
+        const compressed = await compressImage(file);
+        const base64Data = compressed.base64.split(',')[1];
+        const result = await moderateImage(base64Data, 'image/jpeg');
+
+        if (result.isAppropriate) {
+          newFiles.push({ file: new File([compressed.blob], file.name, { type: 'image/jpeg' }), base64: compressed.base64 });
+        } else {
+          setModerationError(result.suggestion || 'Some images were rejected.');
+        }
+      }
+      setEditFiles(prev => [...prev, ...newFiles]);
+    } catch (error) {
+      console.error("Edit moderation error:", error);
+    } finally {
+      setIsModerating(false);
+    }
+  };
+
+  const handleUpdatePost = async () => {
+    if (!user || !editingPostId || !editContent.trim()) return;
+    setIsUpdating(true);
+
+    try {
+      const finalImageUrls = [...editImageUrls];
+      
+      // Add new images (using base64 for instant preview/save)
+      editFiles.forEach(f => finalImageUrls.push(f.base64));
+
+      const postRef = doc(db, 'community_posts', editingPostId);
+      await updateDoc(postRef, {
+        title: editTitle.trim() || null,
+        content: editContent.trim(),
+        imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local state
+      setPosts(prev => prev.map(p => p.id === editingPostId ? {
+        ...p,
+        title: editTitle.trim() || undefined,
+        content: editContent.trim(),
+        imageUrls: finalImageUrls.length > 0 ? finalImageUrls : undefined,
+        updatedAt: new Date()
+      } : p));
+
+      setEditingPostId(null);
+      playSound('success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `community_posts/${editingPostId}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleUpdateComment = async (postId: string) => {
+    if (!user || !editingCommentId || !editContent.trim()) return;
+    setIsUpdating(true);
+
+    try {
+      const finalImageUrls = [...editImageUrls];
+      editFiles.forEach(f => finalImageUrls.push(f.base64));
+
+      const commentRef = doc(db, `community_posts/${postId}/comments`, editingCommentId);
+      await updateDoc(commentRef, {
+        content: editContent.trim(),
+        imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null,
+        updatedAt: serverTimestamp()
+      });
+
+      // Local state update is handled by onSnapshot listener for comments
+      setEditingCommentId(null);
+      playSound('success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `community_posts/${postId}/comments/${editingCommentId}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
   if (loading) {
@@ -853,22 +1009,117 @@ export default function PersonaCommunity() {
                 </div>
               </div>
               {(user?.uid === post.authorId || isModerator) && (
-                <button 
-                  onClick={() => handleDeletePost(post.id)}
-                  className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
-                  title="Delete Post"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {user?.uid === post.authorId && (
+                    <button 
+                      onClick={() => editingPostId === post.id ? setEditingPostId(null) : startEditingPost(post)}
+                      className={`p-2 rounded-xl transition-all ${editingPostId === post.id ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10'}`}
+                      title="Edit Post"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => handleDeletePost(post.id)}
+                    className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                    title="Delete Post"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               )}
             </div>
 
             {/* Post Content */}
             <div className="px-4 pb-4 space-y-4">
-              {post.title && (
-                <h3 className="text-xl font-bold text-white tracking-tight">{post.title}</h3>
+              {editingPostId === post.id ? (
+                <div className="space-y-4 bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800">
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Post Title (optional)"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-bold focus:outline-none focus:border-indigo-500/50"
+                  />
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    placeholder="What's on your mind?"
+                    rows={4}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500/50 resize-none"
+                  />
+                  
+                  {/* Edit Images */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Images</p>
+                    <div className="flex flex-wrap gap-2">
+                      {editImageUrls.map((url, idx) => (
+                        <div key={`existing-${idx}`} className="relative w-20 h-20 group">
+                          <img src={url} alt="" className="w-full h-full object-cover rounded-lg border border-zinc-800" />
+                          <button
+                            onClick={() => setEditImageUrls(prev => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {editFiles.map((file, idx) => (
+                        <div key={`new-${idx}`} className="relative w-20 h-20 group">
+                          <img src={file.base64} alt="" className="w-full h-full object-cover rounded-lg border border-indigo-500/50" />
+                          <button
+                            onClick={() => setEditFiles(prev => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {(editImageUrls.length + editFiles.length) < 6 && (
+                        <button
+                          onClick={() => editFileInputRef.current?.click()}
+                          className="w-20 h-20 rounded-lg border-2 border-dashed border-zinc-800 flex flex-col items-center justify-center text-zinc-500 hover:border-indigo-500/50 hover:text-indigo-400 transition-all"
+                        >
+                          <Plus className="w-5 h-5" />
+                          <span className="text-[8px] font-bold mt-1 uppercase">Add</span>
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      ref={editFileInputRef}
+                      onChange={handleEditFileChange}
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => setEditingPostId(null)}
+                      className="px-4 py-2 text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleUpdatePost}
+                      disabled={isUpdating || !editContent.trim()}
+                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2"
+                    >
+                      {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {post.title && (
+                    <h3 className="text-xl font-bold text-white tracking-tight">{post.title}</h3>
+                  )}
+                  <p className="text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                </>
               )}
-              <p className="text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
               
               {post.link && (
                 <div className="space-y-3">
@@ -1009,23 +1260,98 @@ export default function PersonaCommunity() {
                                       {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                                     </span>
                                     {(user?.uid === comment.authorId || isModerator) && (
-                                      <button
-                                        onClick={() => handleDeleteComment(post.id, comment.id)}
-                                        className="text-zinc-600 hover:text-red-500 transition-colors"
-                                        title="Delete Comment"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
+                                      <div className="flex items-center gap-2">
+                                        {user?.uid === comment.authorId && (
+                                          <button
+                                            onClick={() => editingCommentId === comment.id ? setEditingCommentId(null) : startEditingComment(comment)}
+                                            className={`transition-colors ${editingCommentId === comment.id ? 'text-indigo-400' : 'text-zinc-600 hover:text-indigo-400'}`}
+                                            title="Edit Comment"
+                                          >
+                                            <Edit2 className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => handleDeleteComment(post.id, comment.id)}
+                                          className="text-zinc-600 hover:text-red-500 transition-colors"
+                                          title="Delete Comment"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
-                                <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
-                                {comment.imageUrls && comment.imageUrls.length > 0 && (
-                                  <div className="mt-2 grid grid-cols-1 gap-2">
-                                    {comment.imageUrls.map((url, idx) => (
-                                      <img key={idx} src={url} alt="Comment attachment" className="rounded-lg max-h-60 object-contain" referrerPolicy="no-referrer" />
-                                    ))}
+                                {editingCommentId === comment.id ? (
+                                  <div className="space-y-3">
+                                    <textarea
+                                      value={editContent}
+                                      onChange={(e) => setEditContent(e.target.value)}
+                                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 resize-none"
+                                      rows={3}
+                                    />
+                                    
+                                    {/* Edit Comment Images */}
+                                    <div className="flex flex-wrap gap-2">
+                                      {editImageUrls.map((url, idx) => (
+                                        <div key={`c-existing-${idx}`} className="relative w-12 h-12 group">
+                                          <img src={url} alt="" className="w-full h-full object-cover rounded-lg border border-zinc-800" />
+                                          <button
+                                            onClick={() => setEditImageUrls(prev => prev.filter((_, i) => i !== idx))}
+                                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                          >
+                                            <X className="w-2 h-2" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {editFiles.map((file, idx) => (
+                                        <div key={`c-new-${idx}`} className="relative w-12 h-12 group">
+                                          <img src={file.base64} alt="" className="w-full h-full object-cover rounded-lg border border-indigo-500/50" />
+                                          <button
+                                            onClick={() => setEditFiles(prev => prev.filter((_, i) => i !== idx))}
+                                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                          >
+                                            <X className="w-2 h-2" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {(editImageUrls.length + editFiles.length) < 1 && (
+                                        <button
+                                          onClick={() => editFileInputRef.current?.click()}
+                                          className="w-12 h-12 rounded-lg border border-dashed border-zinc-800 flex items-center justify-center text-zinc-500 hover:border-indigo-500/50 hover:text-indigo-400 transition-all"
+                                        >
+                                          <Plus className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        onClick={() => setEditingCommentId(null)}
+                                        className="text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-widest"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        onClick={() => handleUpdateComment(post.id)}
+                                        disabled={isUpdating || !editContent.trim()}
+                                        className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 hover:text-indigo-300 uppercase tracking-widest disabled:opacity-50"
+                                      >
+                                        {isUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                        Save
+                                      </button>
+                                    </div>
                                   </div>
+                                ) : (
+                                  <>
+                                    <p className="text-zinc-300 text-sm leading-relaxed">{comment.content}</p>
+                                    {comment.imageUrls && comment.imageUrls.length > 0 && (
+                                      <div className="mt-2 grid grid-cols-1 gap-2">
+                                        {comment.imageUrls.map((url, idx) => (
+                                          <img key={idx} src={url} alt="Comment attachment" className="rounded-lg max-h-60 object-contain" referrerPolicy="no-referrer" />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                                 <div className="mt-2 flex items-center gap-4">
                                   <button 
@@ -1056,23 +1382,90 @@ export default function PersonaCommunity() {
                                         {reply.createdAt?.toDate ? new Date(reply.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                                       </span>
                                       {(user?.uid === reply.authorId || isModerator) && (
-                                        <button
-                                          onClick={() => handleDeleteComment(post.id, reply.id)}
-                                          className="text-zinc-600 hover:text-red-500 transition-colors"
-                                          title="Delete Reply"
-                                        >
-                                          <Trash2 className="w-2.5 h-2.5" />
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                          {user?.uid === reply.authorId && (
+                                            <button
+                                              onClick={() => editingCommentId === reply.id ? setEditingCommentId(null) : startEditingComment(reply)}
+                                              className={`transition-colors ${editingCommentId === reply.id ? 'text-indigo-400' : 'text-zinc-600 hover:text-indigo-400'}`}
+                                              title="Edit Reply"
+                                            >
+                                              <Edit2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                          <button
+                                            onClick={() => handleDeleteComment(post.id, reply.id)}
+                                            className="text-zinc-600 hover:text-red-500 transition-colors"
+                                            title="Delete Reply"
+                                          >
+                                            <Trash2 className="w-2.5 h-2.5" />
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
-                                  <p className="text-zinc-300 text-xs leading-relaxed">{reply.content}</p>
-                                  {reply.imageUrls && reply.imageUrls.length > 0 && (
-                                    <div className="mt-2 grid grid-cols-1 gap-2">
-                                      {reply.imageUrls.map((url, idx) => (
-                                        <img key={idx} src={url} alt="Reply attachment" className="rounded-lg max-h-40 object-contain" referrerPolicy="no-referrer" />
-                                      ))}
+                                  {editingCommentId === reply.id ? (
+                                    <div className="space-y-3">
+                                      <textarea
+                                        value={editContent}
+                                        onChange={(e) => setEditContent(e.target.value)}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-white text-[10px] focus:outline-none focus:border-indigo-500/50 resize-none"
+                                        rows={2}
+                                      />
+                                      
+                                      {/* Edit Reply Images */}
+                                      <div className="flex flex-wrap gap-2">
+                                        {editImageUrls.map((url, idx) => (
+                                          <div key={`r-existing-${idx}`} className="relative w-10 h-10 group">
+                                            <img src={url} alt="" className="w-full h-full object-cover rounded-lg border border-zinc-800" />
+                                            <button
+                                              onClick={() => setEditImageUrls(prev => prev.filter((_, i) => i !== idx))}
+                                              className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                              <X className="w-2 h-2" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                        {editFiles.map((file, idx) => (
+                                          <div key={`r-new-${idx}`} className="relative w-10 h-10 group">
+                                            <img src={file.base64} alt="" className="w-full h-full object-cover rounded-lg border border-indigo-500/50" />
+                                            <button
+                                              onClick={() => setEditFiles(prev => prev.filter((_, i) => i !== idx))}
+                                              className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                              <X className="w-2 h-2" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+
+                                      <div className="flex justify-end gap-2">
+                                        <button
+                                          onClick={() => setEditingCommentId(null)}
+                                          className="text-[8px] font-bold text-zinc-500 hover:text-white uppercase tracking-widest"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={() => handleUpdateComment(post.id)}
+                                          disabled={isUpdating || !editContent.trim()}
+                                          className="flex items-center gap-1 text-[8px] font-bold text-indigo-400 hover:text-indigo-300 uppercase tracking-widest disabled:opacity-50"
+                                        >
+                                          {isUpdating ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Save className="w-2.5 h-2.5" />}
+                                          Save
+                                        </button>
+                                      </div>
                                     </div>
+                                  ) : (
+                                    <>
+                                      <p className="text-zinc-300 text-xs leading-relaxed">{reply.content}</p>
+                                      {reply.imageUrls && reply.imageUrls.length > 0 && (
+                                        <div className="mt-2 grid grid-cols-1 gap-2">
+                                          {reply.imageUrls.map((url, idx) => (
+                                            <img key={idx} src={url} alt="Reply attachment" className="rounded-lg max-h-40 object-contain" referrerPolicy="no-referrer" />
+                                          ))}
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>

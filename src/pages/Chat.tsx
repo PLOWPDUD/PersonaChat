@@ -139,18 +139,10 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!user) return;
-    const fetchUserPersona = async () => {
-      const profileRef = doc(db, 'profiles', user.uid);
-      const profileSnap = await getDoc(profileRef);
-      if (profileSnap.exists()) {
-        const data = profileSnap.data();
-        setUserPersona(data.userPersona || '');
-        setPersonas(data.personas || []);
-      }
-    };
-    fetchUserPersona();
-  }, [user]);
+    if (!user || !profile) return;
+    setUserPersona(profile.userPersona || '');
+    setPersonas(profile.personas || []);
+  }, [user, profile]);
 
   useEffect(() => {
     if (notification && notification.type === 'success') {
@@ -1225,7 +1217,7 @@ export function Chat() {
     }
 
     const messagesRef = collection(db, `chats/${chatId}/messages`);
-    const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
+    const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(50));
     
     const unsubscribe = onSnapshot(mq, (snapshot) => {
       const msgs: Message[] = [];

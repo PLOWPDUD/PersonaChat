@@ -69,7 +69,8 @@ export default function Messages() {
     const q = query(
       collection(db, 'private_chats'),
       where('participants', 'array-contains', user.uid),
-      orderBy('updatedAt', 'desc')
+      orderBy('updatedAt', 'desc'),
+      limit(20)
     );
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
