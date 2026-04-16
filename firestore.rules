@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     function isValidCommunityPost(data) {
-      return hasOnlyAllowedFields(['authorId', 'authorName', 'title', 'content', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt', 'imageUrls', 'link', 'authorPhoto']) &&
+      return hasOnlyAllowedFields(['authorId', 'authorName', 'title', 'content', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt', 'imageUrls', 'link', 'authorPhoto', 'authorBadges']) &&
              data.authorId is string &&
              data.authorName is string &&
              (!('title' in data) || data.title == null || (data.title is string && data.title.size() <= 100)) &&
@@ -48,7 +48,8 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
              (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 10)) &&
              (!('link' in data) || data.link == null || (data.link is string && data.link.size() < 1000)) &&
-             (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string);
+             (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string) &&
+             (!('authorBadges' in data) || data.authorBadges == null || data.authorBadges is list);
     }
 
     function isValidComment(data) {
@@ -60,7 +61,7 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
              (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
              (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string) &&
-             (!('parentId' in data) || data.parentId is string);
+             (!('parentId' in data) || data.parentId == null || data.parentId is string);
     }
 
     // ===============================================================

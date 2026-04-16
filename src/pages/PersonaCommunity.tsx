@@ -212,55 +212,51 @@ export default function PersonaCommunity() {
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
 
-  // Fetch initial posts
+  // Fetch initial posts with real-time updates
   useEffect(() => {
-    const fetchPosts = async () => {
-      // Check cache first
-      const cached = getCachedData('community_posts');
-      if (cached && cached.length > 0) {
-        setPosts(cached);
-        setLoading(false);
-        return;
+    // Check cache first for instant loading
+    const cached = getCachedData('community_posts');
+    if (cached && cached.length > 0) {
+      setPosts(cached);
+      setLoading(false);
+    }
+
+    const q = query(
+      collection(db, 'community_posts'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Post));
+      
+      setPosts(newPosts);
+      updateGlobalCache('community_posts', newPosts);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 20);
+      setLoading(false);
+    }, (error: any) => {
+      console.error("Error with community posts listener:", error);
+      if (isQuotaError(error)) {
+        setLocalQuotaExceeded(true);
+      } else {
+        handleFirestoreError(error, OperationType.LIST, 'community_posts');
       }
+      setLoading(false);
+    });
 
-      try {
-        const q = query(
-          collection(db, 'community_posts'),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-
-        const snapshot = await getDocs(q);
-        const newPosts = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as Post));
-        
-        setPosts(newPosts);
-        updateGlobalCache('community_posts', newPosts);
-        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-        setHasMore(snapshot.docs.length === 10);
-      } catch (error: any) {
-        if (isQuotaError(error)) {
-          setLocalQuotaExceeded(true);
-        } else {
-          handleFirestoreError(error, OperationType.LIST, 'community_posts');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPosts();
+    return () => unsubscribe();
   }, [user]);
 
   // Fetch trending posts - use getDocs instead of onSnapshot for feed
   useEffect(() => {
     const fetchTrending = async () => {
       const cachedTrending = getCachedData('trending_posts');
-      if (cachedTrending) {
+      if (cachedTrending && cachedTrending.length > 0) {
         setTrendingPosts(cachedTrending);
-        return;
       }
 
       try {
@@ -414,6 +410,9 @@ export default function PersonaCommunity() {
       await addXP(user.uid, 50);
       await checkAchievement(user.uid, ACHIEVEMENTS.FIRST_POST.id, ACHIEVEMENTS.FIRST_POST.name, ACHIEVEMENTS.FIRST_POST.description, ACHIEVEMENTS.FIRST_POST.icon, ACHIEVEMENTS.FIRST_POST.xp);
       playSound('success');
+
+      // Clear community cache to ensure fresh data on refresh
+      updateGlobalCache('community_posts', []);
 
       setIsCreateModalOpen(false);
       setNewPostTitle('');
