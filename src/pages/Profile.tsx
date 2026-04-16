@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
+import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, updateDoc, increment, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2 } from 'lucide-react';
@@ -381,7 +381,7 @@ export function Profile() {
                           try {
                             // Check if chat already exists
                             const q = query(
-                              collection(db, 'private_chats'),
+                              collection(dbPrivate, 'private_chats'),
                               where('participants', 'array-contains', user.uid)
                             );
                             const snap = await getDocs(q);
@@ -390,7 +390,7 @@ export function Profile() {
                             if (existingChat) {
                               navigate('/messages');
                             } else {
-                              await addDoc(collection(db, 'private_chats'), {
+                              await addDoc(collection(dbPrivate, 'private_chats'), {
                                 type: 'direct',
                                 participants: [user.uid, targetUserId],
                                 updatedAt: serverTimestamp(),

@@ -17,12 +17,15 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (request.auth.token.email == "videosonli5@gmail.com" || 
-         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner");
+         (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner"));
     }
 
     function isModerator() {
       return isAuthenticated() && 
-        (isAdmin() || get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator");
+        (isAdmin() || 
+         (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator"));
     }
 
     function isValidEmail(email) {
@@ -93,7 +96,7 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated();
         allow update: if isAuthenticated();
-        allow delete: if isAuthenticated() && isAdmin();
+        allow delete: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
       }
 
       match /memories/{memoryId} {
@@ -171,6 +174,8 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants;
         allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId;
+        allow update: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+        allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
       }
     }
 

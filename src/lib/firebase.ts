@@ -6,13 +6,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, "ai-studio-a1e3664b-cfeb-439f-9586-79684184b481");
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Secondary database for AI Chats to distribute load
-export const dbChat = getFirestore(app, "ai-chat-shard");
-
-// Third database for Private User-to-User Chats to further distribute load
-export const dbPrivate = getFirestore(app, "private-chat-shard");
+// Use the same database for shards for now to ensure security rules are applied correctly
+export const dbChat = db;
+export const dbPrivate = db;
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);

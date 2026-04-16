@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, dbPrivate, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon } from 'lucide-react';
+import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { addNotification } from '../lib/gamification';
 import { playSound } from '../lib/sounds';
@@ -59,6 +59,12 @@ export default function Messages() {
   const [messageMode, setMessageMode] = useState<'direct' | 'group'>('direct');
   const [isCreateDirectOpen, setIsCreateDirectOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Edit/Delete State
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   // Initialize Gemini
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -414,7 +420,7 @@ export default function Messages() {
       const result = await model.generateContent(prompt);
       const responseText = result.response.text();
 
-      await addDoc(collection(db, `private_chats/${activeChat.id}/messages`), {
+      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
         senderId: bot.id,
         senderName: bot.name,
         content: responseText,
@@ -422,7 +428,7 @@ export default function Messages() {
         createdAt: serverTimestamp()
       });
 
-      await updateDoc(doc(db, 'private_chats', activeChat.id), {
+      await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
         lastMessage: responseText,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -430,6 +436,32 @@ export default function Messages() {
 
     } catch (err) {
       console.error('Error getting bot response:', err);
+    }
+  };
+
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!activeChat || !newContent.trim() || !user) return;
+    try {
+      const messageRef = doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId);
+      await updateDoc(messageRef, {
+        content: newContent.trim(),
+        updatedAt: serverTimestamp()
+      });
+      setEditingMessageId(null);
+      playSound('success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `private_chats/${activeChat.id}/messages/${messageId}`);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!activeChat) return;
+    try {
+      await deleteDoc(doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId));
+      setMessageToDelete(null);
+      playSound('success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `private_chats/${activeChat.id}/messages/${messageId}`);
     }
   };
 
@@ -569,26 +601,93 @@ export default function Messages() {
                 </div>
               ) : (
                 messages.map((msg) => (
-                  <div key={msg.id} className={`flex flex-col ${msg.senderId === user?.uid ? 'items-end' : 'items-start'}`}>
+                  <div key={msg.id} className={`flex flex-col group ${msg.senderId === user?.uid ? 'items-end' : 'items-start'}`}>
                     {activeChat.type === 'group' && msg.senderId !== user?.uid && (
                       <span className="text-[10px] text-zinc-500 mb-1 ml-1">{msg.senderName || 'User'}</span>
                     )}
-                    <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${
-                      msg.senderId === user?.uid 
-                        ? 'bg-indigo-600 text-white rounded-tr-none' 
-                        : msg.isBot 
-                          ? 'bg-purple-600/20 border border-purple-500/30 text-purple-200 rounded-tl-none'
-                          : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
-                    }`}>
-                      {msg.imageUrl && (
-                        <img 
-                          src={msg.imageUrl} 
-                          alt="" 
-                          className="rounded-lg mb-2 max-w-full h-auto border border-white/10" 
-                          referrerPolicy="no-referrer"
-                        />
+                    <div className="relative flex items-center gap-2 max-w-[90%] md:max-w-[80%]">
+                      {msg.senderId === user?.uid && !editingMessageId && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingMessageId(msg.id);
+                              setEditContent(msg.content);
+                            }}
+                            className="p-1.5 text-zinc-500 hover:text-white transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setMessageToDelete(msg.id)}
+                            className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
-                      {msg.content}
+
+                      <div className="w-full">
+                        {editingMessageId === msg.id ? (
+                          <div className="flex flex-col gap-2 min-w-[200px] bg-zinc-800 p-3 rounded-2xl border border-indigo-500">
+                            <textarea
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm focus:outline-none resize-none"
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => setEditingMessageId(null)}
+                                className="p-1.5 hover:bg-zinc-700 rounded-lg text-zinc-400"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEditMessage(msg.id, editContent)}
+                                className="p-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`p-3 rounded-2xl text-sm ${
+                            msg.senderId === user?.uid 
+                              ? 'bg-indigo-600 text-white rounded-tr-none' 
+                              : msg.isBot 
+                                ? 'bg-purple-600/20 border border-purple-500/30 text-purple-200 rounded-tl-none'
+                                : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
+                          }`}>
+                            {msg.imageUrl && (
+                              <img 
+                                src={msg.imageUrl} 
+                                alt="" 
+                                className="rounded-lg mb-2 max-w-full h-auto border border-white/10" 
+                                referrerPolicy="no-referrer"
+                              />
+                            )}
+                            {msg.content}
+                            {msg.createdAt?.seconds && (
+                              <div className={`text-[10px] mt-1 ${msg.senderId === user?.uid ? 'text-indigo-200 text-right' : 'text-zinc-500'}`}>
+                                {new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {msg.senderId !== user?.uid && !editingMessageId && isOwner && (
+                        <button
+                          onClick={() => setMessageToDelete(msg.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-red-500 transition-all"
+                          title="Delete (Admin)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -775,6 +874,42 @@ export default function Messages() {
               >
                 {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Create Group'}
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Delete Message Confirmation Modal */}
+      <AnimatePresence>
+        {messageToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl max-w-sm w-full shadow-2xl space-y-6"
+            >
+              <div className="flex items-center gap-3 text-red-500">
+                <Trash2 className="w-6 h-6" />
+                <h3 className="text-xl font-bold text-white">Delete Message</h3>
+              </div>
+              <p className="text-zinc-400 text-sm">
+                Are you sure you want to delete this message? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setMessageToDelete(null)}
+                  className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteMessage(messageToDelete)}
+                  className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all"
+                >
+                  Delete
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

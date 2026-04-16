@@ -205,7 +205,7 @@ export function Chat() {
     setIsFetchingRecent(true);
     try {
       // Get recent chats to find characters the user has talked with
-      const chatsRef = collection(db, 'chats');
+      const chatsRef = collection(dbChat, 'chats');
       const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(20));
       const snapshot = await getDocs(q);
       
@@ -449,7 +449,7 @@ export function Chat() {
       const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
       await Promise.all(deletePromises);
 
-      await addDoc(collection(db, `chats/${chatId}/messages`), {
+      await addDoc(collection(dbChat, `chats/${chatId}/messages`), {
         chatId,
         role: 'model',
         characterId: primaryChar.id,
@@ -582,7 +582,7 @@ export function Chat() {
 
     try {
       // 1. Update the message itself
-      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+      const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
       await setDoc(messageRef, {
         content: newContent.trim(),
         updatedAt: serverTimestamp()
@@ -705,7 +705,7 @@ export function Chat() {
           setStreamingText(fullAiResponse);
         }
 
-        const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
           content: fullAiResponse,
           updatedAt: serverTimestamp()
@@ -738,7 +738,7 @@ export function Chat() {
           setStreamingText(fullAiResponse);
         }
 
-        const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
         await setDoc(messageRef, {
           content: fullAiResponse,
           updatedAt: serverTimestamp()
@@ -762,7 +762,7 @@ export function Chat() {
     if (!chatId) return;
     
     try {
-      const messageRef = doc(db, `chats/${chatId}/messages`, messageId);
+      const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
       await deleteDoc(messageRef);
       setMessageToDelete(null);
     } catch (error: any) {
@@ -856,7 +856,7 @@ export function Chat() {
       }
 
       try {
-        await setDoc(doc(db, 'chats', chatId), {
+        await setDoc(doc(dbChat, 'chats', chatId), {
           updatedAt: serverTimestamp()
         }, { merge: true });
       } catch (e) {
@@ -1004,7 +1004,7 @@ export function Chat() {
           
           for (let i = 0; i < creatorIdsArray.length; i += 30) {
             const chunk = creatorIdsArray.slice(i, i + 30);
-            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
+            const profilesQ = query(collection(db, 'profiles'), where('__name__', 'in', chunk));
             const profilesSnap = await getDocs(profilesQ);
             profilesSnap.forEach(pDoc => {
               const pData = pDoc.data();
@@ -1170,7 +1170,7 @@ export function Chat() {
         setMemories(mems);
 
         // 5. Fetch chat history (one-time)
-        const chatsRef = collection(db, 'chats');
+        const chatsRef = collection(dbChat, 'chats');
         const hq = query(
           chatsRef, 
           where('userId', '==', user.uid), 
@@ -1332,7 +1332,7 @@ export function Chat() {
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
-        await setDoc(doc(db, `chats/${chatId}/messages`, newUserMessage.id), {
+        await setDoc(doc(dbChat, `chats/${chatId}/messages`, newUserMessage.id), {
           ...newUserMessage,
           createdAt: serverTimestamp()
         });

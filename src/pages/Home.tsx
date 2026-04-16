@@ -137,7 +137,7 @@ export function Home() {
     if (!chatToDelete) return;
     setIsDeletingChat(chatToDelete);
     try {
-      await deleteDoc(doc(db, 'chats', chatToDelete));
+      await deleteDoc(doc(dbChat, 'chats', chatToDelete));
       setRecentChats(prev => prev.filter(c => c.id !== chatToDelete));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatToDelete}`);
