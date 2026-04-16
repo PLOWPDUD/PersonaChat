@@ -3,7 +3,7 @@ import { collection, query, where, getDocs, limit, orderBy } from 'firebase/fire
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { getCachedProfile, setCachedProfiles, getCachedData, updateGlobalCache } from '../lib/cache';
 import { getLocalCharacters } from '../lib/localStorage';
-import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star } from 'lucide-react';
+import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
@@ -322,12 +322,14 @@ export function Search() {
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <AnimatePresence mode="wait">
-            {quotaExceeded ? (
-          <div className="p-4">
-            <QuotaExceeded />
-          </div>
-        ) : (
-              <motion.div
+            {quotaExceeded && (
+              <div className="mb-6 p-4 bg-amber-600/20 border border-amber-600/30 rounded-2xl flex items-center gap-3 text-amber-500 font-medium">
+                <ShieldAlert className="w-5 h-5 flex-shrink-0" />
+                <span>Search limit reached. Showing cached results.</span>
+              </div>
+            )}
+            
+            <motion.div
                 key={activeTab}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -430,7 +432,7 @@ export function Search() {
                   </div>
                 )}
               </motion.div>
-            )}
+            
             {isGroupMode && selectedCharIds.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}

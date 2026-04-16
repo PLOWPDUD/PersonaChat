@@ -568,9 +568,16 @@ export function Home() {
         </div>
       </div>
 
-      {quotaExceeded ? (
-        <QuotaExceeded />
-      ) : loading ? (
+      {quotaExceeded && (
+        <div className="mb-6 bg-amber-600/20 border border-amber-600/30 px-6 py-4 rounded-3xl flex items-center justify-between">
+          <div className="flex items-center gap-3 text-amber-500 font-medium text-sm sm:text-base">
+            <ShieldAlert className="w-6 h-6 flex-shrink-0" />
+            <span>Firestore limit reached. You can still chat and manage local characters, but community sync is limited.</span>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 h-64 animate-pulse">

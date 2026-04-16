@@ -162,9 +162,8 @@ export function CreateCharacter() {
 
     try {
       const creatorName = profile?.displayName || user.displayName || 'Anonymous User';
-      const isPrivate = formData.visibility === 'private';
-
-      if (isPrivate) {
+      
+      const saveLocal = () => {
         const id = characterId || `local_${Date.now()}`;
         const existingLocal = characterId?.startsWith('local_') ? getLocalCharacterById(characterId) : null;
         
@@ -178,64 +177,74 @@ export function CreateCharacter() {
           likesCount: existingLocal?.likesCount || 0,
           interactionsCount: existingLocal?.interactionsCount || 0,
           name_lowercase: formData.name.toLowerCase(),
-          visibility: 'private'
+          visibility: formData.visibility
         };
         
         saveLocalCharacter(localChar);
-        
-        // If it was a Firestore character, we don't delete it automatically 
-        // to prevent accidental data loss, but it's now "forked" to local.
-        
-        navigate(`/chat/${id}`);
-        return;
-      }
+        return id;
+      };
 
-      if (characterId && !characterId.startsWith('local_')) {
-        // Update existing Firestore character
-        const charRef = doc(db, 'characters', characterId);
-        await updateDoc(charRef, {
-          ...formData,
-          creatorName,
-          updatedAt: serverTimestamp()
-        });
-        
-        navigate(`/chat/${characterId}`);
-      } else {
-        // Create new Firestore character
-        const charData = {
-          ...formData,
-          creatorId: user.uid,
-          creatorName,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          likesCount: 0,
-          interactionsCount: 0,
-          name_lowercase: formData.name.toLowerCase()
-        };
-
-        const docRef = await addDoc(collection(db, 'characters'), charData);
-        
-        // If owner creates a public character, notify everyone
-        if (user.email === 'videosonli5@gmail.com' && formData.visibility === 'public') {
-          try {
-            await addDoc(collection(db, 'global_notifications'), {
-              type: 'new_character',
-              title: 'New Character from Owner!',
-              message: `${creatorName} has just released a new character: ${formData.name}`,
-              characterId: docRef.id,
-              createdAt: serverTimestamp()
-            });
-          } catch (e) {
-            console.error("Failed to create global notification:", e);
+      try {
+        if (characterId && !characterId.startsWith('local_')) {
+          // Update existing Firestore character
+          const charRef = doc(db, 'characters', characterId);
+          await updateDoc(charRef, {
+            ...formData,
+            creatorName,
+            updatedAt: serverTimestamp()
+          });
+          
+          if (formData.visibility === 'private') {
+            saveLocal();
           }
+          
+          navigate(`/chat/${characterId}`);
+        } else {
+          // Create new Firestore character
+          const charData = {
+            ...formData,
+            creatorId: user.uid,
+            creatorName,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            likesCount: 0,
+            interactionsCount: 0,
+            name_lowercase: formData.name.toLowerCase()
+          };
+
+          const docRef = await addDoc(collection(db, 'characters'), charData);
+          
+          // If owner creates a public character, notify everyone
+          if (user.email === 'videosonli5@gmail.com' && formData.visibility === 'public') {
+            try {
+              await addDoc(collection(db, 'global_notifications'), {
+                type: 'new_character',
+                title: 'New Character from Owner!',
+                message: `${creatorName} has just released a new character: ${formData.name}`,
+                characterId: docRef.id,
+                createdAt: serverTimestamp()
+              });
+            } catch (e) {
+              console.error("Failed to create global notification:", e);
+            }
+          }
+          
+          // Always save locally for private characters too
+          if (formData.visibility === 'private') {
+            saveLocal();
+          }
+
+          // If it was a local character being made public, delete the old local one
+          if (characterId?.startsWith('local_')) {
+            deleteLocalCharacter(characterId);
+          }
+          
+          navigate(`/chat/${docRef.id}`);
         }
-        
-        // If it was a local character being made public, delete the local one
-        if (characterId?.startsWith('local_')) {
-          deleteLocalCharacter(characterId);
-        }
-        
-        navigate(`/chat/${docRef.id}`);
+      } catch (fbErr: any) {
+        console.warn("Firestore save failed, falling back to local storage:", fbErr);
+        const localId = saveLocal();
+        navigate(`/chat/${localId}`);
       }
     } catch (err: any) {
       console.error(err);

@@ -75,7 +75,9 @@ service cloud.firestore {
     }
 
     match /characters/{characterId} {
-      allow read: if true; // Public characters
+      allow read: if resource.data.visibility == 'public' || 
+                   (isAuthenticated() && resource.data.creatorId == request.auth.uid) || 
+                   isAdmin();
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());

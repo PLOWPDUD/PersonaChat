@@ -6,7 +6,7 @@ export interface LocalCharacter {
   greeting: string;
   description: string;
   personality: string;
-  visibility: 'private';
+  visibility: 'public' | 'private' | 'unlisted';
   category: string;
   creatorId: string;
   creatorName: string;

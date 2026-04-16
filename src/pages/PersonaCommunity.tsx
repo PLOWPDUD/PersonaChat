@@ -944,16 +944,18 @@ export default function PersonaCommunity() {
     );
   }
 
-  if (quotaExceeded) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <QuotaExceeded />
-      </div>
-    );
-  }
-
   return (
     <React.Fragment>
+      {quotaExceeded && (
+        <div className="max-w-6xl mx-auto mb-6 px-4">
+          <div className="bg-amber-600/20 border border-amber-600/30 px-6 py-4 rounded-3xl flex items-center justify-between">
+            <div className="flex items-center gap-3 text-amber-500 font-medium text-sm sm:text-base">
+              <ShieldAlert className="w-6 h-6 flex-shrink-0" />
+              <span>Firestore limit reached. You can still browse cached posts and try to post, but some actions might fail.</span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
         <div className="lg:col-span-2 space-y-8">
         <div className="flex items-center justify-between">
