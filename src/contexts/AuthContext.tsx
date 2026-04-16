@@ -12,7 +12,9 @@ interface AuthContextType {
   loading: boolean;
   isOwner: boolean;
   isModerator: boolean;
+  isBanned: boolean;
   quotaExceeded: boolean;
+  setQuotaExceeded: (exceeded: boolean) => void;
   becomeModerator: (password: string) => boolean;
   updateProfile: (newProfile: any) => Promise<void>;
   logOut: () => Promise<void>;
@@ -24,7 +26,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true, 
   isOwner: false,
   isModerator: false,
+  isBanned: false,
   quotaExceeded: false,
+  setQuotaExceeded: () => {},
   becomeModerator: () => false,
   updateProfile: async () => {},
   logOut: async () => {}
@@ -50,6 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isOwner = roles.isOwner;
   const isModerator = roles.isModerator;
+  const isBanned = !!profile?.isBanned && (!profile.banExpiresAt || new Date(profile.banExpiresAt.toDate()) > new Date());
 
   const becomeModerator = (password: string) => {
     const correctPassword = (import.meta as any).env.VITE_MODERATOR_PASSWORD || 'admin123';
@@ -243,7 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, quotaExceeded, becomeModerator, updateProfile, logOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, becomeModerator, updateProfile, logOut }}>
       {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );

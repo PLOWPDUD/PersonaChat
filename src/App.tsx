@@ -11,6 +11,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/Layout';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Login } from './pages/Login';
+import { BannedScreen } from './pages/BannedScreen';
 import { Home } from './pages/Home';
 import { CreateCharacter } from './pages/CreateCharacter';
 import { Personas } from './pages/Personas';
@@ -23,12 +24,13 @@ import { Settings } from './pages/Settings';
 import PersonaCommunity from './pages/PersonaCommunity';
 import Messages from './pages/Messages';
 import { NotFound } from './pages/NotFound';
+import { Rules } from './pages/Rules';
 
 import { QuotaExceeded } from './components/QuotaExceeded';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, quotaExceeded } = useAuth();
+  const { user, loading, quotaExceeded, isBanned } = useAuth();
   
   if (loading) {
     return <LoadingScreen />;
@@ -40,6 +42,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
         <QuotaExceeded />
       </div>
     );
+  }
+  
+  if (isBanned) {
+    return <BannedScreen />;
   }
   
   if (!user) {
@@ -57,6 +63,7 @@ export default function App() {
           <Router>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/banned" element={<BannedScreen />} />
               
               <Route path="/" element={
                 <ProtectedRoute>
@@ -73,6 +80,7 @@ export default function App() {
                 <Route path="settings" element={<Settings />} />
                 <Route path="stats" element={<Stats />} />
                 <Route path="community" element={<PersonaCommunity />} />
+                <Route path="rules" element={<Rules />} />
                 <Route path="messages" element={<Messages />} />
                 <Route path="admin" element={<Admin />} />
                 <Route path="chat/:characterId" element={<Chat />} />

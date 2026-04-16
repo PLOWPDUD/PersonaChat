@@ -318,15 +318,21 @@ export default function PersonaCommunity() {
           const updatedLikes = new Set(currentLikes);
           const updatedChecked = new Set(checkedPostIds);
           
-          for (const postId of newUncheckedIds) {
-            updatedChecked.add(postId);
-            // Only fetch if it's not already known to be liked from cache
-            if (!updatedLikes.has(postId)) {
-              const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
-              if (likeDoc.exists()) {
-                updatedLikes.add(postId);
+          // Batch check likes (max 30 per query)
+          for (let i = 0; i < newUncheckedIds.length; i += 30) {
+            const batch = newUncheckedIds.slice(i, i + 30);
+            // We can't use 'in' on subcollections easily across parents, 
+            // but we can at least parallelize the getDoc calls or use a different approach.
+            // Actually, the most efficient way without schema change is to parallelize.
+            await Promise.all(batch.map(async (postId) => {
+              updatedChecked.add(postId);
+              if (!updatedLikes.has(postId)) {
+                const likeDoc = await getDoc(doc(db, `community_posts/${postId}/likes/${user.uid}`));
+                if (likeDoc.exists()) {
+                  updatedLikes.add(postId);
+                }
               }
-            }
+            }));
           }
           
           setCheckedPostIds(updatedChecked);
@@ -533,25 +539,22 @@ export default function PersonaCommunity() {
     const likeRef = doc(db, `community_posts/${postId}/likes/${user.uid}`);
     const postRef = doc(db, 'community_posts', postId);
 
+    // Optimistic update
+    setUserLikes(prev => {
+      const next = new Set(prev);
+      if (isLiked) next.delete(postId);
+      else next.add(postId);
+      setCachedUserLikes(next);
+      return next;
+    });
+
     try {
       if (isLiked) {
         await deleteDoc(likeRef);
         await updateDoc(postRef, { likesCount: increment(-1) });
-        setUserLikes(prev => {
-          const next = new Set(prev);
-          next.delete(postId);
-          setCachedUserLikes(next);
-          return next;
-        });
       } else {
         await setDoc(likeRef, { createdAt: serverTimestamp() });
         await updateDoc(postRef, { likesCount: increment(1) });
-        setUserLikes(prev => {
-          const next = new Set(prev);
-          next.add(postId);
-          setCachedUserLikes(next);
-          return next;
-        });
         
         // Notify author and award XP
         const postSnap = await getDoc(postRef);
@@ -569,6 +572,14 @@ export default function PersonaCommunity() {
         playSound('like');
       }
     } catch (error) {
+      // Rollback on error
+      setUserLikes(prev => {
+        const next = new Set(prev);
+        if (isLiked) next.add(postId);
+        else next.delete(postId);
+        setCachedUserLikes(next);
+        return next;
+      });
       handleFirestoreError(error, OperationType.WRITE, `community_posts/${postId}/likes`);
     }
   };
@@ -579,23 +590,20 @@ export default function PersonaCommunity() {
     const isSaved = userSaves.has(postId);
     const saveRef = doc(db, `users/${user.uid}/saved_posts/${postId}`);
 
+    // Optimistic update
+    setUserSaves(prev => {
+      const next = new Set(prev);
+      if (isSaved) next.delete(postId);
+      else next.add(postId);
+      setCachedUserSaves(next);
+      return next;
+    });
+
     try {
       if (isSaved) {
         await deleteDoc(saveRef);
-        setUserSaves(prev => {
-          const next = new Set(prev);
-          next.delete(postId);
-          setCachedUserSaves(next);
-          return next;
-        });
       } else {
         await setDoc(saveRef, { createdAt: serverTimestamp() });
-        setUserSaves(prev => {
-          const next = new Set(prev);
-          next.add(postId);
-          setCachedUserSaves(next);
-          return next;
-        });
 
         // Notify author
         const post = posts.find(p => p.id === postId);
@@ -604,6 +612,14 @@ export default function PersonaCommunity() {
         }
       }
     } catch (error) {
+      // Rollback on error
+      setUserSaves(prev => {
+        const next = new Set(prev);
+        if (isSaved) next.add(postId);
+        else next.delete(postId);
+        setCachedUserSaves(next);
+        return next;
+      });
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/saved_posts`);
     }
   };
@@ -1170,6 +1186,7 @@ export default function PersonaCommunity() {
                         alt="" 
                         className="w-full h-full object-cover cursor-pointer" 
                         referrerPolicy="no-referrer" 
+                        loading="lazy"
                       />
                     </div>
                   ))}

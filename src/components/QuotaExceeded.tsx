@@ -9,6 +9,11 @@ export const QuotaExceeded = () => (
     <p className="text-red-600 mt-2 max-w-md">
       We've hit our daily usage limit for the free tier. Please check back later or contact the administrator to enable billing.
     </p>
+    <div className="mt-6 p-4 bg-white/50 rounded-xl border border-red-100">
+      <p className="text-sm text-red-800 font-medium">
+        💡 Tip: You can "Remix" this app from the AI Studio menu to get a fresh project with a new quota!
+      </p>
+    </div>
     <QuotaResetTimer />
   </div>
 );

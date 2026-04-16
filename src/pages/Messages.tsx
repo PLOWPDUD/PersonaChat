@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, dbPrivate, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon } from 'lucide-react';
@@ -67,40 +67,25 @@ export default function Messages() {
     if (!user) return;
 
     const q = query(
-      collection(db, 'private_chats'),
+      collection(dbPrivate, 'private_chats'),
       where('participants', 'array-contains', user.uid),
       orderBy('updatedAt', 'desc'),
       limit(20)
     );
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const chatList = await Promise.all(snapshot.docs.map(async (chatDoc) => {
+      const chatList = snapshot.docs.map((chatDoc) => {
         const data = chatDoc.data();
         
         let otherUser = null;
         if (data.type !== 'group') {
           const otherUserId = data.participants.find((id: string) => id !== user.uid);
-          if (otherUserId) {
-            // Check cache first
-            const cached = getCachedProfile(otherUserId);
-            if (cached) {
-              otherUser = cached;
-            } else {
-              try {
-                const userSnap = await getDoc(doc(db, 'profiles', otherUserId));
-                if (userSnap.exists()) {
-                  const userData = userSnap.data();
-                  otherUser = {
-                    uid: otherUserId,
-                    displayName: userData.displayName || 'User',
-                    photoURL: userData.photoURL || ''
-                  };
-                  setCachedProfile(otherUserId, otherUser);
-                }
-              } catch (err) {
-                console.error('Error fetching chat user:', err);
-              }
-            }
+          if (otherUserId && data.participantInfo?.[otherUserId]) {
+            otherUser = {
+              uid: otherUserId,
+              displayName: data.participantInfo[otherUserId].displayName,
+              photoURL: data.participantInfo[otherUserId].photoURL
+            };
           }
         }
 
@@ -109,7 +94,7 @@ export default function Messages() {
           ...data,
           otherUser
         } as Chat;
-      }));
+      });
       setChats(chatList);
       setLoading(false);
     }, (error) => {
@@ -206,7 +191,7 @@ export default function Messages() {
         lastMessageAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, 'private_chats'), chatData);
+      const docRef = await addDoc(collection(dbPrivate, 'private_chats'), chatData);
       
       // Notify all participants
       const notificationPromises = selectedUsers.map(uId => 
@@ -234,7 +219,7 @@ export default function Messages() {
     try {
       // Check if chat already exists
       const q = query(
-        collection(db, 'private_chats'),
+        collection(dbPrivate, 'private_chats'),
         where('type', '==', 'direct'),
         where('participants', 'array-contains', user.uid)
       );
@@ -244,14 +229,28 @@ export default function Messages() {
       if (existingChat) {
         setActiveChat({ id: existingChat.id, ...existingChat.data() } as any);
       } else {
+        // Fetch target user info for denormalization
+        const targetSnap = await getDoc(doc(db, 'profiles', targetUserId));
+        const targetData = targetSnap.data();
+
         const chatData = {
           type: 'direct',
           participants: [user.uid, targetUserId],
+          participantInfo: {
+            [user.uid]: {
+              displayName: profile?.displayName || 'User',
+              photoURL: profile?.photoURL || ''
+            },
+            [targetUserId]: {
+              displayName: targetData?.displayName || 'User',
+              photoURL: targetData?.photoURL || ''
+            }
+          },
           updatedAt: serverTimestamp(),
           lastMessage: 'Chat started',
           lastMessageAt: serverTimestamp()
         };
-        const docRef = await addDoc(collection(db, 'private_chats'), chatData);
+        const docRef = await addDoc(collection(dbPrivate, 'private_chats'), chatData);
         setActiveChat({ id: docRef.id, ...chatData } as any);
 
         // Notify target user
@@ -278,7 +277,7 @@ export default function Messages() {
     playSound('click');
 
     try {
-      await addDoc(collection(db, `private_chats/${activeChat.id}/messages`), {
+      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
         senderId: user.uid,
         senderName: profile?.displayName || 'User',
         content,
@@ -286,7 +285,7 @@ export default function Messages() {
         createdAt: serverTimestamp()
       });
 
-      await updateDoc(doc(db, 'private_chats', activeChat.id), {
+      await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
         lastMessage: imageUrl ? 'Sent an image' : content,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -439,7 +438,7 @@ export default function Messages() {
 
     setLoadingMessages(true);
     const q = query(
-      collection(db, `private_chats/${activeChat.id}/messages`),
+      collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
       orderBy('createdAt', 'asc'),
       limit(50)
     );

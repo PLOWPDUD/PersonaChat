@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
+import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
@@ -252,7 +252,7 @@ export function Chat() {
     if (!chatId) return;
     
     try {
-      const chatRef = doc(db, 'chats', chatId);
+      const chatRef = doc(dbChat, 'chats', chatId);
       const currentIds = characters.map(c => c.id);
       if (currentIds.includes(char.id)) return;
 
@@ -381,7 +381,7 @@ export function Chat() {
     
     setLoading(true);
     try {
-      const newChatRef = doc(collection(db, 'chats'));
+      const newChatRef = doc(collection(dbChat, 'chats'));
       const newChatId = newChatRef.id;
       
       const chatData = {
@@ -406,7 +406,7 @@ export function Chat() {
 
       try {
         await setDoc(newChatRef, chatData);
-        await addDoc(collection(db, `chats/${newChatId}/messages`), initialMessage);
+        await addDoc(collection(dbChat, `chats/${newChatId}/messages`), initialMessage);
       } catch (e: any) {
         if (e?.message?.includes('Quota limit exceeded') || e?.code === 'resource-exhausted') {
           console.warn("Quota exceeded during chat creation, using local mode");
@@ -443,7 +443,7 @@ export function Chat() {
     
     setIsClearing(true);
     try {
-      const messagesRef = collection(db, `chats/${chatId}/messages`);
+      const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
       const snapshot = await getDocs(query(messagesRef));
       
       const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
@@ -523,7 +523,7 @@ export function Chat() {
 
       try {
         if (!isLocalMode && !chatId.startsWith('local_chat_')) {
-          await setDoc(doc(db, `chats/${chatId}/messages`, newMessage.id), {
+          await setDoc(doc(dbChat, `chats/${chatId}/messages`, newMessage.id), {
             ...newMessage,
             createdAt: serverTimestamp()
           });
@@ -550,7 +550,7 @@ export function Chat() {
     
     setIsDeletingChat(true);
     try {
-      await deleteDoc(doc(db, 'chats', chatToDelete));
+      await deleteDoc(doc(dbChat, 'chats', chatToDelete));
       if (chatId === chatToDelete) {
         navigate('/');
       } else {
@@ -598,7 +598,7 @@ export function Chat() {
         const subsequentMessages = messages.slice(messageIndex + 1);
         for (const msg of subsequentMessages) {
           try {
-            await deleteDoc(doc(db, `chats/${chatId}/messages`, msg.id));
+            await deleteDoc(doc(dbChat, `chats/${chatId}/messages`, msg.id));
           } catch (e) {
             console.error('Error deleting subsequent message:', e);
           }
@@ -641,7 +641,7 @@ export function Chat() {
 
         // Update chat timestamp
         try {
-          await setDoc(doc(db, 'chats', chatId), {
+          await setDoc(doc(dbChat, 'chats', chatId), {
             updatedAt: serverTimestamp()
           }, { merge: true });
         } catch (e) {
@@ -881,7 +881,7 @@ export function Chat() {
 
     setIsAddingMemory(true);
     try {
-      await addDoc(collection(db, `chats/${chatId}/memories`), {
+      await addDoc(collection(dbChat, `chats/${chatId}/memories`), {
         chatId,
         content: newMemory.trim(),
         createdAt: serverTimestamp()
@@ -898,7 +898,7 @@ export function Chat() {
   const handleDeleteMemory = async (memoryId: string) => {
     if (!chatId) return;
     try {
-      await deleteDoc(doc(db, `chats/${chatId}/memories`, memoryId));
+      await deleteDoc(doc(dbChat, `chats/${chatId}/memories`, memoryId));
     } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/memories/${memoryId}`);
       setNotification({ message: `Failed to delete memory: ${error.message || 'Unknown error'}`, type: 'error' });
@@ -936,7 +936,7 @@ export function Chat() {
         }
 
         if (currentChatId) {
-          const chatSnap = await getDoc(doc(db, 'chats', currentChatId));
+          const chatSnap = await getDoc(doc(dbChat, 'chats', currentChatId));
           if (chatSnap.exists()) {
             const chatData = chatSnap.data();
             charIds = chatData.characterIds || (chatData.characterId ? [chatData.characterId] : []);
@@ -1079,7 +1079,7 @@ export function Chat() {
             navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
           } else {
             // Try to find the latest chat for this character (including group chats)
-            const chatsRef = collection(db, 'chats');
+            const chatsRef = collection(dbChat, 'chats');
             const q = query(
               chatsRef, 
               where('userId', '==', user.uid), 
@@ -1094,7 +1094,7 @@ export function Chat() {
               navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
             } else {
               // Create new chat if none exists
-              const newChatRef = doc(collection(db, 'chats'));
+              const newChatRef = doc(collection(dbChat, 'chats'));
               currentChatId = newChatRef.id;
               
               const chatData = {
@@ -1119,7 +1119,7 @@ export function Chat() {
 
               try {
                 await setDoc(newChatRef, chatData);
-                await addDoc(collection(db, `chats/${currentChatId}/messages`), initialMessage);
+                await addDoc(collection(dbChat, `chats/${currentChatId}/messages`), initialMessage);
               } catch (e: any) {
                 if (isQuotaError(e)) {
                   console.warn("Quota exceeded during chat creation, using local mode");
@@ -1160,7 +1160,7 @@ export function Chat() {
         setChatId(currentChatId);
 
         // 4. Fetch memories (one-time)
-        const memoriesRef = collection(db, `chats/${currentChatId}/memories`);
+        const memoriesRef = collection(dbChat, `chats/${currentChatId}/memories`);
         const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
         const memSnapshot = await getDocs(memQ);
         const mems: Memory[] = [];
@@ -1216,7 +1216,7 @@ export function Chat() {
       return;
     }
 
-    const messagesRef = collection(db, `chats/${chatId}/messages`);
+    const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
     const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(50));
     
     const unsubscribe = onSnapshot(mq, (snapshot) => {
@@ -1291,7 +1291,7 @@ export function Chat() {
       
       // Save to Firestore
       for (const msg of localMessages) {
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
+        await addDoc(collection(dbChat, `chats/${chatId}/messages`), {
           ...msg,
           createdAt: serverTimestamp()
         });
@@ -1336,7 +1336,7 @@ export function Chat() {
           ...newUserMessage,
           createdAt: serverTimestamp()
         });
-        await updateDoc(doc(db, 'chats', chatId), {
+        await updateDoc(doc(dbChat, 'chats', chatId), {
           updatedAt: serverTimestamp()
         });
       } catch (e: any) {

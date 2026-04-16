@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell, Check, Trash2, Loader2, Award, UserPlus, Heart, MessageSquare, Mail, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function NotificationCenter() {
-  const { user } = useAuth();
+  const { user, setQuotaExceeded } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
@@ -30,12 +30,15 @@ export function NotificationCenter() {
       setNotifications(newNotifications);
       setLoading(false);
     }, (error) => {
+      if (isQuotaError(error)) {
+        setQuotaExceeded(true);
+      }
       console.error('Error fetching notifications:', error);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, setQuotaExceeded]);
 
   const markAsRead = async (id: string) => {
     try {

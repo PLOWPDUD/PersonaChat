@@ -68,22 +68,11 @@ export function Admin() {
         }
 
         const snap = await getDocs(q);
-        const fetchedProfiles: UserProfile[] = [];
+        const fetchedProfiles: UserProfile[] = snap.docs.map(doc => ({
+          id: doc.id,
+          ...(doc.data() as any)
+        } as UserProfile));
         
-        for (const profileDoc of snap.docs) {
-          const profileData = profileDoc.data() as UserProfile;
-          // Fetch their characters (up to 10)
-          const charQ = query(collection(db, 'characters'), where('creatorId', '==', profileDoc.id), limit(10));
-          const charSnap = await getDocs(charQ);
-          const userChars = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-          
-          fetchedProfiles.push({
-            id: profileDoc.id,
-            ...profileData,
-            characters: userChars
-          });
-        }
-
         setProfiles(fetchedProfiles);
         setLastVisible(snap.docs[snap.docs.length - 1]);
         setFirstVisible(snap.docs[0]);
@@ -122,6 +111,32 @@ export function Admin() {
     setIsAuthenticating(false);
   };
 
+  const [banModal, setBanModal] = useState<{ userId: string; isOpen: boolean }>({ userId: '', isOpen: false });
+  const [banReason, setBanReason] = useState('');
+  const [banDuration, setBanDuration] = useState('60'); // minutes
+
+  const handleBanUser = async (userId: string) => {
+    if (!isModerator) return;
+    setUpdatingId(userId);
+    try {
+      const expiresAt = banDuration === 'infinite' ? null : new Date(Date.now() + parseInt(banDuration) * 60000);
+      const profileRef = doc(db, 'profiles', userId);
+      await setDoc(profileRef, { 
+        isBanned: true, 
+        banReason, 
+        banExpiresAt: expiresAt ? new Date(expiresAt) : null,
+        updatedAt: serverTimestamp() 
+      }, { merge: true });
+      setProfiles(prev => prev.map(p => p.id === userId ? { ...p, isBanned: true } : p));
+      setBanModal({ userId: '', isOpen: false });
+      setBanReason('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `profiles/${userId}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (!isOwner) return;
     setUpdatingId(userId);
@@ -131,6 +146,20 @@ export function Admin() {
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, role: newRole } : p));
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `profiles/${userId}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const fetchUserCharacters = async (userId: string) => {
+    setUpdatingId(userId);
+    try {
+      const charQ = query(collection(db, 'characters'), where('creatorId', '==', userId), limit(20));
+      const charSnap = await getDocs(charQ);
+      const userChars = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setProfiles(prev => prev.map(p => p.id === userId ? { ...p, characters: userChars } : p));
+    } catch (error) {
+      console.error('Error fetching user characters:', error);
     } finally {
       setUpdatingId(null);
     }
@@ -326,6 +355,14 @@ export function Admin() {
                     }`}>
                       {profile.role || 'user'}
                     </span>
+                    {isModerator && profile.email !== 'videosonli5@gmail.com' && (
+                      <button
+                        onClick={() => setBanModal({ userId: profile.id, isOpen: true })}
+                        className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                      >
+                        <ShieldAlert className="w-5 h-5" />
+                      </button>
+                    )}
                     {isOwner && profile.email !== 'videosonli5@gmail.com' && (
                       <select
                         value={profile.role || 'user'}
@@ -342,10 +379,21 @@ export function Admin() {
                 </div>
 
                 <div className="p-6 bg-zinc-900/50">
-                  <h4 className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Bot className="w-4 h-4" />
-                    Characters ({profile.characters?.length || 0})
-                  </h4>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-zinc-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                      <Bot className="w-4 h-4" />
+                      Characters ({profile.characters?.length || 0})
+                    </h4>
+                    {!profile.characters && (
+                      <button
+                        onClick={() => fetchUserCharacters(profile.id)}
+                        disabled={updatingId === profile.id}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-widest flex items-center gap-1"
+                      >
+                        {updatingId === profile.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Load Characters'}
+                      </button>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {profile.characters && profile.characters.length > 0 ? (
                       profile.characters.map((char: any) => (
@@ -486,6 +534,48 @@ export function Admin() {
           )}
         </div>
       )}
-    </div>
+
+      {banModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 w-full max-w-md shadow-2xl">
+              <h2 className="text-xl font-bold text-white mb-4">Ban User</h2>
+              <div className="space-y-4">
+                <textarea
+                  value={banReason}
+                  onChange={(e) => setBanReason(e.target.value)}
+                  placeholder="Reason for ban..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                  rows={3}
+                />
+                <select
+                  value={banDuration}
+                  onChange={(e) => setBanDuration(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="1">1 Minute</option>
+                  <option value="60">1 Hour</option>
+                  <option value="1440">1 Day</option>
+                  <option value="10080">1 Week</option>
+                  <option value="infinite">Infinite</option>
+                </select>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setBanModal({ userId: '', isOpen: false })}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleBanUser(banModal.userId)}
+                    className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all"
+                  >
+                    Ban User
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
   );
 }

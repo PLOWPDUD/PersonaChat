@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
+import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { addNotification } from '../lib/gamification';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
@@ -247,7 +247,7 @@ export function Home() {
 
     try {
       if (tab === 'recent') {
-        const chatsRef = collection(db, 'chats');
+        const chatsRef = collection(dbChat, 'chats');
         const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(15));
         const snapshot = await getDocs(q);
         
@@ -258,14 +258,6 @@ export function Home() {
           const chatData = chatDoc.data();
           const charId = chatData.characterId || (chatData.characterIds && chatData.characterIds[0]);
           
-          // Check cache for creatorName
-          const cachedName = chatData.creatorId ? getCachedProfile(chatData.creatorId) : null;
-          const creatorName = chatData.creatorName || cachedName || 'Unknown';
-
-          if (!chatData.creatorName && chatData.creatorId && !cachedName) {
-            creatorIds.add(chatData.creatorId);
-          }
-
           chats.push({
             id: chatDoc.id,
             ...chatData,
@@ -274,38 +266,13 @@ export function Home() {
               id: charId || 'unknown', 
               name: chatData.characterName || 'Unknown Character', 
               avatarUrl: chatData.characterAvatarUrl || '',
-              creatorName: creatorName,
+              creatorName: chatData.creatorName || 'Unknown',
               likesCount: chatData.likesCount || 0,
               interactionsCount: chatData.interactionsCount || 0,
               averageRating: chatData.averageRating
             }
           });
         });
-
-        // Fetch missing creator names from profiles
-        if (creatorIds.size > 0) {
-          const creatorIdsArray = Array.from(creatorIds);
-          const profiles: Record<string, string> = {};
-          
-          for (let i = 0; i < creatorIdsArray.length; i += 30) {
-            const chunk = creatorIdsArray.slice(i, i + 30);
-            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
-            const profilesSnap = await getDocs(profilesQ);
-            profilesSnap.forEach(pDoc => {
-              const pData = pDoc.data();
-              profiles[pDoc.id] = pData.displayName || 'Anonymous';
-            });
-          }
-
-          // Update cache
-          setCachedProfiles(profiles);
-
-          chats.forEach(chat => {
-            if (chat.character.creatorName === 'Unknown' && chat.creatorId && profiles[chat.creatorId]) {
-              chat.character.creatorName = profiles[chat.creatorId];
-            }
-          });
-        }
         
         setRecentChats(chats);
         updateGlobalCache('recent', chats);
@@ -339,46 +306,13 @@ export function Home() {
         
         snapshot.forEach((doc) => {
           const data = doc.data() as Record<string, any>;
-          const cachedName = data.creatorId ? getCachedProfile(data.creatorId) : null;
-          const creatorName = data.creatorName || cachedName;
           
           chars.push({ 
             id: doc.id, 
             ...data,
-            creatorName: creatorName
+            creatorName: data.creatorName || 'Unknown'
           } as Character);
-
-          if (!data.creatorName && data.creatorId && !cachedName) {
-            creatorIds.add(data.creatorId);
-          }
         });
-
-        // Fetch missing creator names from profiles
-        if (creatorIds.size > 0) {
-          const creatorIdsArray = Array.from(creatorIds);
-          const profiles: Record<string, string> = {};
-          
-          // Batch fetch profiles (max 30 per query)
-          for (let i = 0; i < creatorIdsArray.length; i += 30) {
-            const chunk = creatorIdsArray.slice(i, i + 30);
-            const profilesQ = query(collection(db, 'profiles'), where('uid', 'in', chunk));
-            const profilesSnap = await getDocs(profilesQ);
-            profilesSnap.forEach(pDoc => {
-              const pData = pDoc.data();
-              profiles[pDoc.id] = pData.displayName || 'Anonymous';
-            });
-          }
-
-          // Update cache
-          setCachedProfiles(profiles);
-
-          // Update characters with fetched names
-          chars.forEach(char => {
-            if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
-              char.creatorName = profiles[char.creatorId];
-            }
-          });
-        }
 
         // Add local characters if tab is 'mine'
         if (tab === 'mine') {
@@ -447,7 +381,7 @@ export function Home() {
     }
     setIsFetchingRecent(true);
     try {
-      const chatsRef = collection(db, 'chats');
+      const chatsRef = collection(dbChat, 'chats');
       const q = query(chatsRef, where('userId', '==', user.uid), limit(20));
       const snapshot = await getDocs(q);
       
@@ -534,7 +468,7 @@ export function Home() {
     setIsCreating(true);
     try {
       const charIds = selectedCharacters.map(c => c.id);
-      const chatRef = await addDoc(collection(db, 'chats'), {
+      const chatRef = await addDoc(collection(dbChat, 'chats'), {
         userId: user.uid,
         characterIds: charIds,
         characterId: charIds[0], // legacy support for single-character views
