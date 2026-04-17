@@ -6,7 +6,7 @@ import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, 
 import { motion, AnimatePresence } from 'motion/react';
 import { addNotification } from '../lib/gamification';
 import { playSound } from '../lib/sounds';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { moderateImage } from '../services/aiService';
 import { getCachedProfile, setCachedProfile } from '../lib/cache';
 
@@ -67,7 +67,7 @@ export default function Messages() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   // Initialize Gemini
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   useEffect(() => {
     if (!user) return;
@@ -400,8 +400,6 @@ export default function Messages() {
     if (!activeChat) return;
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
       // Get recent context
       const recentMessages = messages.slice(-10).map(m => `${m.senderId === user?.uid ? 'User' : 'Other'}: ${m.content}`).join('\n');
       
@@ -417,8 +415,11 @@ export default function Messages() {
         Respond as ${bot.name} to the mention. Keep it concise and in character.
       `;
 
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+      const responseText = result.text;
 
       await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
         senderId: bot.id,
