@@ -1741,10 +1741,11 @@ export function Chat() {
         </div>
 
         <div className={`
-          flex-1 flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto
-          ${isMoreMenuOpen ? 'flex' : 'hidden sm:flex'}
+          w-full overflow-x-auto scrollbar-hide
+          ${isMoreMenuOpen ? 'block' : 'hidden sm:block'}
         `}>
-          <div className="flex items-center gap-1 relative">
+          <div className="flex flex-nowrap items-center justify-start sm:justify-end gap-2 pb-2 sm:pb-0 min-w-max px-1">
+            <div className="flex items-center gap-1 relative flex-shrink-0">
             <button
               onClick={() => setIsAddCharacterModalOpen(true)}
               className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
@@ -1873,7 +1874,7 @@ export function Chat() {
             )}
           </div>
 
-          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 flex-shrink-0">
             <button
               onClick={() => setActiveTab('chat')}
               className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-sm font-medium transition-all ${
@@ -1897,13 +1898,14 @@ export function Chat() {
           <button
             onClick={handleClearHistory}
             disabled={isClearing}
-            className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors ml-1"
+            className="p-2 hover:bg-red-500/10 rounded-full text-zinc-400 hover:text-red-400 transition-colors ml-1 flex-shrink-0"
             title="Clear History"
           >
             <Trash2 className="w-5 h-5" />
           </button>
         </div>
       </div>
+    </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">

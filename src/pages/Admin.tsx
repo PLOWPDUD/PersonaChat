@@ -20,11 +20,16 @@ interface UserProfile {
 export function Admin() {
   const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'reports'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'reports' | 'characters'>('users');
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [charResults, setCharResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   
   // Pagination for Users
   const [lastVisible, setLastVisible] = useState<any>(null);
@@ -40,9 +45,55 @@ export function Admin() {
     }
     
     if (isModerator) {
-      fetchData();
+      if (!searchQuery) {
+        fetchData();
+      }
     }
-  }, [isModerator, activeTab, user]);
+  }, [isModerator, activeTab, user, searchQuery]);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim()) {
+        handleSearch();
+      } else {
+        setCharResults([]);
+        if (isModerator) fetchData();
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, activeTab]);
+
+  const handleSearch = async () => {
+    if (!isModerator) return;
+    setIsSearching(true);
+    const lowerQuery = searchQuery.toLowerCase().trim();
+    try {
+      if (activeTab === 'users') {
+        const q = query(
+          collection(db, 'profiles'),
+          where('displayName_lowercase', '>=', lowerQuery),
+          where('displayName_lowercase', '<=', lowerQuery + '\uf8ff'),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        setProfiles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile)));
+      } else if (activeTab === 'characters') {
+        const q = query(
+          collection(db, 'characters'),
+          where('name_lowercase', '>=', lowerQuery),
+          where('name_lowercase', '<=', lowerQuery + '\uf8ff'),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        setCharResults(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const fetchData = async (direction: 'next' | 'prev' | 'initial' = 'initial') => {
     setLoading(true);
@@ -275,6 +326,14 @@ export function Admin() {
             Users
           </button>
           <button
+            onClick={() => setActiveTab('characters')}
+            className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'characters' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Characters
+          </button>
+          <button
             onClick={() => setActiveTab('reports')}
             className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'
@@ -283,6 +342,22 @@ export function Admin() {
             Reports
           </button>
         </div>
+      </div>
+
+      <div className="relative group">
+        <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${searchQuery ? 'text-indigo-500' : 'text-zinc-500 group-focus-within:text-indigo-500'}`} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={activeTab === 'users' ? "Search users by name..." : activeTab === 'characters' ? "Search characters by name (including private)..." : "Search..."}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all shadow-xl"
+        />
+        {isSearching && (
+          <div className="absolute right-4 top-1/2 -translate-y-1/2">
+            <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -424,6 +499,61 @@ export function Admin() {
               <ChevronRight className="w-6 h-6" />
             </button>
           </div>
+        </div>
+      ) : activeTab === 'characters' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {charResults.length > 0 ? (
+            charResults.map(char => (
+              <div key={char.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-xl flex flex-col gap-4 group">
+                <div className="flex items-center gap-4">
+                  {char.avatarUrl ? (
+                    <img src={char.avatarUrl} alt="" className="w-16 h-16 rounded-2xl object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
+                      <Bot className="w-8 h-8 text-zinc-500" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-bold text-lg truncate group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{char.name}</h3>
+                    <p className="text-zinc-500 text-sm truncate">by {char.creatorName || 'Unknown'}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        char.visibility === 'public' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                        char.visibility === 'private' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                        'bg-zinc-500/10 text-zinc-500 border border-zinc-500/20'
+                      }`}>
+                        {char.visibility}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-zinc-400 text-sm line-clamp-2 min-h-[2.5rem]">
+                  {char.description || 'No description provided.'}
+                </div>
+                <div className="flex gap-2 mt-auto">
+                  <button
+                    onClick={() => navigate(`/chat/${char.id}`)}
+                    className="flex-1 py-2.5 bg-zinc-800 hover:bg-indigo-600 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                    View Chat
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCharacter(char.id, char.creatorId, char.name)}
+                    disabled={updatingId === char.id}
+                    className="p-2.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all"
+                  >
+                    {updatingId === char.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full py-20 text-center bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
+              <Bot className="w-16 h-16 text-zinc-800 mx-auto mb-4" />
+              <p className="text-zinc-500 italic">No characters found matching your search.</p>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
