@@ -11,6 +11,8 @@ import { FollowButton } from '../components/FollowButton';
 import { playSound } from '../lib/sounds';
 import { getCachedData, updateGlobalCache, getCachedProfile, setCachedProfile } from '../lib/cache';
 import { Character } from '../types';
+import { ImageAdjuster } from '../components/ImageAdjuster';
+import { AnimatePresence } from 'motion/react';
 
 export function Profile() {
   const { userId: paramUserId } = useParams();
@@ -43,6 +45,8 @@ export function Profile() {
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [loadingChars, setLoadingChars] = useState(false);
+  const [adjustingImage, setAdjustingImage] = useState<string | null>(null);
+  const [adjustingType, setAdjustingType] = useState<'photo' | 'banner' | null>(null);
 
   const getRankInfo = () => {
     if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
@@ -92,42 +96,22 @@ export function Profile() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = type === 'photo' ? 400 : 1200;
-        const MAX_HEIGHT = type === 'photo' ? 400 : 400;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        if (type === 'photo') {
-          setFormData(prev => ({ ...prev, photoURL: dataUrl }));
-        } else {
-          setFormData(prev => ({ ...prev, bannerURL: dataUrl }));
-        }
-        setError('');
-      };
-      img.src = event.target?.result as string;
+      setAdjustingImage(event.target?.result as string);
+      setAdjustingType(type);
     };
     reader.readAsDataURL(file);
+    // Reset inputs
+    if (e.target) e.target.value = '';
+  };
+
+  const handleAdjustComplete = (croppedImage: string) => {
+    if (adjustingType === 'photo') {
+      setFormData(prev => ({ ...prev, photoURL: croppedImage }));
+    } else if (adjustingType === 'banner') {
+      setFormData(prev => ({ ...prev, bannerURL: croppedImage }));
+    }
+    setAdjustingImage(null);
+    setAdjustingType(null);
   };
 
   useEffect(() => {
@@ -558,6 +542,22 @@ export function Profile() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {adjustingImage && (
+          <ImageAdjuster
+            image={adjustingImage}
+            onComplete={handleAdjustComplete}
+            onCancel={() => {
+              setAdjustingImage(null);
+              setAdjustingType(null);
+            }}
+            aspect={adjustingType === 'banner' ? 3 / 1 : 1}
+            shape={adjustingType === 'photo' ? 'round' : 'rect'}
+            title={adjustingType === 'photo' ? 'Adjust Profile Picture' : 'Adjust Profile Banner'}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

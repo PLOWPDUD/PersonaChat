@@ -64,7 +64,7 @@ export function Chat() {
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [lastInput, setLastInput] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
-  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest');
   const [memories, setMemories] = useState<Memory[]>([]);
   const [newMemory, setNewMemory] = useState('');
   const [isAddingMemory, setIsAddingMemory] = useState(false);
@@ -632,11 +632,27 @@ export function Chat() {
           }
         }
         
-        const aiResponse = await generateCharacterResponse(characters, updatedHistory, enhancedPrompt, originalMessage.imageUrl || undefined, memoryList, selectedModel, getCurrentPersona());
+        let fullAiResponse = '';
+        setStreamingText('');
 
+        const stream = generateCharacterResponseStream(
+          characters, 
+          updatedHistory, 
+          enhancedPrompt, 
+          originalMessage.imageUrl || undefined, 
+          memoryList, 
+          selectedModel, 
+          getCurrentPersona()
+        );
+
+        for await (const chunk of stream) {
+          fullAiResponse += chunk;
+          setStreamingText(fullAiResponse);
+        }
+        
         // Save new AI messages
-        if (aiResponse) {
-          await saveSplitMessages(chatId, aiResponse, targetCharId);
+        if (fullAiResponse) {
+          await saveSplitMessages(chatId, fullAiResponse, targetCharId);
         }
 
         // Update chat timestamp
@@ -866,7 +882,7 @@ export function Chat() {
       console.error('Error regenerating response:', error);
       const isQuotaError = error.message?.includes('API_QUOTA_EXCEEDED');
       const message = isQuotaError 
-        ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 3.1 Lite) or wait a moment."
+        ? "API Quota Exceeded. Try switching to a different model (e.g., Gemini 1.5 Flash) or wait a moment."
         : `Failed to skip response: ${error.message || 'Unknown error'}`;
       setNotification({ message, type: 'error' });
     } finally {
@@ -1771,10 +1787,9 @@ export function Chat() {
               onChange={(e) => setSelectedModel(e.target.value)}
               className="bg-zinc-800 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[120px] sm:max-w-none"
             >
-              <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
-              <option value="gemini-flash-latest">Gemini Flash</option>
-              <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Lite</option>
-              <option value="gemini-3.1-pro-preview">Gemini Pro</option>
+              <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Fast)</option>
+              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Ultra Fast)</option>
+              <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Smart)</option>
             </select>
             
             <button

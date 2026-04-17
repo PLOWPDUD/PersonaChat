@@ -5,6 +5,8 @@ import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc 
 import { useAuth } from '../contexts/AuthContext';
 import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3 } from 'lucide-react';
 import { getLocalCharacterById, saveLocalCharacter, deleteLocalCharacter, LocalCharacter } from '../lib/localStorage';
+import { ImageAdjuster } from '../components/ImageAdjuster';
+import { AnimatePresence } from 'motion/react';
 
 export function CreateCharacter() {
   const { user, profile } = useAuth();
@@ -15,6 +17,7 @@ export function CreateCharacter() {
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [adjustingImage, setAdjustingImage] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -110,41 +113,17 @@ export function CreateCharacter() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize image using canvas
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400;
-        const MAX_HEIGHT = 400;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        // Convert to low-quality JPEG to save space
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        setImagePreview(dataUrl);
-        setFormData(prev => ({ ...prev, avatarUrl: dataUrl }));
-        setError('');
-      };
-      img.src = event.target?.result as string;
+      setAdjustingImage(event.target?.result as string);
     };
     reader.readAsDataURL(file);
+    // Reset input
+    if (e.target) e.target.value = '';
+  };
+
+  const handleAdjustComplete = (croppedImage: string) => {
+    setImagePreview(croppedImage);
+    setFormData(prev => ({ ...prev, avatarUrl: croppedImage }));
+    setAdjustingImage(null);
   };
 
   const removeImage = () => {
@@ -472,6 +451,19 @@ export function CreateCharacter() {
           </button>
         </div>
       </form>
+
+      <AnimatePresence>
+        {adjustingImage && (
+          <ImageAdjuster
+            image={adjustingImage}
+            onComplete={handleAdjustComplete}
+            onCancel={() => setAdjustingImage(null)}
+            aspect={1}
+            shape="rect"
+            title="Adjust Character Avatar"
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
