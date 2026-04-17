@@ -18,15 +18,13 @@ interface UserProfile {
 }
 
 export function Admin() {
-  const { user, isOwner, isModerator, becomeModerator } = useAuth();
+  const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'users' | 'reports'>('users');
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [modPassword, setModPassword] = useState('');
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
   
   // Pagination for Users
   const [lastVisible, setLastVisible] = useState<any>(null);
@@ -99,16 +97,6 @@ export function Admin() {
       setPage(p => p - 1);
       fetchData('initial'); // Reset to first page for now as simple implementation
     }
-  };
-
-  const handleModAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthenticating(true);
-    const success = becomeModerator(modPassword);
-    if (!success) {
-      alert('Invalid Moderator Password');
-    }
-    setIsAuthenticating(false);
   };
 
   const [banModal, setBanModal] = useState<{ userId: string; isOpen: boolean }>({ userId: '', isOpen: false });
@@ -250,27 +238,15 @@ export function Admin() {
     return (
       <div className="max-w-md mx-auto mt-20">
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center shadow-2xl">
-          <ShieldAlert className="w-16 h-16 text-indigo-500 mx-auto mb-6" />
-          <h2 className="text-2xl font-bold text-white mb-2">Admin Access</h2>
-          <p className="text-zinc-400 mb-8">Please enter the Moderator Password to access the dashboard.</p>
-          <form onSubmit={handleModAuth} className="space-y-4">
-            <input
-              type="password"
-              value={modPassword}
-              onChange={(e) => setModPassword(e.target.value)}
-              placeholder="Enter password..."
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl py-4 px-6 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              autoFocus
-            />
-            <button
-              type="submit"
-              disabled={isAuthenticating}
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isAuthenticating ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-              Authenticate
-            </button>
-          </form>
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-6" />
+          <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-zinc-400">You do not have the required permissions to view this page. Only authorized moderators and the site owner can access the admin dashboard.</p>
+          <button
+            onClick={() => navigate('/')}
+            className="mt-8 w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-bold transition-all"
+          >
+            Return Home
+          </button>
         </div>
       </div>
     );

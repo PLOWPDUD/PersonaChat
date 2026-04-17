@@ -74,6 +74,7 @@ export function Chat() {
   const [isDeletingChat, setIsDeletingChat] = useState(false);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [userReview, setUserReview] = useState('');
   const [isRatingOpen, setIsRatingOpen] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -289,6 +290,7 @@ export function Chat() {
         
         await setDoc(ratingRef, {
           score,
+          review: userReview.trim() || null,
           updatedAt: serverTimestamp()
         }, { merge: true });
         
@@ -297,7 +299,8 @@ export function Chat() {
         
         await setDoc(charRef, {
           totalRatingScore: newTotalScore,
-          averageRating: newAverage
+          averageRating: newAverage,
+          updatedAt: serverTimestamp()
         }, { merge: true });
         
       } else {
@@ -305,6 +308,7 @@ export function Chat() {
           userId: user.uid,
           characterId: primaryChar.id,
           score,
+          review: userReview.trim() || null,
           createdAt: serverTimestamp()
         });
         
@@ -315,17 +319,19 @@ export function Chat() {
         await setDoc(charRef, {
           ratingCount: newCount,
           totalRatingScore: newTotalScore,
-          averageRating: newAverage
+          averageRating: newAverage,
+          updatedAt: serverTimestamp()
         }, { merge: true });
 
         // Notify creator
         if (primaryChar.creatorId && primaryChar.creatorId !== user.uid) {
-          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${score} stars.`, { characterId: primaryChar.id });
+          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${score} stars.${userReview.trim() ? ' They also left a review.' : ''}`, { characterId: primaryChar.id });
         }
       }
       
       setUserRating(score);
       setIsRatingOpen(false);
+      setNotification({ message: 'Rating submitted successfully!', type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `characters/${characters[0].id}/ratings/${user.uid}`);
     } finally {
@@ -1750,23 +1756,49 @@ export function Chat() {
             <button
               onClick={() => setIsRatingOpen(!isRatingOpen)}
               className={`p-2 rounded-lg transition-all flex items-center gap-2 ${userRating ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-              title="Rate Character"
+              title="Rate & Review"
             >
               <Star className={`w-5 h-5 ${userRating ? 'fill-current' : ''}`} />
             </button>
             
+            <button
+               onClick={() => navigate(`/reviews/${characterId}`)}
+               className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all flex items-center gap-2"
+               title="View Reviews"
+            >
+               <MessageSquare className="w-5 h-5" />
+            </button>
+            
             {isRatingOpen && (
-              <div className="absolute top-full right-0 mt-2 p-3 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-50 flex gap-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => handleRateCharacter(star)}
-                    disabled={isSubmittingRating}
-                    className={`p-1 hover:scale-110 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <Star className={`w-6 h-6 ${(userRating || 0) >= star ? 'text-yellow-500 fill-current' : 'text-zinc-500'}`} />
-                  </button>
-                ))}
+              <div className="absolute top-full right-0 mt-2 p-4 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl z-50 w-64 space-y-4 animate-in fade-in zoom-in duration-200">
+                <div className="flex justify-center gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onMouseEnter={() => !userRating && setUserRating(star)}
+                      onClick={() => handleRateCharacter(star)}
+                      disabled={isSubmittingRating}
+                      className={`p-1 hover:scale-125 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <Star className={`w-7 h-7 ${(userRating || 0) >= star ? 'text-yellow-400 fill-current shadow-yellow-500/50' : 'text-zinc-600'}`} />
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">Leave a Review (Optional)</label>
+                  <textarea
+                    value={userReview}
+                    onChange={(e) => setUserReview(e.target.value)}
+                    placeholder="Tell us what you think..."
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                    rows={3}
+                  />
+                </div>
+
+                <p className="text-[10px] text-zinc-500 text-center italic">
+                  Click a star to submit your rating
+                </p>
               </div>
             )}
 

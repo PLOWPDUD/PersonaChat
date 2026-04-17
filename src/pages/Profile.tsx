@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, updateDoc, increment, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2 } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2, Layout } from 'lucide-react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { BADGES } from '../services/badgeService';
 import { LevelProgress } from '../components/LevelProgress';
@@ -426,7 +426,23 @@ export function Profile() {
       </div>
 
       {isOwnProfile && (
-        <div className="space-y-8">
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-900/20">
+             <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                   <h3 className="text-xl font-bold">Creator Hub</h3>
+                   <p className="text-white/80 text-sm">View detailed analytics and reviews for your characters.</p>
+                </div>
+                <button
+                   onClick={() => navigate('/dashboard')}
+                   className="px-6 py-3 bg-white text-indigo-600 rounded-2xl font-bold hover:bg-zinc-100 transition-all flex items-center gap-2 shadow-lg"
+                >
+                   <Layout className="w-5 h-5" />
+                   Dashboard
+                </button>
+             </div>
+          </div>
+          
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-white">Edit Profile</h2>
           </div>

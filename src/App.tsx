@@ -21,6 +21,8 @@ import { Stats } from './pages/Stats';
 import { Search } from './pages/Search';
 import { Admin } from './pages/Admin';
 import { Settings } from './pages/Settings';
+import { Reviews } from './pages/Reviews';
+import { CreatorDashboard } from './pages/CreatorDashboard';
 import PersonaCommunity from './pages/PersonaCommunity';
 import Messages from './pages/Messages';
 import { NotFound } from './pages/NotFound';
@@ -85,6 +87,8 @@ export default function App() {
                 <Route path="admin" element={<Admin />} />
                 <Route path="chat/:characterId" element={<Chat />} />
                 <Route path="chat/:characterId/:chatId" element={<Chat />} />
+                <Route path="reviews/:characterId" element={<Reviews />} />
+                <Route path="dashboard" element={<CreatorDashboard />} />
               </Route>
               
               <Route path="/404" element={<NotFound />} />

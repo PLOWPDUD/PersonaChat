@@ -15,7 +15,6 @@ interface AuthContextType {
   isBanned: boolean;
   quotaExceeded: boolean;
   setQuotaExceeded: (exceeded: boolean) => void;
-  becomeModerator: (password: string) => boolean;
   updateProfile: (newProfile: any) => Promise<void>;
   logOut: () => Promise<void>;
 }
@@ -29,7 +28,6 @@ const AuthContext = createContext<AuthContextType>({
   isBanned: false,
   quotaExceeded: false,
   setQuotaExceeded: () => {},
-  becomeModerator: () => false,
   updateProfile: async () => {},
   logOut: async () => {}
 });
@@ -55,17 +53,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isOwner = roles.isOwner;
   const isModerator = roles.isModerator;
   const isBanned = !!profile?.isBanned && (!profile.banExpiresAt || new Date(profile.banExpiresAt.toDate()) > new Date());
-
-  const becomeModerator = (password: string) => {
-    const correctPassword = (import.meta as any).env.VITE_MODERATOR_PASSWORD || 'admin123';
-    if (password === correctPassword) {
-      const newRoles = { ...roles, isModerator: true };
-      setRoles(newRoles);
-      sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
-      return true;
-    }
-    return false;
-  };
 
   const updateProfile = async (newProfile: any) => {
     if (!user) return;
@@ -158,8 +145,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('cached_profile', JSON.stringify(newProfile));
             
             const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner',
-              isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'moderator'
+              isOwner: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin',
+              isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin' || newProfile.role === 'moderator'
             };
             setRoles(newRoles);
             sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
@@ -198,8 +185,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner',
-              isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'moderator'
+              isOwner: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin',
+              isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin' || data.role === 'moderator'
             };
             setRoles(newRoles);
             sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
@@ -248,7 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, becomeModerator, updateProfile, logOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, updateProfile, logOut }}>
       {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );

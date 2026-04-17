@@ -18,7 +18,8 @@ service cloud.firestore {
       return isAuthenticated() &&
         (request.auth.token.email == "videosonli5@gmail.com" || 
          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner"));
+          (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner" ||
+           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "admin")));
     }
 
     function isModerator() {
@@ -26,6 +27,12 @@ service cloud.firestore {
         (isAdmin() || 
          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator"));
+    }
+
+    function isValidRating(data) {
+      return data.score is number && data.score >= 1 && data.score <= 5 &&
+             (!('review' in data) || data.review == null || (data.review is string && data.review.size() <= 1000)) &&
+             data.userId == request.auth.uid;
     }
 
     function isValidEmail(email) {
@@ -81,12 +88,16 @@ service cloud.firestore {
                    (isAuthenticated() && resource.data.creatorId == request.auth.uid) || 
                    isAdmin();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (
+        resource.data.creatorId == request.auth.uid || 
+        isAdmin() || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageRating', 'ratingCount', 'totalRatingScore', 'updatedAt'])
+      );
       allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
 
       match /ratings/{userId} {
         allow read: if true;
-        allow write: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidRating(request.resource.data);
       }
     }
 
