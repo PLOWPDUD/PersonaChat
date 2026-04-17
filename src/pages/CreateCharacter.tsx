@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +18,7 @@ export function CreateCharacter() {
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [adjustingImage, setAdjustingImage] = useState<string | null>(null);
+  const [agreedToRules, setAgreedToRules] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -135,6 +136,11 @@ export function CreateCharacter() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    
+    if (!agreedToRules) {
+      setError('You must agree to the community rules before creating a character.');
+      return;
+    }
     
     setLoading(true);
     setError('');
@@ -438,6 +444,20 @@ export function CreateCharacter() {
               <option value="private">Private - Only you can chat</option>
               <option value="unlisted">Unlisted - Accessible via link</option>
             </select>
+          </div>
+
+          <div className="pt-4">
+            <label className="flex items-start gap-3 p-4 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/20 rounded-2xl cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={agreedToRules}
+                onChange={(e) => setAgreedToRules(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-zinc-800 text-indigo-600 focus:ring-indigo-500 bg-zinc-900"
+              />
+              <span className="text-sm text-zinc-300 leading-tight">
+                I have read and agree to follow the <Link to="/rules" target="_blank" className="text-indigo-400 hover:underline font-bold">Community Rules</Link> when creating this character. I understand that public characters violating these rules will be removed.
+              </span>
+            </label>
           </div>
         </div>
 

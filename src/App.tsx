@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -32,7 +32,8 @@ import { QuotaExceeded } from './components/QuotaExceeded';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, quotaExceeded, isBanned } = useAuth();
+  const { user, profile, loading, quotaExceeded, isBanned } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return <LoadingScreen />;
@@ -52,6 +53,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Redirect to rules if they haven't seen them yet (except if they are already on /rules or /stats or /login)
+  if (profile && profile.hasSeenRules === false && location.pathname !== '/rules') {
+    return <Navigate to="/rules" replace />;
   }
   
   return <>{children}</>;

@@ -16,6 +16,7 @@ interface AuthContextType {
   quotaExceeded: boolean;
   setQuotaExceeded: (exceeded: boolean) => void;
   updateProfile: (newProfile: any) => Promise<void>;
+  updateSeenRules: () => Promise<void>;
   logOut: () => Promise<void>;
 }
 
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   quotaExceeded: false,
   setQuotaExceeded: () => {},
   updateProfile: async () => {},
+  updateSeenRules: async () => {},
   logOut: async () => {}
 });
 
@@ -78,6 +80,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Error updating profile:', error);
       throw error;
+    }
+  };
+
+  const updateSeenRules = async () => {
+    if (!user) return;
+    try {
+      const profileRef = doc(db, 'profiles', user.uid);
+      await updateDoc(profileRef, { 
+        hasSeenRules: true,
+        updatedAt: serverTimestamp() 
+      });
+      
+      setProfile((prev: any) => {
+        const updated = { ...prev, hasSeenRules: true };
+        localStorage.setItem('cached_profile', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
     }
   };
 
@@ -142,7 +163,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...profileData,
               displayName_lowercase: profileData.displayName.toLowerCase(),
               createdAt: serverTimestamp(),
-              role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user'
+              role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
+              hasSeenRules: false
             };
             await setDoc(profileRef, newProfile);
             console.log("New profile created");
@@ -244,7 +266,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, updateProfile, logOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, updateProfile, updateSeenRules, logOut }}>
       {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );
