@@ -685,6 +685,7 @@ export default function PersonaCommunity() {
         authorId: user.uid,
         authorName: profile.displayName,
         authorPhoto: profile.photoURL || '',
+        authorBadges: profile.badges || [],
         content: newComment.trim(),
         imageUrls: imageUrls.length > 0 ? imageUrls : null,
         createdAt: serverTimestamp()

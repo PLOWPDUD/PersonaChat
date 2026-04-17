@@ -53,15 +53,16 @@ service cloud.firestore {
     }
 
     function isValidComment(data) {
-      return hasOnlyAllowedFields(['authorId', 'authorName', 'content', 'createdAt', 'updatedAt', 'imageUrls', 'authorPhoto', 'parentId']) &&
+      return data.postId is string &&
              data.authorId is string &&
              data.authorName is string &&
-             data.content is string && data.content.size() <= 1000 &&
+             data.content is string && data.content.size() <= 2000 &&
              data.createdAt is timestamp &&
              (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
-             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
+             (!('imageUrls' in data) || data.imageUrls == null || (data.imageUrls is list && data.imageUrls.size() <= 10)) &&
              (!('authorPhoto' in data) || data.authorPhoto == null || data.authorPhoto is string) &&
-             (!('parentId' in data) || data.parentId == null || data.parentId is string);
+             (!('parentId' in data) || data.parentId == null || data.parentId is string) &&
+             (!('authorBadges' in data) || data.authorBadges == null || data.authorBadges is list);
     }
 
     // ===============================================================
