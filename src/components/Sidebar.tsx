@@ -29,7 +29,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     { path: '/messages', label: 'Messages', icon: MessageSquare },
     { path: '/stats', label: 'Stats', icon: Users },
     { path: '/settings', label: 'Settings', icon: Settings },
-    { path: '/admin', label: 'Admin', icon: Shield },
+    ...(isModerator ? [{ path: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
   const handleNavClick = () => {

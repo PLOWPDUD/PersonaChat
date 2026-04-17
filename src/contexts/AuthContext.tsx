@@ -50,8 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return cached ? JSON.parse(cached) : { isOwner: false, isModerator: false };
   });
 
-  const isOwner = roles.isOwner;
-  const isModerator = roles.isModerator;
+  const isOwner = user?.email === 'videosonli5@gmail.com' || roles.isOwner || profile?.role === 'owner' || profile?.role === 'admin';
+  const isModerator = isOwner || roles.isModerator || profile?.role === 'moderator';
   const isBanned = !!profile?.isBanned && (!profile.banExpiresAt || new Date(profile.banExpiresAt.toDate()) > new Date());
 
   const updateProfile = async (newProfile: any) => {
@@ -93,6 +93,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       console.log("Auth state changed:", currentUser ? `User logged in: ${currentUser.uid}` : "User logged out");
       setUser(currentUser);
+      
+      // Immediately grant owner/mod roles to the primary admin email
+      if (currentUser?.email === 'videosonli5@gmail.com') {
+        setRoles({ isOwner: true, isModerator: true });
+      }
       
       if (currentUser) {
         // If we have a cached profile for this user, we can stop loading early
@@ -137,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...profileData,
               displayName_lowercase: profileData.displayName.toLowerCase(),
               createdAt: serverTimestamp(),
-              role: 'user'
+              role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user'
             };
             await setDoc(profileRef, newProfile);
             console.log("New profile created");
@@ -163,8 +168,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
             const hasChanged = data.displayName !== profileData.displayName || data.photoURL !== profileData.photoURL;
 
-            if (needsUpdate || hasChanged) {
-              console.log("Profile needs update/migration or has changed");
+            const isOwnerEmail = currentUser.email === 'videosonli5@gmail.com';
+            const needsRoleUpgrade = isOwnerEmail && data.role !== 'owner' && data.role !== 'admin';
+
+            if (needsUpdate || hasChanged || needsRoleUpgrade) {
+              console.log("Profile needs update/migration or role upgrade");
               const updates: any = {
                 uid: data.uid || profileData.uid,
                 displayName: profileData.displayName,
@@ -174,6 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 updatedAt: serverTimestamp()
               };
               if (!data.createdAt) updates.createdAt = serverTimestamp();
+              if (needsRoleUpgrade) updates.role = 'owner';
               
               await updateDoc(profileRef, updates);
               const updatedProfile = { ...data, ...updates };
