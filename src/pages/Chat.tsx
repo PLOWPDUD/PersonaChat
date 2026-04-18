@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -48,6 +48,7 @@ export function Chat() {
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user, profile, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -93,6 +94,7 @@ export function Chat() {
   const [isLocalMode, setIsLocalMode] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [streamingCharId, setStreamingCharId] = useState<string | null>(null);
+  const [selectedRatingCharId, setSelectedRatingCharId] = useState<string | null>(null);
 
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
@@ -133,8 +135,39 @@ export function Chat() {
   useEffect(() => {
     if (searchParams.get('review') === 'true') {
       setIsRatingOpen(true);
+      setIsMoreMenuOpen(true); // Ensure header actions are visible on mobile
     }
   }, [searchParams]);
+
+  // Sync rating when selected character for rating changes
+  useEffect(() => {
+    if (!user || !selectedRatingCharId || selectedRatingCharId.startsWith('local_')) {
+      if (!selectedRatingCharId) {
+        setUserRating(null);
+        setUserReview('');
+      }
+      return;
+    }
+
+    const fetchRating = async () => {
+      const ratingRef = doc(db, `characters/${selectedRatingCharId}/ratings`, user.uid);
+      try {
+        const ratingSnap = await getDoc(ratingRef);
+        if (ratingSnap.exists()) {
+          const data = ratingSnap.data();
+          setUserRating(data.score);
+          setUserReview(data.review || '');
+        } else {
+          setUserRating(null);
+          setUserReview('');
+        }
+      } catch (e) {
+        console.error('Error fetching rating:', e);
+      }
+    };
+
+    fetchRating();
+  }, [user, selectedRatingCharId]);
 
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
@@ -281,15 +314,17 @@ export function Chat() {
   };
 
   const handleRateCharacter = async () => {
-    if (!user || characters.length === 0 || !userRating) return;
-    const primaryChar = characters[0];
+    const targetCharId = selectedRatingCharId;
+    if (!user || !targetCharId || !userRating) return;
+    
+    const targetChar = characters.find(c => c.id === targetCharId);
+    if (!targetChar) return;
     
     setIsSubmittingRating(true);
     try {
-      const ratingRef = doc(db, `characters/${primaryChar.id}/ratings`, user.uid);
+      const ratingRef = doc(db, `characters/${targetCharId}/ratings`, user.uid);
       const ratingSnap = await getDoc(ratingRef);
-      
-      const charRef = doc(db, 'characters', primaryChar.id);
+      const charRef = doc(db, 'characters', targetCharId);
       
       if (ratingSnap.exists()) {
         const oldScore = ratingSnap.data().score;
@@ -301,8 +336,8 @@ export function Chat() {
           updatedAt: serverTimestamp()
         }, { merge: true });
         
-        const newTotalScore = (primaryChar.totalRatingScore || 0) + scoreDiff;
-        const newAverage = newTotalScore / (primaryChar.ratingCount || 1);
+        const newTotalScore = (targetChar.totalRatingScore || 0) + scoreDiff;
+        const newAverage = newTotalScore / (targetChar.ratingCount || 1);
         
         await setDoc(charRef, {
           totalRatingScore: newTotalScore,
@@ -313,14 +348,14 @@ export function Chat() {
       } else {
         await setDoc(ratingRef, {
           userId: user.uid,
-          characterId: primaryChar.id,
+          characterId: targetCharId,
           score: userRating,
           review: userReview.trim() || null,
           createdAt: serverTimestamp()
         });
         
-        const newCount = (primaryChar.ratingCount || 0) + 1;
-        const newTotalScore = (primaryChar.totalRatingScore || 0) + userRating;
+        const newCount = (targetChar.ratingCount || 0) + 1;
+        const newTotalScore = (targetChar.totalRatingScore || 0) + userRating;
         const newAverage = newTotalScore / newCount;
         
         await setDoc(charRef, {
@@ -331,16 +366,16 @@ export function Chat() {
         }, { merge: true });
 
         // Notify creator
-        if (primaryChar.creatorId && primaryChar.creatorId !== user.uid) {
-          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${userRating} stars.${userReview.trim() ? ' They also left a review.' : ''}`, { characterId: primaryChar.id });
+        if (targetChar.creatorId && targetChar.creatorId !== user.uid) {
+          await addNotification(targetChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${targetChar.name} ${userRating} stars.${userReview.trim() ? ' They also left a review.' : ''}`, { characterId: targetChar.id });
         }
       }
       
       setIsRatingOpen(false);
       setHoverRating(null);
-      setNotification({ message: 'Rating submitted successfully!', type: 'success' });
+      setNotification({ message: `Rating for ${targetChar.name} submitted successfully!`, type: 'success' });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `characters/${characters[0].id}/ratings/${user.uid}`);
+      handleFirestoreError(error, OperationType.WRITE, `characters/${targetCharId}/ratings/${user.uid}`);
     } finally {
       setIsSubmittingRating(false);
     }
@@ -1053,6 +1088,12 @@ export function Chat() {
         
         setCharacters(fetchedChars);
         const primaryChar = fetchedChars[0];
+        
+        // Initialize selected rating character
+        if (!selectedRatingCharId) {
+          setSelectedRatingCharId(characterId || primaryChar.id);
+        }
+
         const isLocalCharacter = primaryChar.id.startsWith('local_');
 
         if (isLocalCharacter) {
@@ -1107,7 +1148,7 @@ export function Chat() {
               };
               localStorage.setItem(`chat_${currentChatId}`, JSON.stringify([initialMessage]));
             }
-            navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+            navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
           } else {
             // Try to find the latest chat for this character (including group chats)
             const chatsRef = collection(dbChat, 'chats');
@@ -1122,7 +1163,7 @@ export function Chat() {
             const chatDocs = await getDocs(q);
             if (!chatDocs.empty) {
               currentChatId = chatDocs.docs[0].id;
-              navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+              navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
             } else {
               // Create new chat if none exists
               const newChatRef = doc(collection(dbChat, 'chats'));
@@ -1183,7 +1224,7 @@ export function Chat() {
                   throw e;
                 }
               }
-              navigate(`/chat/${characterId}/${currentChatId}`, { replace: true });
+              navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
             }
           }
         }
@@ -1781,69 +1822,6 @@ export function Chat() {
             >
                <MessageSquare className="w-5 h-5" />
             </button>
-            
-            {isRatingOpen && (
-              <div className="absolute top-[calc(100%+0.5rem)] right-0 mt-2 p-5 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl z-50 w-72 space-y-6 animate-in fade-in zoom-in duration-200 ring-1 ring-white/10">
-                <div className="flex flex-col items-center gap-2">
-                  <h4 className="text-white font-bold text-sm">Rate {characters[0]?.name}</h4>
-                  <div className="flex justify-center gap-1.5" onMouseLeave={() => setHoverRating(null)}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        onMouseEnter={() => setHoverRating(star)}
-                        onClick={() => setUserRating(star)}
-                        disabled={isSubmittingRating}
-                        className={`p-1.5 hover:scale-125 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <Star className={`w-8 h-8 transition-colors ${
-                          (hoverRating || userRating || 0) >= star 
-                            ? 'text-yellow-400 fill-current drop-shadow-[0_0_8px_rgba(250,204,21,0.4)]' 
-                            : 'text-zinc-700'
-                        }`} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex justify-between items-end px-1">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Your Review</label>
-                    <span className="text-[10px] text-zinc-600 font-medium">{userReview.length}/1000</span>
-                  </div>
-                  <textarea
-                    value={userReview}
-                    onChange={(e) => setUserReview(e.target.value)}
-                    placeholder="What did you think about this character?"
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none transition-all leading-relaxed"
-                    rows={4}
-                    maxLength={1000}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={handleRateCharacter}
-                    disabled={isSubmittingRating || !userRating}
-                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2"
-                  >
-                    {isSubmittingRating ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        {userRating ? 'Update Review' : 'Submit Rating'}
-                      </>
-                    )}
-                  </button>
-                  
-                  {!userRating && (
-                    <p className="text-[10px] text-zinc-500 text-center italic">
-                      Click a star above to set your rating
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
 
             <select
               value={selectedPersonaId}
@@ -1947,6 +1925,95 @@ export function Chat() {
           </button>
         </div>
       </div>
+
+      {/* Rating Modal Placed Here to avoid clipping by overflow-x-auto */}
+      {isRatingOpen && (
+        <div className="absolute top-[calc(100%-0.5rem)] sm:top-[calc(100%-2rem)] right-2 sm:right-4 p-4 sm:p-5 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl z-50 w-[calc(100vw-1rem)] max-w-[300px] sm:max-w-[320px] space-y-4 animate-in fade-in zoom-in duration-200 ring-1 ring-white/10">
+          {characters.length > 1 && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">Select Character</label>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                {characters.map((char) => (
+                  <button
+                    key={char.id}
+                    onClick={() => setSelectedRatingCharId(char.id)}
+                    className={`flex-shrink-0 p-1 rounded-full transition-all border-2 ${selectedRatingCharId === char.id ? 'border-indigo-500 scale-110 shadow-lg shadow-indigo-500/20' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                  >
+                    {char.avatarUrl ? (
+                      <img src={char.avatarUrl} alt={char.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                        <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-400" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col items-center gap-1.5">
+            <h4 className="text-white font-bold text-xs sm:text-sm text-center">
+              Rate {characters.find(c => c.id === selectedRatingCharId)?.name || 'Character'}
+            </h4>
+            <div className="flex justify-center gap-1 sm:gap-1.5" onMouseLeave={() => setHoverRating(null)}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onClick={() => setUserRating(star)}
+                  disabled={isSubmittingRating}
+                  className={`p-1 sm:p-1.5 hover:scale-125 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <Star className={`w-6 h-6 sm:w-8 sm:h-8 transition-colors ${
+                    (hoverRating || userRating || 0) >= star 
+                      ? 'text-yellow-400 fill-current drop-shadow-[0_0_8px_rgba(250,204,21,0.4)]' 
+                      : 'text-zinc-700'
+                  }`} />
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex justify-between items-end px-1">
+              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Your Review</label>
+              <span className="text-[10px] text-zinc-600 font-medium">{userReview.length}/1000</span>
+            </div>
+            <textarea
+              value={userReview}
+              onChange={(e) => setUserReview(e.target.value)}
+              placeholder="What did you think about this character?"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-3 sm:p-4 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none transition-all leading-relaxed"
+              rows={3}
+              maxLength={1000}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5 flex-shrink-0 relative z-20">
+            <button
+              onClick={handleRateCharacter}
+              disabled={isSubmittingRating || !userRating}
+              className="w-full py-2.5 sm:py-3.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-xl font-bold text-xs sm:text-sm transition-all shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2"
+            >
+              {isSubmittingRating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  {userRating ? 'Update Review' : 'Submit Rating'}
+                </>
+              )}
+            </button>
+            
+            {!userRating && (
+              <p className="text-[9px] sm:text-[10px] text-zinc-500 text-center italic">
+                Click a star above to set your rating
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
 
       {/* Main Content Area */}
