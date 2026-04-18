@@ -74,6 +74,7 @@ export function Chat() {
   const [isDeletingChat, setIsDeletingChat] = useState(false);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [userReview, setUserReview] = useState('');
   const [isRatingOpen, setIsRatingOpen] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
@@ -129,6 +130,12 @@ export function Chat() {
 
     return () => clearTimeout(delayDebounceFn);
   }, [characterSearchQuery, characters]);
+  useEffect(() => {
+    if (searchParams.get('review') === 'true') {
+      setIsRatingOpen(true);
+    }
+  }, [searchParams]);
+
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [respondingCharacterId, setRespondingCharacterId] = useState<string | null>(null);
   const [userPersona, setUserPersona] = useState('');
@@ -273,8 +280,8 @@ export function Chat() {
     }
   };
 
-  const handleRateCharacter = async (score: number) => {
-    if (!user || characters.length === 0) return;
+  const handleRateCharacter = async () => {
+    if (!user || characters.length === 0 || !userRating) return;
     const primaryChar = characters[0];
     
     setIsSubmittingRating(true);
@@ -286,10 +293,10 @@ export function Chat() {
       
       if (ratingSnap.exists()) {
         const oldScore = ratingSnap.data().score;
-        const scoreDiff = score - oldScore;
+        const scoreDiff = userRating - oldScore;
         
         await setDoc(ratingRef, {
-          score,
+          score: userRating,
           review: userReview.trim() || null,
           updatedAt: serverTimestamp()
         }, { merge: true });
@@ -307,13 +314,13 @@ export function Chat() {
         await setDoc(ratingRef, {
           userId: user.uid,
           characterId: primaryChar.id,
-          score,
+          score: userRating,
           review: userReview.trim() || null,
           createdAt: serverTimestamp()
         });
         
         const newCount = (primaryChar.ratingCount || 0) + 1;
-        const newTotalScore = (primaryChar.totalRatingScore || 0) + score;
+        const newTotalScore = (primaryChar.totalRatingScore || 0) + userRating;
         const newAverage = newTotalScore / newCount;
         
         await setDoc(charRef, {
@@ -325,12 +332,12 @@ export function Chat() {
 
         // Notify creator
         if (primaryChar.creatorId && primaryChar.creatorId !== user.uid) {
-          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${score} stars.${userReview.trim() ? ' They also left a review.' : ''}`, { characterId: primaryChar.id });
+          await addNotification(primaryChar.creatorId, 'character_rated', 'Character Rated!', `${profile?.displayName || 'Someone'} rated your character ${primaryChar.name} ${userRating} stars.${userReview.trim() ? ' They also left a review.' : ''}`, { characterId: primaryChar.id });
         }
       }
       
-      setUserRating(score);
       setIsRatingOpen(false);
+      setHoverRating(null);
       setNotification({ message: 'Rating submitted successfully!', type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `characters/${characters[0].id}/ratings/${user.uid}`);
@@ -1058,7 +1065,9 @@ export function Chat() {
           try {
             const ratingSnap = await getDoc(ratingRef);
             if (ratingSnap.exists()) {
-              setUserRating(ratingSnap.data().score);
+              const data = ratingSnap.data();
+              setUserRating(data.score);
+              setUserReview(data.review || '');
             }
           } catch (e) {
             console.error('Error fetching rating:', e);
@@ -1718,10 +1727,13 @@ export function Chat() {
               <h2 className="text-sm sm:text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
                 {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
                 {characters.length === 1 && characters[0]?.averageRating && (
-                  <span className="flex items-center gap-1 text-[10px] sm:text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                  <button 
+                    onClick={() => setIsRatingOpen(!isRatingOpen)}
+                    className="flex items-center gap-1 text-[10px] sm:text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full hover:bg-yellow-500/20 transition-colors"
+                  >
                     <Star className="w-3 h-3 fill-current" />
                     {characters[0].averageRating.toFixed(1)}
-                  </span>
+                  </button>
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
@@ -1771,35 +1783,65 @@ export function Chat() {
             </button>
             
             {isRatingOpen && (
-              <div className="absolute top-full right-0 mt-2 p-4 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl z-50 w-64 space-y-4 animate-in fade-in zoom-in duration-200">
-                <div className="flex justify-center gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onMouseEnter={() => !userRating && setUserRating(star)}
-                      onClick={() => handleRateCharacter(star)}
-                      disabled={isSubmittingRating}
-                      className={`p-1 hover:scale-125 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <Star className={`w-7 h-7 ${(userRating || 0) >= star ? 'text-yellow-400 fill-current shadow-yellow-500/50' : 'text-zinc-600'}`} />
-                    </button>
-                  ))}
+              <div className="absolute top-[calc(100%+0.5rem)] right-0 mt-2 p-5 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl z-50 w-72 space-y-6 animate-in fade-in zoom-in duration-200 ring-1 ring-white/10">
+                <div className="flex flex-col items-center gap-2">
+                  <h4 className="text-white font-bold text-sm">Rate {characters[0]?.name}</h4>
+                  <div className="flex justify-center gap-1.5" onMouseLeave={() => setHoverRating(null)}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onClick={() => setUserRating(star)}
+                        disabled={isSubmittingRating}
+                        className={`p-1.5 hover:scale-125 transition-transform ${isSubmittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <Star className={`w-8 h-8 transition-colors ${
+                          (hoverRating || userRating || 0) >= star 
+                            ? 'text-yellow-400 fill-current drop-shadow-[0_0_8px_rgba(250,204,21,0.4)]' 
+                            : 'text-zinc-700'
+                        }`} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">Leave a Review (Optional)</label>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end px-1">
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Your Review</label>
+                    <span className="text-[10px] text-zinc-600 font-medium">{userReview.length}/1000</span>
+                  </div>
                   <textarea
                     value={userReview}
                     onChange={(e) => setUserReview(e.target.value)}
-                    placeholder="Tell us what you think..."
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-                    rows={3}
+                    placeholder="What did you think about this character?"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none transition-all leading-relaxed"
+                    rows={4}
+                    maxLength={1000}
                   />
                 </div>
 
-                <p className="text-[10px] text-zinc-500 text-center italic">
-                  Click a star to submit your rating
-                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={handleRateCharacter}
+                    disabled={isSubmittingRating || !userRating}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2"
+                  >
+                    {isSubmittingRating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        {userRating ? 'Update Review' : 'Submit Rating'}
+                      </>
+                    )}
+                  </button>
+                  
+                  {!userRating && (
+                    <p className="text-[10px] text-zinc-500 text-center italic">
+                      Click a star above to set your rating
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 

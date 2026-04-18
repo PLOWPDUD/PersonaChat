@@ -176,12 +176,17 @@ export function CreateCharacter() {
           await updateDoc(charRef, {
             ...formData,
             creatorName,
+            name_lowercase: formData.name.toLowerCase(),
             updatedAt: serverTimestamp()
           });
           
           if (formData.visibility === 'private') {
             saveLocal();
           }
+
+          // Clear caches
+          localStorage.removeItem('cached_public_characters');
+          localStorage.removeItem('last_public_fetch');
           
           navigate(`/chat/${characterId}`);
         } else {
@@ -223,6 +228,10 @@ export function CreateCharacter() {
           if (characterId?.startsWith('local_')) {
             deleteLocalCharacter(characterId);
           }
+          
+          // Clear caches
+          localStorage.removeItem('cached_public_characters');
+          localStorage.removeItem('last_public_fetch');
           
           navigate(`/chat/${docRef.id}`);
         }

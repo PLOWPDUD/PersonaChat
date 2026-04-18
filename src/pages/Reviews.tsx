@@ -136,6 +136,16 @@ export function Reviews() {
           <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
           <span>Back</span>
         </button>
+
+        {user && characterId && (
+          <button
+            onClick={() => navigate(`/chat/${characterId}?review=true`)}
+            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-900/20"
+          >
+            <Star className="w-4 h-4 fill-current" />
+            Write a Review
+          </button>
+        )}
         
         {character && (
           <div className="flex items-center gap-4 bg-zinc-900/50 px-4 py-2 rounded-2xl border border-zinc-800">

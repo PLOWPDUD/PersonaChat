@@ -27,22 +27,22 @@ service cloud.firestore {
     }
 
     function isValidProfile(data) {
-      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator']) &&
-             (!('displayName' in data) || isValidString(data.displayName, 2, 50)) &&
-             (!('bio' in data) || isValidString(data.bio, 0, 500)) &&
-             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
-             (!('bannerURL' in data) || isValidUrl(data.bannerURL)) &&
+      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase']) &&
+             (!('displayName' in data) || isValidString(data.displayName, 2, 100)) &&
+             (!('bio' in data) || isValidString(data.bio, 0, 2000)) &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL) || data.photoURL.matches("^data:image/.*")) &&
+             (!('bannerURL' in data) || isValidUrl(data.bannerURL) || data.bannerURL.matches("^data:image/.*")) &&
              (!('role' in data) || data.role in ['user', 'moderator', 'admin', 'owner']);
     }
 
     function isValidCharacter(data) {
-      return hasOnlyAllowedFields(['name', 'description', 'personality', 'scenario', 'greeting', 'avatarUrl', 'creatorId', 'creatorName', 'visibility', 'tags', 'createdAt', 'updatedAt', 'averageRating', 'ratingCount', 'totalRatingScore', 'chatCount', 'starCount']) &&
-             isValidString(data.name, 1, 50) &&
-             isValidString(data.description, 1, 1000) &&
-             (!('personality' in data) || isValidString(data.personality, 0, 2000)) &&
-             (!('scenario' in data) || isValidString(data.scenario, 0, 2000)) &&
-             (!('greeting' in data) || isValidString(data.greeting, 0, 1000)) &&
-             (!('avatarUrl' in data) || isValidUrl(data.avatarUrl)) &&
+      return hasOnlyAllowedFields(['name', 'description', 'personality', 'scenario', 'greeting', 'avatarUrl', 'creatorId', 'creatorName', 'visibility', 'tags', 'category', 'name_lowercase', 'createdAt', 'updatedAt', 'averageRating', 'ratingCount', 'totalRatingScore', 'chatCount', 'starCount', 'likesCount', 'interactionsCount']) &&
+             isValidString(data.name, 1, 100) &&
+             isValidString(data.description, 1, 5000) &&
+             (!('personality' in data) || isValidString(data.personality, 0, 5000)) &&
+             (!('scenario' in data) || isValidString(data.scenario, 0, 5000)) &&
+             (!('greeting' in data) || isValidString(data.greeting, 0, 2000)) &&
+             (!('avatarUrl' in data) || isValidUrl(data.avatarUrl) || data.avatarUrl.matches("^data:image/.*")) &&
              data.visibility in ['public', 'private', 'unlisted'] &&
              data.creatorId == request.auth.uid;
     }
@@ -126,7 +126,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         (resource.data.creatorId == request.auth.uid && isValidCharacter(request.resource.data) && request.resource.data.creatorId == resource.data.creatorId) || 
         isAdmin() || 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageRating', 'ratingCount', 'totalRatingScore', 'updatedAt', 'chatCount', 'starCount'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageRating', 'ratingCount', 'totalRatingScore', 'updatedAt', 'chatCount', 'starCount', 'likesCount', 'interactionsCount'])
       );
       allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
 
