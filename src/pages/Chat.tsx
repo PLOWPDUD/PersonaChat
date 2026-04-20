@@ -2106,7 +2106,7 @@ export function Chat() {
                     <div className="flex-shrink-0 mt-1">
                       {isUser ? (
                         user?.photoURL ? (
-                          <img src={user.photoURL} alt="You" className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
+                          <img src={user.photoURL} alt="You" className="w-8 h-8 rounded-full border border-zinc-700 object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center">
                             <User className="w-4 h-4 text-white" />
@@ -2118,7 +2118,7 @@ export function Chat() {
                           className={`flex-shrink-0 transition-transform active:scale-95 ${!isUser ? 'cursor-pointer' : 'cursor-default'}`}
                         >
                           {msgCharacter?.avatarUrl ? (
-                            <img src={msgCharacter.avatarUrl} alt={msgCharacter.name} className="w-8 h-8 rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors" referrerPolicy="no-referrer" />
+                            <img src={msgCharacter.avatarUrl} alt={msgCharacter.name} className="w-8 h-8 rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 hover:border-indigo-500 transition-colors">
                               <Bot className="w-4 h-4 text-zinc-400" />
