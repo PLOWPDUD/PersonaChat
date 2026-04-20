@@ -86,6 +86,7 @@ export function Chat() {
   const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAddCharacterModalOpen, setIsAddCharacterModalOpen] = useState(false);
+  const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false);
   const [recentCharacters, setRecentCharacters] = useState<Character[]>([]);
   const [isFetchingRecent, setIsFetchingRecent] = useState(false);
   const [characterSearchQuery, setCharacterSearchQuery] = useState('');
@@ -940,6 +941,72 @@ export function Chat() {
     }
   };
 
+  const handleStartPrivateChat = async (char: Character) => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      // 1. First search for an existing 1-on-1 private chat with this character
+      const chatsRef = collection(dbChat, 'chats');
+      const q = query(
+        chatsRef,
+        where('userId', '==', user.uid),
+        where('characterId', '==', char.id),
+        orderBy('updatedAt', 'desc'),
+        limit(1)
+      );
+      
+      const snap = await getDocs(q);
+      
+      // Filter the results to only include truly 1-on-1 chats if possible
+      const existingChat = snap.docs.find(d => {
+        const data = d.data();
+        return !data.characterIds || data.characterIds.length === 1;
+      });
+
+      if (existingChat) {
+        navigate(`/chat/${char.id}/${existingChat.id}`);
+        setIsParticipantsModalOpen(false);
+        return;
+      }
+
+      // 2. If no exists, create a new one
+      const newChatRef = doc(collection(dbChat, 'chats'));
+      const newChatId = newChatRef.id;
+      
+      const chatData = {
+        userId: user.uid,
+        characterIds: [char.id],
+        characterId: char.id,
+        characterName: char.name,
+        characterAvatarUrl: char.avatarUrl,
+        creatorName: char.creatorName || 'Unknown',
+        creatorId: char.creatorId || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        title: `Chat with ${char.name}`
+      };
+
+      const initialMessage = {
+        chatId: newChatId,
+        role: 'model',
+        characterId: char.id,
+        content: char.greeting,
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(newChatRef, chatData);
+      await addDoc(collection(dbChat, `chats/${newChatId}/messages`), initialMessage);
+      
+      navigate(`/chat/${char.id}/${newChatId}`);
+      setIsParticipantsModalOpen(false);
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.CREATE, 'chats');
+      setNotification({ message: `Failed to create private chat: ${error.message || 'Unknown error'}`, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddMemory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemory.trim() || !chatId) return;
@@ -1753,7 +1820,10 @@ export function Chat() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div 
+            onClick={() => setIsParticipantsModalOpen(true)}
+            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer hover:bg-zinc-800/50 p-2 rounded-xl transition-colors"
+          >
             <div className="flex -space-x-3 overflow-hidden flex-shrink-0">
               {characters.map((char) => (
                 char.avatarUrl ? (
@@ -1770,7 +1840,10 @@ export function Chat() {
                 {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
                 {characters.length === 1 && characters[0]?.averageRating && (
                   <button 
-                    onClick={() => setIsRatingOpen(!isRatingOpen)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsRatingOpen(!isRatingOpen);
+                    }}
                     className="flex items-center gap-1 text-[10px] sm:text-xs font-normal text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full hover:bg-yellow-500/20 transition-colors"
                   >
                     <Star className="w-3 h-3 fill-current" />
@@ -1779,7 +1852,7 @@ export function Chat() {
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
-                {characters.length > 1 ? `${characters.length} characters` : `By ${characters[0]?.creatorName || 'Unknown'}`}
+                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `By ${characters[0]?.creatorName || 'Unknown'}`}
               </p>
             </div>
           </div>
@@ -2040,19 +2113,29 @@ export function Chat() {
                           </div>
                         )
                       ) : (
-                        msgCharacter?.avatarUrl ? (
-                          <img src={msgCharacter.avatarUrl} alt={msgCharacter.name} className="w-8 h-8 rounded-full border border-zinc-700" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                            <Bot className="w-4 h-4 text-zinc-400" />
-                          </div>
-                        )
+                        <button 
+                          onClick={() => !isUser && msgCharacter && handleStartPrivateChat(msgCharacter)}
+                          className={`flex-shrink-0 transition-transform active:scale-95 ${!isUser ? 'cursor-pointer' : 'cursor-default'}`}
+                        >
+                          {msgCharacter?.avatarUrl ? (
+                            <img src={msgCharacter.avatarUrl} alt={msgCharacter.name} className="w-8 h-8 rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 hover:border-indigo-500 transition-colors">
+                              <Bot className="w-4 h-4 text-zinc-400" />
+                            </div>
+                          )}
+                        </button>
                       )}
                     </div>
                     
                     <div className={`max-w-[80%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                       {!isUser && msgCharacter && (
-                        <span className="text-[11px] font-medium text-zinc-500 mb-1 ml-1 uppercase tracking-wider">{msgCharacter.name}</span>
+                        <button 
+                          onClick={() => handleStartPrivateChat(msgCharacter)}
+                          className="text-[11px] font-medium text-zinc-500 mb-1 ml-1 uppercase tracking-wider hover:text-indigo-400 transition-colors"
+                        >
+                          {msgCharacter.name}
+                        </button>
                       )}
                       <div className="relative group w-full">
                         {isEditing ? (
@@ -2395,6 +2478,84 @@ export function Chat() {
                 {isSubmittingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Submit Report
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Participants Modal */}
+      {isParticipantsModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+              <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                <User className="w-6 h-6 text-indigo-500" />
+                Chat Participants
+              </h3>
+              <button 
+                onClick={() => setIsParticipantsModalOpen(false)}
+                className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-1 gap-2">
+                {characters.map((char) => (
+                  <div
+                    key={char.id}
+                    className="flex items-center gap-4 p-4 bg-zinc-800/50 border border-zinc-800 rounded-2xl hover:border-zinc-700 transition-all group"
+                  >
+                    {char.avatarUrl ? (
+                      <img src={char.avatarUrl} alt={char.name} className="w-12 h-12 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center border border-zinc-600">
+                        <Bot className="w-6 h-6 text-zinc-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-bold text-white">{char.name}</p>
+                      <p className="text-xs text-zinc-500 truncate">By {char.creatorName || 'Unknown'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setIsParticipantsModalOpen(false);
+                          navigate(`/profile/${char.id}`);
+                        }}
+                        className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors border border-zinc-700"
+                        title="View Character Profile"
+                      >
+                        <User className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleStartPrivateChat(char)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-900/20"
+                      >
+                        Private Chat
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsParticipantsModalOpen(false);
+                  setIsAddCharacterModalOpen(true);
+                }}
+                className="w-full py-4 px-4 bg-zinc-800/50 border border-dashed border-zinc-700 hover:border-indigo-500/50 hover:bg-indigo-600/10 text-zinc-400 hover:text-indigo-400 rounded-2xl flex items-center justify-center gap-3 transition-all font-medium border-2"
+              >
+                <Plus className="w-5 h-5" />
+                Add New Character
+              </button>
+            </div>
+            
+            <div className="p-6 bg-zinc-900/80 border-t border-zinc-800 text-center">
+              <p className="text-xs text-zinc-500 max-w-[280px] mx-auto leading-relaxed">
+                Starting a private chat will take you to a 1-on-1 session with the character while preserving your group chat history.
+              </p>
             </div>
           </div>
         </div>
