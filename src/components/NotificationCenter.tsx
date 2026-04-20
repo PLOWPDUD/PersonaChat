@@ -5,12 +5,27 @@ import { useAuth } from '../contexts/AuthContext';
 import { Bell, Check, Trash2, Loader2, Award, UserPlus, Heart, MessageSquare, Mail, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+import { requestNotificationPermission, showSystemNotification, getNotificationSupport } from '../lib/notifications';
+
 export function NotificationCenter() {
   const { user, setQuotaExceeded } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const unreadCount = notifications.filter(n => !n.read).length;
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+
+  useEffect(() => {
+    const checkSupport = () => {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        setPermissionGranted(Notification.permission === 'granted');
+      }
+    };
+    checkSupport();
+    window.addEventListener('focus', checkSupport);
+    return () => window.removeEventListener('focus', checkSupport);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -27,8 +42,26 @@ export function NotificationCenter() {
         id: doc.id,
         ...doc.data()
       }));
+
+      // Trigger system notifications if permitted and not initial load
+      if (!isFirstLoad) {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            if (!data.read) {
+              showSystemNotification(data.title, {
+                body: data.message,
+                tag: change.doc.id, // Group by notification ID
+                icon: '/favicon.ico'
+              });
+            }
+          }
+        });
+      }
+
       setNotifications(newNotifications);
       setLoading(false);
+      setIsFirstLoad(false);
     }, (error) => {
       if (isQuotaError(error)) {
         setQuotaExceeded(true);
@@ -38,7 +71,15 @@ export function NotificationCenter() {
     });
 
     return () => unsubscribe();
-  }, [user, setQuotaExceeded]);
+  }, [user, setQuotaExceeded, isFirstLoad]);
+
+  const handleRequestPermission = async () => {
+    const granted = await requestNotificationPermission();
+    setPermissionGranted(granted);
+    if (granted) {
+      showSystemNotification('Notifications Enabled!', { body: 'You will now receive live updates from AI Studio.' });
+    }
+  };
 
   const markAsRead = async (id: string) => {
     try {
@@ -96,7 +137,20 @@ export function NotificationCenter() {
               className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
             >
               <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-                <h3 className="text-white font-bold">Notifications</h3>
+                <div>
+                  <h3 className="text-white font-bold">Notifications</h3>
+                  {!permissionGranted && (
+                    <button 
+                      onClick={handleRequestPermission}
+                      disabled={typeof window !== 'undefined' && !('Notification' in window)}
+                      className="text-[9px] text-zinc-500 hover:text-indigo-400 font-bold uppercase tracking-wider flex items-center gap-1 mt-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {typeof window !== 'undefined' && 'Notification' in window 
+                        ? 'Enable System Alerts' 
+                        : 'Alerts Not Supported'}
+                    </button>
+                  )}
+                </div>
                 {unreadCount > 0 && (
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
                     {unreadCount} New

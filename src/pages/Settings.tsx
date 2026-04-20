@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/SettingsContext';
-import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check } from 'lucide-react';
+import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff } from 'lucide-react';
+import { getNotificationSupport, requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 
 const themeColors: { id: ThemeColor; color: string; label: string }[] = [
   { id: 'indigo', color: '#6366f1', label: 'Indigo' },
@@ -27,6 +28,15 @@ const densities: { id: DisplayDensity; label: string; description: string }[] = 
 
 export function Settings() {
   const { settings, updateSettings, resetSettings } = useSettings();
+  const [notifStatus, setNotifStatus] = React.useState(getNotificationSupport());
+
+  const handleRequestNotif = async () => {
+    const granted = await requestNotificationPermission();
+    setNotifStatus(getNotificationSupport());
+    if (granted) {
+      showSystemNotification('Alerts Active!', { body: 'Notifications are now configured correctly.' });
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
@@ -45,6 +55,89 @@ export function Settings() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Notifications */}
+        <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 space-y-4 glass-card col-span-full">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-white font-semibold">
+              <div className="w-8 h-8 rounded-lg bg-theme-primary/10 flex items-center justify-center text-theme-primary">
+                <Bell className="w-5 h-5" />
+              </div>
+              System Notifications
+            </div>
+            {!notifStatus.supported ? (
+              <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-1 rounded-full font-bold uppercase tracking-wider">
+                Not Supported
+              </span>
+            ) : notifStatus.permission === 'granted' ? (
+              <span className="text-[10px] bg-green-500/10 text-green-500 px-2 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                <Check className="w-3 h-3" /> Enabled
+              </span>
+            ) : notifStatus.permission === 'denied' ? (
+              <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                <BellOff className="w-3 h-3" /> Blocked
+              </span>
+            ) : (
+              <span className="text-[10px] bg-zinc-800 text-zinc-500 px-2 py-1 rounded-full font-bold uppercase tracking-wider">
+                Inactive
+              </span>
+            )}
+          </div>
+
+          <div className="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="mt-1">
+                {notifStatus.permission === 'granted' ? (
+                  <Bell className="w-8 h-8 text-green-500" />
+                ) : notifStatus.permission === 'denied' ? (
+                  <BellOff className="w-8 h-8 text-red-500" />
+                ) : (
+                  <Bell className="w-8 h-8 text-zinc-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h4 className="text-white font-bold">Live OS Notifications</h4>
+                <p className="text-zinc-400 text-sm mt-1">
+                  Receive real-time alerts on your Windows or Android device for new messages, followers, and achievements.
+                </p>
+                
+                {notifStatus.permission === 'denied' && (
+                  <div className="mt-3 flex items-start gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+                    <ShieldAlert className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-red-400 leading-relaxed">
+                      Notifications are currently blocked by your browser. Please clear your site permissions or check your browser settings to re-enable them.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              disabled={!notifStatus.supported || notifStatus.permission === 'granted'}
+              onClick={handleRequestNotif}
+              className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                notifStatus.permission === 'granted'
+                  ? 'bg-zinc-800 text-zinc-500 cursor-default'
+                  : notifStatus.supported
+                    ? 'bg-theme-primary text-white hover:bg-theme-primary-hover shadow-lg shadow-theme-glow'
+                    : 'bg-zinc-900 text-zinc-700 cursor-not-allowed'
+              }`}
+            >
+              {notifStatus.permission === 'granted' ? (
+                <>
+                  <Check className="w-5 h-5" />
+                  Notifications Active
+                </>
+              ) : notifStatus.permission === 'denied' ? (
+                'Reset Browser Permissions to Enable'
+              ) : notifStatus.supported ? (
+                'Enable Live Notifications'
+              ) : (
+                'Browser Not Supported'
+              )}
+            </button>
+          </div>
+        </section>
+
         {/* Theme Color */}
         <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 space-y-4 glass-card">
           <div className="flex items-center gap-3 text-white font-semibold">

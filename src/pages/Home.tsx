@@ -267,6 +267,7 @@ export function Home() {
               name: chatData.characterName || 'Unknown Character', 
               avatarUrl: chatData.characterAvatarUrl || '',
               creatorName: chatData.creatorName || 'Unknown',
+              creatorId: chatData.creatorId || null,
               likesCount: chatData.likesCount || 0,
               interactionsCount: chatData.interactionsCount || 0,
               averageRating: chatData.averageRating
@@ -630,7 +631,21 @@ export function Home() {
                   <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
                     {chat.characterIds && chat.characterIds.length > 1 
                       ? `${chat.characterIds.length} characters` 
-                      : `By ${chat.character.creatorName || 'Unknown'}`}
+                      : (
+                        <>
+                          By {chat.character.creatorId ? (
+                            <Link 
+                              to={`/profile/${chat.character.creatorId}`} 
+                              className="hover:text-indigo-400 transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {chat.character.creatorName || 'Unknown'}
+                            </Link>
+                          ) : (
+                            chat.character.creatorName || 'Unknown'
+                          )}
+                        </>
+                      )}
                   </p>
                   
                   <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
@@ -702,9 +717,9 @@ export function Home() {
                 >
                   <ShieldAlert className="w-4 h-4" />
                 </button>
-              <Link 
-                to={`/chat/${char.id}`}
-                className="flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 h-full"
+              <div 
+                onClick={() => navigate(`/chat/${char.id}`)}
+                className="flex flex-col items-center text-center bg-zinc-900 border border-zinc-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all hover:shadow-lg hover:shadow-indigo-500/10 h-full cursor-pointer"
               >
                 {char.avatarUrl ? (
                   <img src={char.avatarUrl} alt={char.name} className="w-20 h-20 rounded-full object-cover border border-zinc-700 mb-3" referrerPolicy="no-referrer" />
@@ -714,7 +729,15 @@ export function Home() {
                   </div>
                 )}
                 <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
-                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">By {char.creatorName || 'Unknown'}</p>
+                <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
+                  By <Link 
+                    to={`/profile/${char.creatorId}`} 
+                    className="hover:text-indigo-400 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {char.creatorName || 'Unknown'}
+                  </Link>
+                </p>
                 
                 <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
                   {char.averageRating && (
@@ -732,7 +755,7 @@ export function Home() {
                     {char.likesCount || 0}
                   </div>
                 </div>
-              </Link>
+              </div>
               
               {tab === 'mine' && (
                 <Link

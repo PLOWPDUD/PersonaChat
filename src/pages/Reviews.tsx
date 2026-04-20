@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { collection, query, getDocs, doc, getDoc, orderBy, limit, startAfter } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -195,22 +195,26 @@ export function Reviews() {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    {review.user?.photoURL ? (
-                      <img 
-                        src={review.user.photoURL} 
-                        alt="" 
-                        className="w-10 h-10 rounded-full object-cover border border-zinc-800" 
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-800">
-                        <User className="w-5 h-5 text-zinc-600" />
-                      </div>
-                    )}
+                    <Link to={`/profile/${review.userId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                      {review.user?.photoURL ? (
+                        <img 
+                          src={review.user.photoURL} 
+                          alt="" 
+                          className="w-10 h-10 rounded-full object-cover border border-zinc-800" 
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-800">
+                          <User className="w-5 h-5 text-zinc-600" />
+                        </div>
+                      )}
+                    </Link>
                     <div>
-                      <h3 className="text-white font-bold text-sm leading-none mb-1">
-                        {review.user?.displayName || 'Unknown User'}
-                      </h3>
+                      <Link to={`/profile/${review.userId}`} className="block hover:text-indigo-400 transition-colors">
+                        <h3 className="text-white font-bold text-sm leading-none mb-1">
+                          {review.user?.displayName || 'Unknown User'}
+                        </h3>
+                      </Link>
                       <div className="flex gap-0.5">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <Star 

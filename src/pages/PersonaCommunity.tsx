@@ -52,6 +52,7 @@ import {
   Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Link } from 'react-router-dom';
 
 interface Post {
   id: string;
@@ -997,16 +998,20 @@ export default function PersonaCommunity() {
             {/* Post Header */}
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {post.authorPhoto ? (
-                  <img src={post.authorPhoto} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                    <User className="w-5 h-5 text-zinc-500" />
-                  </div>
-                )}
+                <Link to={`/profile/${post.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                  {post.authorPhoto ? (
+                    <img src={post.authorPhoto} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                      <User className="w-5 h-5 text-zinc-500" />
+                    </div>
+                  )}
+                </Link>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-white font-bold text-sm">{post.authorName}</p>
+                    <Link to={`/profile/${post.authorId}`} className="text-white font-bold text-sm hover:text-indigo-400 transition-colors">
+                      {post.authorName}
+                    </Link>
                     {post.authorBadges && post.authorBadges.length > 0 && (
                       <div className="flex gap-0.5">
                         {post.authorBadges.map((badgeId: string) => {
@@ -1264,16 +1269,20 @@ export default function PersonaCommunity() {
                         comments.filter(c => !c.parentId).map(comment => (
                           <div key={comment.id} className="space-y-3">
                             <div className="flex gap-3">
-                              {comment.authorPhoto ? (
-                                <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-                                  <User className="w-4 h-4 text-zinc-500" />
-                                </div>
-                              )}
+                              <Link to={`/profile/${comment.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                                {comment.authorPhoto ? (
+                                  <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
+                                    <User className="w-4 h-4 text-zinc-500" />
+                                  </div>
+                                )}
+                              </Link>
                               <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
                                 <div className="flex items-center justify-between mb-1">
-                                  <span className="text-white text-xs font-bold">{comment.authorName}</span>
+                                  <Link to={`/profile/${comment.authorId}`} className="text-white text-xs font-bold hover:text-indigo-400 transition-colors">
+                                    {comment.authorName}
+                                  </Link>
                                   <div className="flex items-center gap-2">
                                     <span className="text-zinc-600 text-[10px]">
                                       {comment.createdAt?.toDate ? new Date(comment.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
@@ -1386,16 +1395,20 @@ export default function PersonaCommunity() {
                             {/* Replies */}
                             {comments.filter(r => r.parentId === comment.id).map(reply => (
                               <div key={reply.id} className="flex gap-3 ml-8">
-                                {reply.authorPhoto ? (
-                                  <img src={reply.authorPhoto} alt="" className="w-6 h-6 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
-                                    <User className="w-3 h-3 text-zinc-500" />
-                                  </div>
-                                )}
+                                <Link to={`/profile/${reply.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                                  {reply.authorPhoto ? (
+                                    <img src={reply.authorPhoto} alt="" className="w-6 h-6 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
+                                      <User className="w-3 h-3 text-zinc-500" />
+                                    </div>
+                                  )}
+                                </Link>
                                 <div className="flex-1 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-3">
                                   <div className="flex items-center justify-between mb-1">
-                                    <span className="text-white text-[10px] font-bold">{reply.authorName}</span>
+                                    <Link to={`/profile/${reply.authorId}`} className="text-white text-[10px] font-bold hover:text-indigo-400 transition-colors">
+                                      {reply.authorName}
+                                    </Link>
                                     <div className="flex items-center gap-2">
                                       <span className="text-zinc-600 text-[10px]">
                                         {reply.createdAt?.toDate ? new Date(reply.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
@@ -1617,22 +1630,28 @@ export default function PersonaCommunity() {
           </div>
           <div className="divide-y divide-zinc-800">
             {trendingPosts.slice(0, 5).map((post, index) => (
-              <button
+              <div
                 key={post.id}
                 onClick={() => {
                   const element = document.getElementById(post.id);
                   element?.scrollIntoView({ behavior: 'smooth' });
                 }}
-                className="w-full p-4 text-left hover:bg-zinc-800/50 transition-colors flex gap-3"
+                className="w-full p-4 text-left hover:bg-zinc-800/50 transition-colors flex gap-3 cursor-pointer"
               >
                 <span className="text-zinc-700 font-bold text-xl">0{index + 1}</span>
                 <div className="min-w-0">
                   <p className="text-white text-sm font-bold truncate">{post.title || post.content}</p>
                   <p className="text-zinc-500 text-[10px] uppercase tracking-widest mt-1">
-                    {post.authorName} • {post.likesCount} likes
+                    <Link 
+                      to={`/profile/${post.authorId}`}
+                      className="hover:text-indigo-400 transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {post.authorName}
+                    </Link> • {post.likesCount} likes
                   </p>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </div>

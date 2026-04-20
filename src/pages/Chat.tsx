@@ -439,6 +439,7 @@ export function Chat() {
         characterName: primaryChar.name,
         characterAvatarUrl: primaryChar.avatarUrl,
         creatorName: primaryChar.creatorName || 'Unknown',
+        creatorId: primaryChar.creatorId || null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`

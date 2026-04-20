@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/fi
 import { getCachedProfile, setCachedProfiles, getCachedData, updateGlobalCache } from '../lib/cache';
 import { getLocalCharacters } from '../lib/localStorage';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star, ShieldAlert } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { Profile, Character } from '../types';
@@ -339,10 +339,10 @@ export function Search() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {characters.length > 0 ? (
                       characters.map((char) => (
-                        <button
+                        <div
                           key={char.id}
                           onClick={() => handleCharacterClick(char.id)}
-                          className={`flex items-center gap-4 p-4 bg-zinc-900 border rounded-2xl transition-all text-left group relative ${
+                          className={`flex items-center gap-4 p-4 bg-zinc-900 border rounded-2xl transition-all text-left group relative cursor-pointer ${
                             selectedCharIds.includes(char.id) 
                               ? 'border-indigo-500 bg-indigo-500/5' 
                               : 'border-zinc-800 hover:border-indigo-500/50'
@@ -374,11 +374,19 @@ export function Search() {
                                 </span>
                               )}
                             </h3>
-                            <p className="text-zinc-500 text-[10px] mb-1">By {char.creatorName || 'Unknown'}</p>
+                            <p className="text-zinc-500 text-[10px] mb-1">
+                              By <Link 
+                                to={`/profile/${char.creatorId}`} 
+                                className="hover:text-indigo-400 transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {char.creatorName || 'Unknown'}
+                              </Link>
+                            </p>
                             <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                           </div>
                           {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
-                        </button>
+                        </div>
                       ))
                     ) : searchQuery.trim() ? (
                       <div className="col-span-full text-center py-12">
