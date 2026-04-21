@@ -169,6 +169,12 @@ service cloud.firestore {
       allow update: if isModerator();
     }
 
+    match /bug_reports/{reportId} {
+      allow read: if isModerator();
+      allow create: if isAuthenticated();
+      allow update, delete: if isModerator();
+    }
+
     match /siteStats/{docId} {
       allow read: if true;
       allow write: if isAuthenticated();

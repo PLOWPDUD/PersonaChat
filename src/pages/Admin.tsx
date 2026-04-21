@@ -20,9 +20,10 @@ interface UserProfile {
 export function Admin() {
   const { user, isOwner, isModerator } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'reports' | 'characters'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'reports' | 'characters' | 'feedback'>('users');
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [feedback, setFeedback] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   
@@ -130,6 +131,10 @@ export function Admin() {
         const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
         const snap = await getDocs(q);
         setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } else if (activeTab === 'feedback') {
+        const q = query(collection(db, 'bug_reports'), orderBy('createdAt', 'desc'), limit(50));
+        const snap = await getDocs(q);
+        setFeedback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, activeTab);
@@ -153,6 +158,19 @@ export function Admin() {
   const [banModal, setBanModal] = useState<{ userId: string; isOpen: boolean }>({ userId: '', isOpen: false });
   const [banReason, setBanReason] = useState('');
   const [banDuration, setBanDuration] = useState('60'); // minutes
+  
+  const handleFeedbackStatus = async (reportId: string, newStatus: string) => {
+    setUpdatingId(reportId);
+    try {
+      const reportRef = doc(db, 'bug_reports', reportId);
+      await setDoc(reportRef, { status: newStatus, updatedAt: serverTimestamp() }, { merge: true });
+      setFeedback(prev => prev.map(f => f.id === reportId ? { ...f, status: newStatus } : f));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `bug_reports/${reportId}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const handleBanUser = async (userId: string) => {
     if (!isModerator) return;
@@ -340,6 +358,14 @@ export function Admin() {
             }`}
           >
             Reports
+          </button>
+          <button
+            onClick={() => setActiveTab('feedback')}
+            className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'feedback' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Feedback
           </button>
         </div>
       </div>
@@ -555,7 +581,7 @@ export function Admin() {
             </div>
           )}
         </div>
-      ) : (
+      ) : activeTab === 'reports' ? (
         <div className="grid grid-cols-1 gap-4">
           {reports.length === 0 ? (
             <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
@@ -634,6 +660,103 @@ export function Admin() {
                       </button>
                     </>
                   )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          {feedback.length === 0 ? (
+            <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
+              <ShieldCheck className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+              <p className="text-zinc-400 text-lg">No bug reports or feedback found.</p>
+            </div>
+          ) : (
+            feedback.map(item => (
+              <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col gap-6 hover:border-indigo-500/30 transition-all shadow-xl">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                  <div className="space-y-4 flex-1">
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                        item.status === 'pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
+                        item.status === 'reviewed' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                        'bg-green-500/10 text-green-400 border border-green-500/20'
+                      }`}>
+                        {item.status}
+                      </span>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                        item.category === 'bug' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                        item.category === 'feedback' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                        'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      }`}>
+                        {item.category}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                        <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{item.description}</p>
+                      </div>
+                    </div>
+
+                    {item.imageUrl && (
+                      <div className="mt-4">
+                        <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 px-1">Attachment</p>
+                        <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block relative rounded-2xl border border-zinc-800 overflow-hidden group">
+                           <img src={item.imageUrl} alt="Feedback" className="max-h-64 object-contain" />
+                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                             <p className="text-white text-xs font-bold uppercase">View Full Image</p>
+                           </div>
+                        </a>
+                      </div>
+                    )}
+                    
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+                      <div className="flex items-center gap-2">
+                        <User className="w-3 h-3 text-zinc-600" />
+                        <span className="text-zinc-400 font-medium">{item.userName}</span>
+                      </div>
+                      <span className="text-zinc-800">•</span>
+                      <span className="font-mono text-zinc-600">{item.userEmail}</span>
+                      <span className="text-zinc-800">•</span>
+                      <span className="text-zinc-500">{item.createdAt?.toDate ? new Date(item.createdAt.toDate()).toLocaleString() : 'Recently'}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[160px] pt-1">
+                    {item.status === 'pending' && (
+                      <button
+                        onClick={() => handleFeedbackStatus(item.id, 'reviewed')}
+                        disabled={updatingId === item.id}
+                        className="w-full px-6 py-3 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        Mark Reviewed
+                      </button>
+                    )}
+                    {item.status !== 'resolved' && (
+                      <button
+                        onClick={() => handleFeedbackStatus(item.id, 'resolved')}
+                        disabled={updatingId === item.id}
+                        className="w-full px-6 py-3 bg-green-600/10 text-green-400 hover:bg-green-600 hover:text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        Mark Resolved
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        if (window.confirm('Delete this report?')) {
+                          setUpdatingId(item.id);
+                          await deleteDoc(doc(db, 'bug_reports', item.id));
+                          setFeedback(prev => prev.filter(f => f.id !== item.id));
+                          setUpdatingId(null);
+                        }
+                      }}
+                      className="w-full px-6 py-3 bg-zinc-800 text-zinc-500 hover:bg-red-500/10 hover:text-red-500 rounded-xl text-sm font-bold transition-all"
+                    >
+                      Delete Report
+                    </button>
+                  </div>
                 </div>
               </div>
             ))

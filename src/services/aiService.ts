@@ -73,3 +73,48 @@ export async function moderateImage(base64Data: string, mimeType: string): Promi
     };
   }
 }
+
+export async function moderateText(text: string): Promise<ModerationResult> {
+  const cacheKey = `text_${text.length}_${text.substring(0, 100)}`;
+  
+  if (moderationCache.has(cacheKey)) {
+    return moderationCache.get(cacheKey)!;
+  }
+
+  try {
+    const moderationPromise = ai.models.generateContent({
+      model: "gemini-flash-latest",
+      contents: [{
+        role: "user",
+        parts: [
+          { text: `Analyze the following text for inappropriate content, specifically hate speech, harassment, or highly suggestive/explicit language. Respond in JSON format with the following structure: { \"isAppropriate\": boolean, \"reason\": string, \"suggestion\": string }. If the text is appropriate, isAppropriate should be true. If it is inappropriate, provide a brief reason and a suggestion for the user.\n\nText: ${text}` },
+        ]
+      }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isAppropriate: { type: Type.BOOLEAN },
+            reason: { type: Type.STRING },
+            suggestion: { type: Type.STRING },
+          },
+          required: ["isAppropriate", "reason", "suggestion"],
+        },
+      },
+    });
+
+    const response = await moderationPromise as any;
+    const result = JSON.parse(response.text || "{}");
+    
+    moderationCache.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.error("Error moderating text:", error);
+    return { 
+      isAppropriate: true, 
+      reason: "Error during moderation", 
+      suggestion: "" 
+    };
+  }
+}

@@ -270,6 +270,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["followerId", "followingId", "createdAt"]
+    },
+    "BugReport": {
+      "title": "Bug/Feedback Report",
+      "description": "Feedback or bug report from a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "category": { "type": "string", "enum": ["bug", "feedback", "suggestion"] },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "category", "description", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -281,6 +297,7 @@
     "/favorites/{favoriteId}": { "schema": "Favorite", "description": "User favorites." },
     "/characters/{characterId}/ratings/{userId}": { "schema": "Rating", "description": "Character ratings." },
     "/reports/{reportId}": { "schema": "Report", "description": "Content reports." },
+    "/bug_reports/{reportId}": { "schema": "BugReport", "description": "Feedback and bug reports from users." },
     "/siteStats/{docId}": { "schema": "SiteStats", "description": "Global site statistics." },
     "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." },
     "/global_notifications/{notificationId}": { "schema": "GlobalNotification", "description": "Global notifications." },
