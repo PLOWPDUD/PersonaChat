@@ -3,9 +3,11 @@ import { Outlet, Link } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Menu, X, MessageSquare } from 'lucide-react';
 import { NotificationCenter } from './NotificationCenter';
+import { FeedbackPanel } from './FeedbackPanel';
 
 export function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col lg:flex-row">
@@ -39,7 +41,10 @@ export function Layout() {
         fixed inset-y-0 left-0 z-[70] w-64 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 lg:z-0
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <Sidebar onClose={() => setIsSidebarOpen(false)} />
+        <Sidebar 
+          onClose={() => setIsSidebarOpen(false)} 
+          onOpenFeedback={() => setIsFeedbackOpen(true)}
+        />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -52,6 +57,11 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <FeedbackPanel 
+        isOpen={isFeedbackOpen} 
+        onClose={() => setIsFeedbackOpen(false)} 
+      />
     </div>
   );
 }

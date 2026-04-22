@@ -98,16 +98,16 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[110] flex justify-end">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" 
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" 
         onClick={onClose}
       />
       
       {/* Panel */}
-      <div className="relative w-full max-w-md bg-zinc-950 border-l border-zinc-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-        <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+      <div className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl flex flex-col shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 rounded-lg">
               <Bug className="w-5 h-5 text-indigo-500" />

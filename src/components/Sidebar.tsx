@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings, Globe, BookOpen, Bug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,12 +7,12 @@ import { FeedbackPanel } from './FeedbackPanel';
 
 interface SidebarProps {
   onClose?: () => void;
+  onOpenFeedback: () => void;
 }
 
-export function Sidebar({ onClose }: SidebarProps) {
+export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
   const location = useLocation();
   const { user, profile, isOwner, isModerator, logOut } = useAuth();
-  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const getRankInfo = () => {
     if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
@@ -75,7 +75,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         ))}
         
         <button
-          onClick={() => setIsFeedbackOpen(true)}
+          onClick={onOpenFeedback}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-zinc-400 hover:bg-zinc-900 hover:text-white"
         >
           <Bug className="w-5 h-5 text-indigo-500/60" />
@@ -112,14 +112,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           <span>Log Out</span>
         </button>
       </div>
-
-      <FeedbackPanel 
-        isOpen={isFeedbackOpen} 
-        onClose={() => {
-          setIsFeedbackOpen(false);
-          if (onClose) onClose();
-        }} 
-      />
     </div>
   );
 }
