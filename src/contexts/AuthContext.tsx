@@ -168,19 +168,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
-          console.log("Fetching profile for:", currentUser.uid);
+          console.log("Checking profile for:", currentUser.uid, "Email:", currentUser.email);
           const profileSnap = await getDoc(profileRef);
           
+          const fallBackName = currentUser.isAnonymous 
+            ? `Guest ${currentUser.uid.slice(0, 5)}` 
+            : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
+
           const profileData = {
             uid: currentUser.uid,
-            displayName: currentUser.displayName || (currentUser.isAnonymous ? `Guest ${currentUser.uid.slice(0, 5)}` : 'Anonymous User'),
+            displayName: currentUser.displayName || fallBackName,
             photoURL: currentUser.photoURL || '',
             email: currentUser.email || '',
             updatedAt: serverTimestamp()
           };
 
           if (!profileSnap.exists()) {
-            console.log("No profile found, creating new one...");
+            console.log("No profile found, creating new one for:", profileData.displayName);
             const newProfile = {
               ...profileData,
               displayName_lowercase: profileData.displayName.toLowerCase(),
@@ -189,9 +193,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               hasSeenRules: false
             };
             await setDoc(profileRef, newProfile);
-            console.log("New profile created");
-            setProfile(newProfile);
-            localStorage.setItem('cached_profile', JSON.stringify(newProfile));
+            console.log("New profile created in Firestore");
+            
+            // For local state, we use a real date instead of serverTimestamp sentinel
+            const localProfile = { ...newProfile, updatedAt: new Date(), createdAt: new Date() };
+            setProfile(localProfile);
+            localStorage.setItem('cached_profile', JSON.stringify(localProfile));
             
             const newRoles = {
               isOwner: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin',
@@ -201,35 +208,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
 
             // Increment user count
-            const statsRef = doc(db, 'siteStats', 'global');
-            await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
-            console.log("User count incremented");
+            try {
+              const statsRef = doc(db, 'siteStats', 'global');
+              await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
+              console.log("Global user count incremented");
+            } catch (statsErr) {
+              console.warn("Failed to increment user count:", statsErr);
+            }
           } else {
             const data = profileSnap.data();
-            console.log("Profile found:", data);
+            console.log("Existing profile found:", data.displayName);
             
             // Only update if essential fields are missing or if the display name/photo has changed from Google
             const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
-            const hasChanged = data.displayName !== profileData.displayName || data.photoURL !== profileData.photoURL;
+            
+            // If the existing profile has the fallback/anonymous name but the Google user now has a real name, update it
+            const hasGoogleNameNow = currentUser.displayName && (data.displayName === 'Anonymous User' || data.displayName === 'Persona User' || data.displayName.startsWith('Guest '));
+            const hasChanged = hasGoogleNameNow || (currentUser.displayName && data.displayName !== currentUser.displayName) || (currentUser.photoURL && data.photoURL !== currentUser.photoURL);
 
             const isOwnerEmail = currentUser.email === 'videosonli5@gmail.com';
             const needsRoleUpgrade = isOwnerEmail && data.role !== 'owner' && data.role !== 'admin';
 
             if (needsUpdate || hasChanged || needsRoleUpgrade) {
-              console.log("Profile needs update/migration or role upgrade");
+              console.log("Profile needs update/migration or info sync. Reason:", { needsUpdate, hasChanged, needsRoleUpgrade });
               const updates: any = {
                 uid: data.uid || profileData.uid,
-                displayName: profileData.displayName,
-                displayName_lowercase: profileData.displayName.toLowerCase(),
-                photoURL: profileData.photoURL,
-                email: data.email || profileData.email,
+                displayName: currentUser.displayName || data.displayName || fallBackName,
+                displayName_lowercase: (currentUser.displayName || data.displayName || fallBackName).toLowerCase(),
+                photoURL: currentUser.photoURL || data.photoURL || '',
+                email: data.email || currentUser.email || '',
                 updatedAt: serverTimestamp()
               };
               if (!data.createdAt) updates.createdAt = serverTimestamp();
               if (needsRoleUpgrade) updates.role = 'owner';
               
               await updateDoc(profileRef, updates);
-              const updatedProfile = { ...data, ...updates };
+              const updatedProfile = { ...data, ...updates, updatedAt: new Date() };
               setProfile(updatedProfile);
               localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
             } else {
