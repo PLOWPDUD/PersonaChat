@@ -4,6 +4,7 @@ import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { UserCircle, Trash2, Plus, AlertCircle, Edit2, Save, X, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 
 interface Persona {
   id: string;
@@ -13,6 +14,7 @@ interface Persona {
 }
 
 export function Personas() {
+  const { t } = useTranslation();
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +44,7 @@ export function Personas() {
       setNewPersona({ name: '', description: '', personality: '' });
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
-      setError('Failed to create persona.');
+      setError(t('personas.errorCreate'));
     }
   };
 
@@ -65,7 +67,7 @@ export function Personas() {
       setError('');
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
-      setError('Failed to update persona.');
+      setError(t('personas.errorUpdate'));
     } finally {
       setIsUpdating(false);
     }
@@ -80,39 +82,39 @@ export function Personas() {
       });
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `profiles/${user.uid}`);
-      setError('Failed to delete persona.');
+      setError(t('personas.errorDelete'));
     }
   };
 
   return (
     <div className="max-w-2xl mx-auto space-y-8">
-      <h1 className="text-3xl font-bold text-white">My Personas</h1>
+      <h1 className="text-3xl font-bold text-white">{t('personas.title')}</h1>
       
       <form onSubmit={handleCreate} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-4">
-        <h2 className="text-xl font-semibold text-white">Create New Persona</h2>
+        <h2 className="text-xl font-semibold text-white">{t('personas.createTitle')}</h2>
         <input
           type="text"
-          placeholder="Name"
+          placeholder={t('personas.name')}
           value={newPersona.name}
           onChange={e => setNewPersona({...newPersona, name: e.target.value})}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
           required
         />
         <textarea
-          placeholder="Description"
+          placeholder={t('personas.description')}
           value={newPersona.description}
           onChange={e => setNewPersona({...newPersona, description: e.target.value})}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
           required
         />
         <textarea
-          placeholder="Personality (Optional)"
+          placeholder={`${t('personas.personality')} (${t('common.optional')})`}
           value={newPersona.personality}
           onChange={e => setNewPersona({...newPersona, personality: e.target.value})}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
         />
         <button type="submit" className="bg-indigo-600 text-white py-2 px-4 rounded-xl flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Create Persona
+          <Plus className="w-4 h-4" /> {t('personas.btnCreate')}
         </button>
       </form>
 
@@ -163,11 +165,11 @@ export function Personas() {
                 <X className="w-6 h-6" />
               </button>
 
-              <h2 className="text-2xl font-bold text-white mb-6">Edit Persona</h2>
+              <h2 className="text-2xl font-bold text-white mb-6">{t('personas.editTitle')}</h2>
               
               <form onSubmit={handleEdit} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">Name</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">{t('personas.name')}</label>
                   <input
                     type="text"
                     value={editingPersona.name}
@@ -178,7 +180,7 @@ export function Personas() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">Description</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">{t('personas.description')}</label>
                   <textarea
                     value={editingPersona.description}
                     onChange={e => setEditingPersona({...editingPersona, description: e.target.value})}
@@ -189,13 +191,13 @@ export function Personas() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">Personality Traits</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest pl-1">{t('personas.personality')}</label>
                   <textarea
                     value={editingPersona.personality || ''}
                     onChange={e => setEditingPersona({...editingPersona, personality: e.target.value})}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-600 transition-all"
                     rows={4}
-                    placeholder="E.g. Witty, sarcastic, highly intelligent, loves coffee..."
+                    placeholder={t('personas.personalityPlaceholder')}
                   />
                 </div>
 
@@ -205,7 +207,7 @@ export function Personas() {
                     onClick={() => setEditingPersona(null)}
                     className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-bold transition-all"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button 
                     type="submit" 
@@ -213,7 +215,7 @@ export function Personas() {
                     className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Save Changes
+                    {t('personas.saveChanges')}
                   </button>
                 </div>
               </form>

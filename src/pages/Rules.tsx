@@ -3,8 +3,10 @@ import { ShieldCheck, MessageSquare, AlertTriangle, EyeOff, Scale, Heart, Info, 
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export function Rules() {
+  const { t } = useTranslation();
   const { profile, updateSeenRules } = useAuth();
   const navigate = useNavigate();
 
@@ -15,36 +17,36 @@ export function Rules() {
 
   const ruleGroups = [
     {
-      title: "Core Conduct",
+      title: t('rules.conduct'),
       icon: Heart,
       color: "text-rose-400",
-      description: "How we interact as a community.",
+      description: t('rules.conductDesc'),
       rules: [
-        { name: "Respect First", text: "Treat every user and AI personality with basic human dignity. Harassment, hate speech, and bullying are strictly prohibited." },
-        { name: "No Toxic Content", text: "Prohibited content includes extremist ideologies, illegal activities, and glorification of self-harm." },
-        { name: "Age Appropriate", text: "This platform is intended for users 13+. Keep public characters and community posts broadly appropriate." }
+        { name: t('rules.respect'), text: t('rules.respectDesc') },
+        { name: t('rules.noToxic'), text: t('rules.noToxicDesc') },
+        { name: t('rules.age'), text: t('rules.ageDesc') }
       ]
     },
     {
-      title: "Creation Guidelines",
+      title: t('rules.creation'),
       icon: Scale,
       color: "text-indigo-400",
-      description: "Standards for AI characters and personas.",
+      description: t('rules.creationDesc'),
       rules: [
-        { name: "Public Safety", text: "Public characters must NOT encourage violence, non-consensual sexual content, or dangerous illegal behaviors." },
-        { name: "No Impersonation", text: "Do not create characters to maliciously impersonate real living figures for fraud or targeted harassment." },
-        { name: "Intellectual Property", text: "Respect the copyrights of artists and authors. AI prompts should not be used to bypass proprietary protections." }
+        { name: t('rules.safety'), text: t('rules.safetyDesc') },
+        { name: t('rules.noImpersonation'), text: t('rules.noImpersonationDesc') },
+        { name: t('rules.ip'), text: t('rules.ipDesc') }
       ]
     },
     {
-      title: "Technical Use",
+      title: t('rules.technical'),
       icon: Gavel,
       color: "text-amber-400",
-      description: "App usage and bot behavior.",
+      description: t('rules.technicalDesc'),
       rules: [
-        { name: "Spam & Manipulation", text: "No mass-creation of accounts or characters to manipulate ratings, level systems, or community rankings." },
-        { name: "System Integrity", text: "Do not attempt to scrape private database information or exploit LLM vulnerabilities for malicious extraction." },
-        { name: "English Primary", text: "While multi-lingual chat is supported, public character descriptions and community comments must be in English for moderation." }
+        { name: t('rules.spam'), text: t('rules.spamDesc') },
+        { name: t('rules.integrity'), text: t('rules.integrityDesc') },
+        { name: t('rules.english'), text: t('rules.englishDesc') }
       ]
     }
   ];
@@ -59,9 +61,9 @@ export function Rules() {
         >
           <ShieldCheck className="w-12 h-12 text-indigo-500" />
         </motion.div>
-        <h1 className="text-4xl md:text-5xl font-black text-white tracking-tighter">Community Baseline</h1>
+        <h1 className="text-4xl md:text-5xl font-black text-white tracking-tighter">{t('common.rulesTitle')}</h1>
         <p className="text-zinc-400 text-lg max-w-xl mx-auto">
-          These rules ensure PersonaChat remains a creative, safe, and innovative space for everyone.
+          {t('common.rulesSub')}
         </p>
       </header>
 
@@ -71,8 +73,8 @@ export function Rules() {
             <AlertTriangle className="w-6 h-6 text-red-500" />
           </div>
           <div>
-            <h3 className="text-white font-bold">Zero Tolerance</h3>
-            <p className="text-xs text-zinc-500">Hate speech or harassment results in immediate bans.</p>
+            <h3 className="text-white font-bold">{t('rules.zeroTolerance')}</h3>
+            <p className="text-xs text-zinc-500">{t('rules.zeroToleranceDesc')}</p>
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl flex items-center gap-4">
@@ -80,8 +82,8 @@ export function Rules() {
             <EyeOff className="w-6 h-6 text-indigo-500" />
           </div>
           <div>
-            <h3 className="text-white font-bold">Privacy Lock</h3>
-            <p className="text-xs text-zinc-500">Private characters are never shared with anyone.</p>
+            <h3 className="text-white font-bold">{t('rules.privacy')}</h3>
+            <p className="text-xs text-zinc-500">{t('rules.privacyDesc')}</p>
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl flex items-center gap-4">
@@ -89,8 +91,8 @@ export function Rules() {
             <HandMetal className="w-6 h-6 text-green-500" />
           </div>
           <div>
-            <h3 className="text-white font-bold">Creative Freedom</h3>
-            <p className="text-xs text-zinc-500">We prioritize expression within safety bounds.</p>
+            <h3 className="text-white font-bold">{t('rules.freedom')}</h3>
+            <p className="text-xs text-zinc-500">{t('rules.freedomDesc')}</p>
           </div>
         </div>
       </div>
@@ -137,8 +139,8 @@ export function Rules() {
       <footer className="p-10 bg-indigo-600 rounded-[3rem] text-center space-y-6 shadow-xl shadow-indigo-900/20">
         <Ghost className="w-12 h-12 text-white/50 mx-auto" />
         <div className="max-w-md mx-auto">
-          <h2 className="text-3xl font-black text-white leading-tight">By continuing to use PersonaChat, you agree to these standards.</h2>
-          <p className="text-indigo-100 mt-4 font-medium italic opacity-80">We reserve the right to remove any content that violates these principles.</p>
+          <h2 className="text-3xl font-black text-white leading-tight">{t('common.rulesFooter')}</h2>
+          <p className="text-indigo-100 mt-4 font-medium italic opacity-80">{t('rules.footerSub')}</p>
         </div>
         
         {profile && profile.hasSeenRules === false && (
@@ -149,7 +151,7 @@ export function Rules() {
             className="mt-8 bg-white text-indigo-600 hover:bg-zinc-100 font-bold py-4 px-10 rounded-2xl shadow-xl hover:scale-105 transition-all flex items-center gap-3 mx-auto"
           >
             <CheckCircle2 className="w-6 h-6" />
-            I Understand & Accept
+            {t('common.rulesAccept')}
           </motion.button>
         )}
       </footer>

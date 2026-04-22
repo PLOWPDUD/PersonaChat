@@ -4,8 +4,10 @@ import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/fi
 import { doc, getDoc } from 'firebase/firestore';
 import { Users, Loader2, User, AlertCircle, ShieldAlert, Award, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 export function Stats() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const [stats, setStats] = useState<{ visitorCount: number; userCount: number } | null>(null);
@@ -32,7 +34,7 @@ export function Stats() {
           setLocalQuotaExceeded(true);
         } else {
           handleFirestoreError(error, OperationType.GET, 'siteStats/global');
-          setError('Failed to load statistics.');
+          setError(t('stats.loadError'));
         }
       } finally {
         setLoading(false);
@@ -54,16 +56,15 @@ export function Stats() {
     return (
       <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
         <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Quota Limit Reached</h2>
+        <h2 className="text-xl font-bold text-white mb-2">{t('common.quotaWarnHome')}</h2>
         <p className="text-zinc-400 mb-6">
-          The website has reached its daily data limit for the free tier. 
-          Statistics are temporarily unavailable. Please check back tomorrow!
+          {t('stats.quotaLimitDesc')}
         </p>
         <button 
           onClick={() => window.location.reload()}
           className="text-indigo-400 hover:text-indigo-300 font-medium"
         >
-          Try reloading
+          {t('common.tryReloading', 'Try reloading')}
         </button>
       </div>
     );
@@ -78,7 +79,7 @@ export function Stats() {
           onClick={() => window.location.reload()}
           className="text-indigo-400 hover:text-indigo-300 font-medium"
         >
-          Try reloading
+          {t('common.tryReloading', 'Try reloading')}
         </button>
       </div>
     );
@@ -88,8 +89,8 @@ export function Stats() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
-          <p className="text-zinc-400 mt-1">Overview of the community and your activity</p>
+          <h1 className="text-3xl font-bold text-white tracking-tight">{t('stats.dashboardTitle')}</h1>
+          <p className="text-zinc-400 mt-1">{t('stats.dashboardSub')}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="p-2 bg-zinc-900 border border-zinc-800 rounded-xl">
@@ -105,16 +106,16 @@ export function Stats() {
             <Users className="w-32 h-32 text-indigo-500" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-6">Community Growth</h3>
+            <h3 className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-6">{t('stats.communityGrowth')}</h3>
             <div className="flex items-end gap-8">
               <div>
                 <p className="text-5xl font-bold text-white tracking-tighter">{stats?.userCount || 0}</p>
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">Total Members</p>
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">{t('stats.totalMembers')}</p>
               </div>
               <div className="h-12 w-px bg-zinc-800" />
               <div>
                 <p className="text-5xl font-bold text-white tracking-tighter">{stats?.visitorCount || 0}</p>
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">Total Visitors</p>
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-2">{t('stats.totalVisitors')}</p>
               </div>
             </div>
           </div>
@@ -135,19 +136,19 @@ export function Stats() {
                 </div>
               )}
               <div>
-                <p className="font-bold truncate">{profile?.displayName || 'User'}</p>
-                <p className="text-indigo-200 text-xs">Level {profile?.level || 1}</p>
+                <p className="font-bold truncate">{profile?.displayName || t('common.user')}</p>
+                <p className="text-indigo-200 text-xs">{t('common.level')} {profile?.level || 1}</p>
               </div>
             </div>
             <p className="text-indigo-100 text-sm leading-relaxed">
-              Keep interacting with characters and the community to earn XP and level up!
+              {t('stats.xpNote')}
             </p>
           </div>
           <button 
             onClick={() => navigate('/profile')}
             className="mt-6 w-full py-3 bg-white text-indigo-600 rounded-2xl text-sm font-bold hover:bg-indigo-50 transition-colors relative z-10"
           >
-            View Profile
+            {t('stats.viewProfile')}
           </button>
         </div>
 
@@ -157,7 +158,7 @@ export function Stats() {
             <Award className="w-6 h-6 text-amber-500" />
           </div>
           <p className="text-white font-bold">{profile?.badges?.length || 0}</p>
-          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Badges Earned</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">{t('stats.badgesEarned')}</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-center items-center text-center">
@@ -165,7 +166,7 @@ export function Stats() {
             <Users className="w-6 h-6 text-purple-500" />
           </div>
           <p className="text-white font-bold">{profile?.followersCount || 0}</p>
-          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Followers</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">{t('stats.followers')}</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-center items-center text-center">
@@ -173,7 +174,7 @@ export function Stats() {
             <Zap className="w-6 h-6 text-green-500" />
           </div>
           <p className="text-white font-bold">{profile?.xp || 0}</p>
-          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">Total XP</p>
+          <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">{t('stats.totalXp')}</p>
         </div>
       </div>
     </div>

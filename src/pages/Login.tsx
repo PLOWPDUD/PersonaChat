@@ -3,8 +3,10 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { signInWithGoogle, signInAnonymously } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageSquare, Sparkles, UserCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export function Login() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
@@ -49,10 +51,10 @@ export function Login() {
           <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/20">
             <MessageSquare className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2 text-center">PersonaChat</h1>
+          <h1 className="text-3xl font-bold text-white mb-2 text-center">{t('common.appName')}</h1>
           <p className="text-zinc-400 text-center flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-indigo-400" />
-            Chat with AI characters
+            {t('common.loginTagline')}
           </p>
         </div>
 

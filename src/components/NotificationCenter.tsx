@@ -6,8 +6,10 @@ import { Bell, Check, Trash2, Loader2, Award, UserPlus, Heart, MessageSquare, Ma
 import { motion, AnimatePresence } from 'motion/react';
 
 import { requestNotificationPermission, showSystemNotification, getNotificationSupport } from '../lib/notifications';
+import { useTranslation } from 'react-i18next';
 
 export function NotificationCenter() {
+  const { t } = useTranslation();
   const { user, setQuotaExceeded } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +79,7 @@ export function NotificationCenter() {
     const granted = await requestNotificationPermission();
     setPermissionGranted(granted);
     if (granted) {
-      showSystemNotification('Notifications Enabled!', { body: 'You will now receive live updates from AI Studio.' });
+      showSystemNotification(t('notifications.enabledTitle'), { body: t('notifications.enabledBody') });
     }
   };
 
@@ -120,7 +122,7 @@ export function NotificationCenter() {
       >
         <Bell className="w-6 h-6" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-zinc-950">
+          <span className="absolute top-1 ltr:right-1 rtl:left-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-zinc-950">
             {unreadCount}
           </span>
         )}
@@ -134,26 +136,26 @@ export function NotificationCenter() {
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
+              className="absolute ltr:right-0 rtl:left-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
             >
               <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-                <div>
-                  <h3 className="text-white font-bold">Notifications</h3>
+                <div className="min-w-0">
+                  <h3 className="text-white font-bold truncate">{t('notifications.title')}</h3>
                   {!permissionGranted && (
                     <button 
                       onClick={handleRequestPermission}
                       disabled={typeof window !== 'undefined' && !('Notification' in window)}
-                      className="text-[9px] text-zinc-500 hover:text-indigo-400 font-bold uppercase tracking-wider flex items-center gap-1 mt-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[9px] text-zinc-500 hover:text-indigo-400 font-bold uppercase tracking-wider flex items-center gap-1 mt-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left rtl:text-right"
                     >
                       {typeof window !== 'undefined' && 'Notification' in window 
-                        ? 'Enable System Alerts' 
-                        : 'Alerts Not Supported'}
+                        ? t('notifications.enableAlerts') 
+                        : t('notifications.noSupport')}
                     </button>
                   )}
                 </div>
                 {unreadCount > 0 && (
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
-                    {unreadCount} New
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest shrink-0 ml-2 rtl:mr-2 rtl:ml-0">
+                    {unreadCount} {t('notifications.new')}
                   </span>
                 )}
               </div>
@@ -165,23 +167,24 @@ export function NotificationCenter() {
                   </div>
                 ) : notifications.length === 0 ? (
                   <div className="p-8 text-center text-zinc-500 text-sm italic">
-                    No notifications yet.
+                    {t('notifications.empty')}
                   </div>
                 ) : (
                   notifications.map((n) => (
                     <div
                       key={n.id}
-                      className={`p-4 border-b border-zinc-800/50 flex gap-3 group transition-colors ${n.read ? 'bg-transparent' : 'bg-indigo-500/5'}`}
+                      className={`p-4 border-b border-zinc-800/50 flex gap-3 group transition-colors cursor-pointer ${n.read ? 'bg-transparent' : 'bg-indigo-500/5'}`}
                       onClick={() => !n.read && markAsRead(n.id)}
                     >
-                      <div className={`mt-1 p-2 rounded-lg ${n.read ? 'bg-zinc-800' : 'bg-indigo-500/10'}`}>
+                      <div className={`mt-1 p-2 rounded-lg shrink-0 ${n.read ? 'bg-zinc-800' : 'bg-indigo-500/10'}`}>
                         {getIcon(n.type)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-bold truncate">{n.title}</p>
+                        <p className={`text-white text-sm font-bold truncate ${n.read ? 'opacity-80' : ''}`}>{n.title}</p>
                         <p className="text-zinc-400 text-xs line-clamp-2 mt-0.5">{n.message}</p>
-                        <p className="text-zinc-600 text-[10px] mt-1">
-                          {n.createdAt?.toDate ? new Date(n.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                        <p className="text-zinc-600 text-[10px] mt-1 space-x-2 rtl:space-x-reverse flex items-center gap-2">
+                           <span>{n.createdAt?.toDate ? new Date(n.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}</span>
+                           {!n.read && <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />}
                         </p>
                       </div>
                       <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -189,17 +192,17 @@ export function NotificationCenter() {
                           <button
                             onClick={(e) => { e.stopPropagation(); markAsRead(n.id); }}
                             className="p-1 text-zinc-500 hover:text-green-500"
-                            title="Mark as read"
+                            title={t('notifications.markAsRead')}
                           >
-                            <Check className="w-3 h-3" />
+                            <Check className="w-4 h-4" />
                           </button>
                         )}
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteNotification(n.id); }}
                           className="p-1 text-zinc-500 hover:text-red-500"
-                          title="Delete"
+                          title={t('notifications.delete')}
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>

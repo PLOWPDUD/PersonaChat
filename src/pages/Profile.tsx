@@ -13,8 +13,10 @@ import { getCachedData, updateGlobalCache, getCachedProfile, setCachedProfile } 
 import { Character } from '../types';
 import { ImageAdjuster } from '../components/ImageAdjuster';
 import { AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 
 export function Profile() {
+  const { t } = useTranslation();
   const { userId: paramUserId } = useParams();
   const navigate = useNavigate();
   const { user, profile: currentUserProfile, updateProfile, isOwner, isModerator } = useAuth();
@@ -49,10 +51,10 @@ export function Profile() {
   const [adjustingType, setAdjustingType] = useState<'photo' | 'banner' | null>(null);
 
   const getRankInfo = () => {
-    if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
-    if (isModerator) return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
-    if (user?.isAnonymous) return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
-    return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
+    if (isOwner) return { label: t('common.owner'), color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    if (isModerator) return { label: t('common.mod'), color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (user?.isAnonymous) return { label: t('common.guest'), color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    return { label: t('common.user'), color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
   };
 
   const handleAddPersona = () => {
@@ -85,12 +87,12 @@ export function Profile() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setError('Please select an image file.');
+      setError(t('chat.selectImageError'));
       return;
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      setError('Image is too large. Please select an image under 2MB.');
+      setError(t('common.maxSize'));
       return;
     }
 
@@ -167,7 +169,7 @@ export function Profile() {
           setQuotaExceeded(true);
         } else {
           handleFirestoreError(err, OperationType.GET, `profiles/${targetUserId}`);
-          setError('Failed to load profile.');
+          setError(t('profile.errorLoad'));
         }
       } finally {
         setFetching(false);
@@ -238,29 +240,28 @@ export function Profile() {
       if (isQuotaError(err)) {
         setQuotaExceeded(true);
       } else {
-        setError('Failed to update profile.');
+        setError(t('profile.errorUpdate'));
       }
     } finally {
       setLoading(false);
     }
   };
 
-  if (fetching) return <div className="text-white text-center p-8">Loading...</div>;
+  if (fetching) return <div className="text-white text-center p-8">{t('common.loading')}</div>;
 
   if (quotaExceeded) {
     return (
       <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
         <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Quota Limit Reached</h2>
+        <h2 className="text-xl font-bold text-white mb-2">{t('common.quotaLimitDesc')}</h2>
         <p className="text-zinc-400 mb-6">
-          The website has reached its daily data limit for the free tier. 
-          Profile updates are temporarily unavailable. Please check back tomorrow!
+          {t('common.quotaWarnHome')}
         </p>
         <button 
           onClick={() => window.location.reload()}
           className="text-indigo-400 hover:text-indigo-300 font-medium"
         >
-          Try reloading
+          {t('common.btnReset')}
         </button>
       </div>
     );
@@ -344,11 +345,11 @@ export function Profile() {
               <div className="flex items-center gap-4 mt-2">
                 <div className="flex items-center gap-1 text-zinc-400 text-sm">
                   <span className="font-bold text-white">{formData.followersCount}</span>
-                  <span>Followers</span>
+                  <span>{t('profile.followers')}</span>
                 </div>
                 <div className="flex items-center gap-1 text-zinc-400 text-sm">
                   <span className="font-bold text-white">{formData.followingCount}</span>
-                  <span>Following</span>
+                  <span>{t('profile.following')}</span>
                 </div>
               </div>
             </div>
@@ -428,32 +429,32 @@ export function Profile() {
       {isOwnProfile && (
         <div className="space-y-6">
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-900/20">
-             <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
-                   <h3 className="text-xl font-bold">Creator Hub</h3>
-                   <p className="text-white/80 text-sm">View detailed analytics and reviews for your characters.</p>
+                   <h3 className="text-xl font-bold">{t('profile.hubTitle')}</h3>
+                   <p className="text-white/80 text-sm">{t('profile.hubSub')}</p>
                 </div>
                 <button
                    onClick={() => navigate('/dashboard')}
                    className="px-6 py-3 bg-white text-indigo-600 rounded-2xl font-bold hover:bg-zinc-100 transition-all flex items-center gap-2 shadow-lg"
                 >
                    <Layout className="w-5 h-5" />
-                   Dashboard
+                   {t('profile.hubBtn')}
                 </button>
-             </div>
+              </div>
           </div>
           
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">Edit Profile</h2>
+            <h2 className="text-2xl font-bold text-white">{t('profile.editTitle')}</h2>
           </div>
           
           {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl">{error}</div>}
-          {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl">Profile updated successfully!</div>}
+          {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl">{t('profile.successUpdate')}</div>}
 
           <form onSubmit={handleSubmit} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">Display Name</label>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">{t('profile.displayName')}</label>
                 <input
                   type="text"
                   value={formData.displayName}
@@ -464,7 +465,7 @@ export function Profile() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">Avatar URL</label>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">{t('profile.avatarUrl')}</label>
                 <input
                   type="text"
                   value={formData.photoURL}
@@ -476,7 +477,7 @@ export function Profile() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">Banner URL</label>
+              <label className="block text-sm font-medium text-zinc-300 mb-1">{t('profile.bannerUrl')}</label>
               <input
                 type="text"
                 value={formData.bannerURL}
@@ -487,18 +488,18 @@ export function Profile() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">Your Persona (Describe yourself for the bots)</label>
+              <label className="block text-sm font-medium text-zinc-300 mb-1">{t('profile.userPersona')} ({t('profile.userPersonaDesc')})</label>
               <textarea
                 value={formData.userPersona}
                 onChange={e => setFormData({...formData, userPersona: e.target.value})}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white"
-                placeholder="I am a..."
+                placeholder={t('profile.userPersonaPlaceholder')}
                 rows={4}
               />
             </div>
 
             <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2">
-              <Save className="w-4 h-4" /> {loading ? 'Saving...' : 'Save Profile'}
+              <Save className="w-4 h-4" /> {loading ? t('profile.btnSaving') : t('profile.btnSave')}
             </button>
           </form>
         </div>
@@ -509,10 +510,10 @@ export function Profile() {
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <Bot className="w-6 h-6 text-indigo-500" />
-            Public Characters
+            {t('profile.publicCharacters')}
           </h2>
           <span className="text-zinc-500 text-sm font-medium bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
-            {userCharacters.length} Total
+            {userCharacters.length} {t('profile.total')}
           </span>
         </div>
 
@@ -554,7 +555,7 @@ export function Profile() {
         ) : (
           <div className="text-center py-12 bg-zinc-900/30 rounded-3xl border border-zinc-800 border-dashed">
             <Bot className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
-            <p className="text-zinc-500">No public characters found.</p>
+            <p className="text-zinc-500">{t('profile.noPublicCharacters')}</p>
           </div>
         )}
       </div>
@@ -570,7 +571,7 @@ export function Profile() {
             }}
             aspect={adjustingType === 'banner' ? 3 / 1 : 1}
             shape={adjustingType === 'photo' ? 'round' : 'rect'}
-            title={adjustingType === 'photo' ? 'Adjust Profile Picture' : 'Adjust Profile Banner'}
+            title={adjustingType === 'photo' ? t('profile.adjustAvatar') : t('profile.adjustBanner')}
           />
         )}
       </AnimatePresence>

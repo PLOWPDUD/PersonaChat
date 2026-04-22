@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { moderateImage, moderateText } from '../services/aiService';
+import { useTranslation } from 'react-i18next';
 
 interface FeedbackPanelProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface FeedbackPanelProps {
 }
 
 export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
+  const { t } = useTranslation();
   const { user, profile } = useAuth();
   const [category, setCategory] = useState<'bug' | 'feedback' | 'suggestion'>('bug');
   const [description, setDescription] = useState('');
@@ -113,8 +115,8 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
               <Bug className="w-5 h-5 text-indigo-500" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Support & Feedback</h2>
-              <p className="text-xs text-zinc-500">Help us improve PersonaChat</p>
+              <h2 className="text-xl font-bold text-white tracking-tight">{t('common.feedbackTitle')}</h2>
+              <p className="text-xs text-zinc-500">{t('common.feedbackSub')}</p>
             </div>
           </div>
           <button 
@@ -134,7 +136,7 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
           )}
 
           <div className="space-y-3">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">Category</label>
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">{t('common.category')}</label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -146,7 +148,7 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
                 }`}
               >
                 <Bug className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase">Bug</span>
+                <span className="text-[10px] font-bold uppercase">{t('common.bug')}</span>
               </button>
               <button
                 type="button"
@@ -158,7 +160,7 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
                 }`}
               >
                 <MessageSquare className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase">Feedback</span>
+                <span className="text-[10px] font-bold uppercase">{t('common.feedback')}</span>
               </button>
               <button
                 type="button"
@@ -170,23 +172,23 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
                 }`}
               >
                 <Lightbulb className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase">Idea</span>
+                <span className="text-[10px] font-bold uppercase">{t('common.idea')}</span>
               </button>
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">Description</label>
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">{t('common.description')}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Please describe the issue or your suggestion in detail..."
+              placeholder={t('common.placeholderFeedback')}
               className="w-full h-40 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none"
             />
           </div>
 
           <div className="space-y-3">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">Attachment (Optional)</label>
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">{t('common.attachment')}</label>
             <div 
               onClick={() => fileInputRef.current?.click()}
               className={`relative border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-3 transition-all cursor-pointer group ${
@@ -220,8 +222,8 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
                     <ImageIcon className="w-8 h-8" />
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-bold text-zinc-300">Click to upload screenshot</p>
-                    <p className="text-xs text-zinc-500">Max size: 2MB</p>
+                    <p className="text-sm font-bold text-zinc-300">{t('common.clickToUpload')}</p>
+                    <p className="text-xs text-zinc-500">{t('common.maxSize')}</p>
                   </div>
                 </>
               )}
@@ -238,17 +240,17 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Moderating...
+                {t('common.moderating')}
               </>
             ) : (
               <>
                 <Send className="w-5 h-5" />
-                Submit Report
+                {t('common.btnSubmitReport')}
               </>
             )}
           </button>
           <p className="text-[10px] text-zinc-600 text-center mt-4 uppercase tracking-widest leading-relaxed">
-            Submissions are moderated by AI. <br /> Inappropriate content will be rejected.
+            {t('common.feedbackNote')}
           </p>
         </div>
       </div>

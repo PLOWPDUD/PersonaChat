@@ -4,6 +4,7 @@ import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shiel
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationBell } from './NotificationBell';
 import { FeedbackPanel } from './FeedbackPanel';
+import { useTranslation } from 'react-i18next';
 
 interface SidebarProps {
   onClose?: () => void;
@@ -11,27 +12,28 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
+  const { t } = useTranslation();
   const location = useLocation();
   const { user, profile, isOwner, isModerator, logOut } = useAuth();
 
   const getRankInfo = () => {
-    if (isOwner) return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
-    if (isModerator) return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
-    if (user?.isAnonymous) return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
-    return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
+    if (isOwner) return { label: t('common.owner'), color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    if (isModerator) return { label: t('common.mod'), color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (user?.isAnonymous) return { label: t('common.guest'), color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    return { label: t('common.user'), color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
   };
 
   const navItems = [
-    { path: '/', label: 'Home', icon: Home },
-    { path: '/search', label: 'Search', icon: Search },
-    { path: '/create', label: 'Create', icon: PlusCircle },
-    { path: '/personas', label: 'Personas', icon: UserCircle },
-    { path: '/community', label: 'Community', icon: Globe },
-    { path: '/rules', label: 'Rules', icon: BookOpen },
-    { path: '/messages', label: 'Messages', icon: MessageSquare },
-    { path: '/stats', label: 'Stats', icon: Users },
-    { path: '/settings', label: 'Settings', icon: Settings },
-    ...(isModerator ? [{ path: '/admin', label: 'Admin', icon: Shield }] : []),
+    { path: '/', label: t('common.home'), icon: Home },
+    { path: '/search', label: t('common.search'), icon: Search },
+    { path: '/create', label: t('common.create'), icon: PlusCircle },
+    { path: '/personas', label: t('common.personas'), icon: UserCircle },
+    { path: '/community', label: t('common.community'), icon: Globe },
+    { path: '/rules', label: t('common.rules'), icon: BookOpen },
+    { path: '/messages', label: t('common.messages'), icon: MessageSquare },
+    { path: '/stats', label: t('common.stats'), icon: Users },
+    { path: '/settings', label: t('common.settings'), icon: Settings },
+    ...(isModerator ? [{ path: '/admin', label: t('common.admin'), icon: Shield }] : []),
   ];
 
   const handleNavClick = () => {
@@ -43,7 +45,7 @@ export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
       <div className="p-6 flex items-center justify-between">
         <Link to="/" onClick={handleNavClick} className="flex items-center gap-2 text-xl font-bold text-white">
           <MessageSquare className="w-8 h-8 text-theme-primary" />
-          <span>PersonaChat</span>
+          <span>{t('common.appName')}</span>
         </Link>
         <div className="flex items-center gap-2">
           {onClose && (
@@ -79,7 +81,7 @@ export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-zinc-400 hover:bg-zinc-900 hover:text-white"
         >
           <Bug className="w-5 h-5 text-indigo-500/60" />
-          <span className="font-medium">Feedback</span>
+          <span className="font-medium">{t('common.feedback')}</span>
         </button>
       </nav>
 
@@ -94,7 +96,7 @@ export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
           )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">
-              {user?.isAnonymous ? 'Guest' : (profile?.displayName || 'User')}
+              {user?.isAnonymous ? t('common.guest') : (profile?.displayName || t('common.user'))}
             </p>
             <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border mt-1 inline-block ${getRankInfo().color}`}>
               {getRankInfo().label}
@@ -109,7 +111,7 @@ export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
           className="w-full flex items-center gap-3 p-2 rounded-xl text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors text-sm font-medium"
         >
           <LogOut className="w-5 h-5" />
-          <span>Log Out</span>
+          <span>{t('common.logout')}</span>
         </button>
       </div>
     </div>

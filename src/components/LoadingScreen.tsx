@@ -1,8 +1,10 @@
 import React from 'react';
 import { MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 
 export function LoadingScreen() {
+  const { t } = useTranslation();
   return (
     <div className="fixed inset-0 bg-zinc-950 flex flex-col items-center justify-center z-[9999]">
       <motion.div
@@ -18,7 +20,7 @@ export function LoadingScreen() {
           <div className="absolute -inset-4 border-2 border-indigo-500/20 rounded-3xl animate-pulse"></div>
         </div>
         
-        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">PersonaChat</h2>
+        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">{t('common.appName')}</h2>
         <div className="flex gap-1">
           <motion.div
             animate={{ opacity: [0.3, 1, 0.3] }}

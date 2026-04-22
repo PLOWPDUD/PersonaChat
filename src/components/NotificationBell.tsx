@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Bell, X, Bot, ShieldAlert, ShieldCheck, Info, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 interface Notification {
   id: string;
@@ -17,6 +18,7 @@ interface Notification {
 }
 
 export function NotificationBell() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -24,6 +26,8 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  const isRtl = i18n.dir() === 'rtl';
 
   useEffect(() => {
     if (!user) return;
@@ -167,7 +171,7 @@ export function NotificationBell() {
       >
         <Bell className="w-6 h-6" />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-zinc-950">
+          <span className="absolute top-1.5 ltr:right-1.5 rtl:left-1.5 w-4 h-4 bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-zinc-950">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -179,10 +183,10 @@ export function NotificationBell() {
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute right-0 mt-2 w-80 sm:w-96 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
+            className="absolute ltr:right-0 rtl:left-0 mt-2 w-80 sm:w-96 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
           >
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
-              <h3 className="font-bold text-white">Notifications</h3>
+              <h3 className="font-bold text-white">{t('notifications.title')}</h3>
               <button onClick={() => setIsOpen(false)} className="text-zinc-500 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
@@ -199,20 +203,20 @@ export function NotificationBell() {
                     <button
                       key={notif.id}
                       onClick={() => handleNotifClick(notif)}
-                      className={`w-full p-4 text-left hover:bg-zinc-800/50 transition-colors flex gap-4 ${!notif.read ? 'bg-indigo-500/5' : ''}`}
+                      className={`w-full p-4 ltr:text-left rtl:text-right hover:bg-zinc-800/50 transition-colors flex gap-4 ${!notif.read ? 'bg-indigo-500/5' : ''}`}
                     >
-                      <div className="mt-1">{getIcon(notif.type)}</div>
+                      <div className="mt-1 shrink-0">{getIcon(notif.type)}</div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center justify-between gap-2 mb-1 text-left rtl:text-right">
                           <p className={`text-sm font-bold truncate ${!notif.read ? 'text-white' : 'text-zinc-300'}`}>
                             {notif.title}
                           </p>
                           {!notif.read && <span className="w-2 h-2 bg-indigo-500 rounded-full flex-shrink-0" />}
                         </div>
-                        <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
+                        <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed text-left rtl:text-right">
                           {notif.message}
                         </p>
-                        <p className="text-[10px] text-zinc-600 mt-2 font-medium">
+                        <p className="text-[10px] text-zinc-600 mt-2 font-medium text-left rtl:text-right">
                           {notif.createdAt?.toDate ? new Date(notif.createdAt.toDate()).toLocaleDateString() : 'Just now'}
                         </p>
                       </div>
@@ -222,7 +226,7 @@ export function NotificationBell() {
               ) : (
                 <div className="p-12 text-center">
                   <Bell className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
-                  <p className="text-zinc-500 text-sm">No notifications yet</p>
+                  <p className="text-zinc-500 text-sm">{t('notifications.empty')}</p>
                 </div>
               )}
             </div>
@@ -235,7 +239,7 @@ export function NotificationBell() {
                   }}
                   className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                 >
-                  Mark all as read
+                  {t('notifications.markAllRead')}
                 </button>
               </div>
             )}

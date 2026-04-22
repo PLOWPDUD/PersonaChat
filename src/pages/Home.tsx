@@ -10,8 +10,10 @@ import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Che
 import { useNavigate } from 'react-router-dom';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { Character, Chat } from '../types';
+import { useTranslation } from 'react-i18next';
 
 export function Home() {
+  const { t } = useTranslation();
   const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -69,7 +71,7 @@ export function Home() {
       setReportTargetId(null);
       setReportTargetName(null);
       setReportTargetCreatorId(null);
-      alert('Report submitted successfully.');
+      alert(t('community.reportSuccess'));
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'reports');
     } finally {
@@ -499,10 +501,10 @@ export function Home() {
     <div className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-4xl font-bold text-white tracking-tight">
-          {tab === 'recent' ? 'Recent Chats' : 'Discover'}
+          {tab === 'recent' ? t('common.recentChats') : t('common.discover')}
         </h1>
         <p className="text-zinc-400">
-          {tab === 'recent' ? 'Continue your conversations.' : 'Find your next favorite character.'}
+          {tab === 'recent' ? t('common.recentSub') : t('common.discoverSub')}
         </p>
         
         <div className="flex flex-wrap items-center gap-4 mt-4">
@@ -515,7 +517,7 @@ export function Home() {
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              For You
+              {t('common.tabForYou')}
             </button>
             <button
               onClick={() => setTab('recent')}
@@ -525,7 +527,7 @@ export function Home() {
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              Recent
+              {t('common.tabRecent')}
             </button>
             <button
               onClick={() => setTab('mine')}
@@ -535,13 +537,13 @@ export function Home() {
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              My Characters
+              {t('common.tabMine')}
             </button>
             <Link
               to="/community"
               className="flex-1 sm:flex-none px-3 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-zinc-400 hover:text-zinc-200"
             >
-              Community
+              {t('common.community')}
             </Link>
           </div>
 
@@ -550,7 +552,7 @@ export function Home() {
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-900/20"
           >
             <Users className="w-4 h-4" />
-            Create Group Chat
+            {t('common.btnCreateGroup')}
           </button>
 
           {tab === 'recent' && recentChats.length > 0 && (
@@ -563,7 +565,7 @@ export function Home() {
               }`}
             >
               {isEditMode ? <Check className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
-              {isEditMode ? 'Done' : 'Delete Chats'}
+              {isEditMode ? t('common.btnDone') : t('common.btnDeleteChats')}
             </button>
           )}
         </div>
@@ -573,7 +575,7 @@ export function Home() {
         <div className="mb-6 bg-amber-600/20 border border-amber-600/30 px-6 py-4 rounded-3xl flex items-center justify-between">
           <div className="flex items-center gap-3 text-amber-500 font-medium text-sm sm:text-base">
             <ShieldAlert className="w-6 h-6 flex-shrink-0" />
-            <span>Firestore limit reached. You can still chat and manage local characters, but community sync is limited.</span>
+            <span>{t('common.quotaWarnHome')}</span>
           </div>
         </div>
       )}
@@ -592,13 +594,13 @@ export function Home() {
         recentChats.length === 0 ? (
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-12 text-center">
             <MessageCircle className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-            <h3 className="text-xl font-medium text-white mb-2">No recent chats</h3>
-            <p className="text-zinc-400 mb-6">Start a conversation with a character to see it here.</p>
+            <h3 className="text-xl font-medium text-white mb-2">{t('common.noRecentChats')}</h3>
+            <p className="text-zinc-400 mb-6">{t('common.noRecentChatsSub')}</p>
             <button 
               onClick={() => setTab('public')}
               className="inline-flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-6 rounded-xl transition-colors"
             >
-              Browse Characters
+              {t('common.browseCharacters')}
             </button>
           </div>
         ) : (
@@ -620,7 +622,7 @@ export function Home() {
                       </div>
                     )}
                     {chat.characterIds && chat.characterIds.length > 1 && (
-                      <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1 rounded-full border-2 border-zinc-900 shadow-lg" title="Group Chat">
+                      <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1 rounded-full border-2 border-zinc-900 shadow-lg" title={t('common.groupChat')}>
                         <Users className="w-4 h-4" />
                       </div>
                     )}
@@ -630,10 +632,10 @@ export function Home() {
                   </h3>
                   <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
                     {chat.characterIds && chat.characterIds.length > 1 
-                      ? `${chat.characterIds.length} characters` 
+                      ? `${chat.characterIds.length} ${t('common.personas').toLowerCase()}` 
                       : (
                         <>
-                          By {chat.character.creatorId ? (
+                          {t('common.by')} {chat.character.creatorId ? (
                             <Link 
                               to={`/profile/${chat.character.creatorId}`} 
                               className="hover:text-indigo-400 transition-colors"
@@ -672,7 +674,7 @@ export function Home() {
                   className={`absolute -top-3 -right-3 p-4 bg-red-600 text-white rounded-full shadow-2xl transition-all z-50 ${
                     isEditMode ? 'opacity-100 scale-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-90 hover:scale-100'
                   }`}
-                  title="Delete Chat"
+                  title={t('common.btnDeleteChats')}
                 >
                   {isDeletingChat === chat.id ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -687,17 +689,17 @@ export function Home() {
       ) : characters.length === 0 ? (
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-12 text-center">
           <MessageCircle className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-          <h3 className="text-xl font-medium text-white mb-2">No characters found</h3>
+          <h3 className="text-xl font-medium text-white mb-2">{t('common.noCharactersFound')}</h3>
           <p className="text-zinc-400 mb-6">
             {tab === 'public' 
-              ? "There aren't any public characters yet." 
-              : "You haven't created any characters yet."}
+              ? t('common.noPublicCharacters') 
+              : t('common.noPersonasYet')}
           </p>
           <Link 
             to="/create" 
             className="inline-flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-6 rounded-xl transition-colors"
           >
-            Create a Character
+            {t('common.btnCreateACharacter')}
           </Link>
         </div>
       ) : (
@@ -713,7 +715,7 @@ export function Home() {
               <button
                   onClick={(e) => openReportModal(e, char)}
                   className="absolute top-2 right-2 p-2 rounded-full bg-zinc-800/80 backdrop-blur-sm hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-colors z-10 opacity-0 group-hover:opacity-100"
-                  title="Report Character"
+                  title={t('community.reportPost')}
                 >
                   <ShieldAlert className="w-4 h-4" />
                 </button>
@@ -730,7 +732,7 @@ export function Home() {
                 )}
                 <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
                 <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
-                  By <Link 
+                  {t('common.by')} <Link 
                     to={`/profile/${char.creatorId}`} 
                     className="hover:text-indigo-400 transition-colors"
                     onClick={(e) => e.stopPropagation()}
@@ -761,7 +763,7 @@ export function Home() {
                 <Link
                   to={`/edit/${char.id}`}
                   className="absolute top-2 right-2 p-2 bg-zinc-800/80 backdrop-blur-sm hover:bg-indigo-600 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
-                  title="Edit Character"
+                  title={t('common.edit')}
                 >
                   <Edit2 className="w-4 h-4" />
                 </Link>
@@ -777,15 +779,15 @@ export function Home() {
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-3xl p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
               <ShieldAlert className="w-6 h-6 text-red-500" />
-              Report Character
+              {t('common.reportCharacter')}
             </h3>
             <p className="text-zinc-400 mb-4">
-              Please describe the issue with this character. Our moderators will review it.
+              {t('common.reportCharDesc')}
             </p>
             <textarea
               value={reportReason}
               onChange={(e) => setReportReason(e.target.value)}
-              placeholder="Reason for reporting..."
+              placeholder={t('common.reportCharPlaceholder')}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500/50 transition-all h-32 mb-4 resize-none"
             />
             <div className="flex gap-3">
@@ -796,14 +798,14 @@ export function Home() {
                 }}
                 className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-medium transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleReport}
                 disabled={!reportReason.trim() || isSubmittingReport}
                 className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit Report'}
+                {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : t('community.submitReport')}
               </button>
             </div>
           </div>
@@ -814,16 +816,16 @@ export function Home() {
       {chatToDelete && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2">Delete Chat?</h3>
+            <h3 className="text-xl font-bold text-white mb-2">{t('common.deleteChatTitle')}</h3>
             <p className="text-zinc-400 mb-6">
-              Are you sure you want to delete this chat history? This action cannot be undone.
+              {t('common.deleteChatDesc')}
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setChatToDelete(null)}
                 className="flex-1 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-medium transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={confirmDeleteChat}
@@ -835,7 +837,7 @@ export function Home() {
                 ) : (
                   <>
                     <Trash2 className="w-5 h-5" />
-                    Delete
+                    {t('common.delete')}
                   </>
                 )}
               </button>
@@ -852,9 +854,9 @@ export function Home() {
               <div>
                 <h3 className="text-xl font-bold text-white flex items-center gap-3">
                   <Users className="w-6 h-6 text-indigo-500" />
-                  Create Group Chat
+                  {t('common.createGroupChat')}
                 </h3>
-                <p className="text-sm text-zinc-400 mt-1">Select characters to start a conversation.</p>
+                <p className="text-sm text-zinc-400 mt-1">{t('common.createGroupChatSub')}</p>
               </div>
               <button 
                 onClick={() => setIsGroupChatModalOpen(false)}
@@ -868,7 +870,7 @@ export function Home() {
               {/* Selected Characters Bar */}
               {selectedCharacters.length > 0 && (
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Selected ({selectedCharacters.length})</h4>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">{t('common.selected')} ({selectedCharacters.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {selectedCharacters.map(char => (
                       <div key={char.id} className="flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/50 rounded-full py-1.5 pl-1.5 pr-3">
@@ -898,7 +900,7 @@ export function Home() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                 <input
                   type="text"
-                  placeholder="Search public characters..."
+                  placeholder={t('common.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-3 pl-12 pr-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
@@ -908,7 +910,7 @@ export function Home() {
               {/* Search Results */}
               {searchResults.length > 0 && (
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Search Results</h4>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">{t('common.searchResults')}</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {searchResults.map((char) => {
                       const isSelected = selectedCharacters.find(c => c.id === char.id);
@@ -944,13 +946,13 @@ export function Home() {
 
               {/* Recent Characters */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">Recent Characters</h4>
+                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-1">{t('common.recentCharacters')}</h4>
                 {isFetchingRecent ? (
                   <div className="flex justify-center py-8">
                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                   </div>
                 ) : recentCharacters.length === 0 ? (
-                  <p className="text-sm text-zinc-500 text-center py-8 italic">No recent characters found. Try searching for public ones!</p>
+                  <p className="text-sm text-zinc-500 text-center py-8 italic">{t('common.noRecentCharacters')}</p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {recentCharacters.map((char) => {
@@ -988,7 +990,7 @@ export function Home() {
             
             <div className="p-6 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between">
               <p className="text-xs text-zinc-500">
-                You can add as many characters as you want to a group chat.
+                {t('common.groupChatNote')}
               </p>
               <button
                 onClick={handleCreateGroupChat}
@@ -998,11 +1000,11 @@ export function Home() {
                 {isCreating ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Creating...
+                    {t('common.creating')}
                   </>
                 ) : (
                   <>
-                    Start {selectedCharacters.length > 1 ? 'Group Chat' : 'Chat'}
+                    {selectedCharacters.length > 1 ? t('common.startGroupChat') : t('common.startChat')}
                   </>
                 )}
               </button>
@@ -1020,10 +1022,10 @@ export function Home() {
             {isFetchingMore ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Loading...
+                {t('common.loading')}
               </>
             ) : (
-              'Load More'
+              t('common.loadMore')
             )}
           </button>
         </div>

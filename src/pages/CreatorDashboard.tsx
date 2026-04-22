@@ -5,6 +5,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Star, MessageSquare, Bot, Loader2, BarChart2, Users, ArrowRight, Layout } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 
 interface CharacterStats {
   id: string;
@@ -26,6 +27,7 @@ interface UniversalReview {
 }
 
 export function CreatorDashboard() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -107,7 +109,7 @@ export function CreatorDashboard() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="text-zinc-500 font-medium">Crunching your creator stats...</p>
+        <p className="text-zinc-500 font-medium">{t('creator.loading')}</p>
       </div>
     );
   }
@@ -119,9 +121,9 @@ export function CreatorDashboard() {
           <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-900/20">
             <Layout className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-4xl font-black text-white tracking-tight">Creator Dashboard</h1>
+          <h1 className="text-4xl font-black text-white tracking-tight">{t('creator.title')}</h1>
         </div>
-        <p className="text-zinc-500 text-lg">Manage your characters and track your popularity.</p>
+        <p className="text-zinc-500 text-lg">{t('creator.subtitle')}</p>
       </header>
 
       {/* Stats Grid */}
@@ -132,7 +134,7 @@ export function CreatorDashboard() {
                <Bot className="w-6 h-6 text-blue-500" />
              </div>
           </div>
-          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">Total Characters</p>
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">{t('creator.totalCharacters')}</p>
           <p className="text-3xl font-black text-white">{stats.totalCharacters}</p>
         </div>
         
@@ -145,7 +147,7 @@ export function CreatorDashboard() {
                 AVG {stats.averageGlobalRating.toFixed(1)}
              </span>
           </div>
-          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">Lifetime Reviews</p>
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">{t('creator.lifetimeReviews')}</p>
           <p className="text-3xl font-black text-white">{stats.totalReviews}</p>
         </div>
 
@@ -155,7 +157,7 @@ export function CreatorDashboard() {
                <BarChart2 className="w-6 h-6 text-emerald-500" />
              </div>
           </div>
-          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">Popularity Rank</p>
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">{t('creator.popularityRank')}</p>
           <p className="text-3xl font-black text-white"># {Math.floor(Math.random() * 50) + 1}</p>
         </div>
       </div>
@@ -166,20 +168,20 @@ export function CreatorDashboard() {
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
                <Bot className="w-6 h-6 text-indigo-400" />
-               Your Creations
+               {t('creator.yourCreations')}
             </h2>
             <button
                onClick={() => navigate('/create')}
                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
             >
-               Create New
+               {t('creator.createNew')}
             </button>
           </div>
           
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden divide-y divide-zinc-800 shadow-2xl">
             {characters.length === 0 ? (
                <div className="p-20 text-center">
-                  <p className="text-zinc-500 italic">You haven't created any characters yet.</p>
+                  <p className="text-zinc-500 italic">{t('common.noPersonasYet')}</p>
                </div>
             ) : (
                characters.map((char) => (
@@ -199,7 +201,7 @@ export function CreatorDashboard() {
                                 <Star className="w-3 h-3 text-yellow-500 fill-current" />
                                 <span className="text-xs text-zinc-300 font-bold">{char.averageRating?.toFixed(1) || '0.0'}</span>
                              </div>
-                             <span className="text-[10px] text-zinc-500 font-black tracking-widest uppercase">{char.ratingCount || 0} reviews</span>
+                             <span className="text-[10px] text-zinc-500 font-black tracking-widest uppercase">{char.ratingCount || 0} {t('creator.reviewsCount')}</span>
                           </div>
                        </div>
                     </div>
@@ -219,13 +221,13 @@ export function CreatorDashboard() {
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
              <MessageSquare className="w-6 h-6 text-yellow-400" />
-             Recent Activity
+             {t('creator.recentActivity')}
           </h2>
           
           <div className="space-y-4">
             {recentReviews.length === 0 ? (
                <div className="p-20 text-center bg-zinc-900/30 rounded-3xl border border-zinc-800">
-                  <p className="text-zinc-500 italic">No feedback received recently.</p>
+                  <p className="text-zinc-500 italic">{t('creator.noRecentActivity')}</p>
                </div>
             ) : (
                recentReviews.map((review) => (
@@ -238,7 +240,7 @@ export function CreatorDashboard() {
                      <div className="flex justify-between items-start">
                         <div>
                            <span className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] block mb-1">
-                              New Rating for <span className="text-indigo-400">{review.characterName}</span>
+                              {t('creator.newRatingFor')} <span className="text-indigo-400">{review.characterName}</span>
                            </span>
                            <div className="flex gap-1">
                               {[1, 2, 3, 4, 5].map((s) => (
@@ -247,7 +249,7 @@ export function CreatorDashboard() {
                            </div>
                         </div>
                         <span className="text-[10px] text-zinc-600 font-bold">
-                           {review.createdAt?.toDate ? new Date(review.createdAt.toDate()).toLocaleDateString() : 'Today'}
+                           {review.createdAt?.toDate ? new Date(review.createdAt.toDate()).toLocaleDateString() : t('common.justNow')}
                         </span>
                      </div>
                      {review.review && (
@@ -259,7 +261,7 @@ export function CreatorDashboard() {
                         onClick={() => navigate(`/reviews/${review.characterId}`)}
                         className="w-full text-center py-2 text-[10px] font-bold text-zinc-500 hover:text-white transition-colors border-t border-zinc-800 mt-2"
                      >
-                        View All {review.characterName} Reviews
+                        {t('creator.viewAllReviews', { name: review.characterName })}
                      </button>
                   </motion.div>
                ))

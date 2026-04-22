@@ -4,6 +4,7 @@ import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 import { useAuth } from '../contexts/AuthContext';
 import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { addNotification } from '../lib/gamification';
 import { playSound } from '../lib/sounds';
 import { GoogleGenAI } from '@google/genai';
@@ -37,6 +38,7 @@ interface Message {
 }
 
 export default function Messages() {
+  const { t } = useTranslation();
   const { user, profile, isOwner } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
@@ -508,12 +510,12 @@ export default function Messages() {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-indigo-500" />
-              Messages
+              {t('messages.title')}
             </h2>
             <button 
               onClick={() => messageMode === 'group' ? setIsCreateGroupOpen(true) : setIsCreateDirectOpen(true)}
               className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-xl transition-all"
-              title={messageMode === 'group' ? "Create Group Chat" : "New Direct Message"}
+              title={messageMode === 'group' ? t('messages.createGroup') : t('messages.newDirect')}
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -527,7 +529,7 @@ export default function Messages() {
               }`}
             >
               <User className="w-3 h-3" />
-              Direct
+              {t('messages.directTab')}
             </button>
             <button
               onClick={() => setMessageMode('group')}
@@ -536,14 +538,14 @@ export default function Messages() {
               }`}
             >
               <Users className="w-3 h-3" />
-              Groups
+              {t('messages.groupsTab')}
             </button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto no-scrollbar">
           {chats.filter(c => c.type === messageMode).length === 0 ? (
             <div className="p-8 text-center text-zinc-500 text-sm italic">
-              No {messageMode} conversations yet.
+              {t('messages.noConversations', { mode: messageMode === 'group' ? t('messages.groupsTab').toLowerCase() : t('messages.directTab').toLowerCase() })}
             </div>
           ) : (
             chats.filter(c => c.type === messageMode).map(chat => (
@@ -563,7 +565,7 @@ export default function Messages() {
                   <p className="text-white font-bold truncate">
                     {chat.type === 'group' ? chat.name : chat.otherUser?.displayName}
                   </p>
-                  <p className="text-zinc-400 text-xs truncate mt-0.5">{chat.lastMessage || 'Start a conversation'}</p>
+                  <p className="text-zinc-400 text-xs truncate mt-0.5">{chat.lastMessage || t('messages.startConversation')}</p>
                 </div>
               </button>
             ))
@@ -598,7 +600,7 @@ export default function Messages() {
                 </div>
               ) : messages.length === 0 ? (
                 <div className="text-center py-8 text-zinc-500 text-sm italic">
-                  Send a message to start the chat!
+                  {t('messages.startPrompt')}
                 </div>
               ) : (
                 messages.map((msg) => (
@@ -615,14 +617,14 @@ export default function Messages() {
                               setEditContent(msg.content);
                             }}
                             className="p-1.5 text-zinc-500 hover:text-white transition-colors"
-                            title="Edit"
+                            title={t('common.edit')}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => setMessageToDelete(msg.id)}
                             className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
-                            title="Delete"
+                            title={t('common.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -707,7 +709,7 @@ export default function Messages() {
                     <X className="w-3 h-3" />
                   </button>
                 </div>
-                <p className="text-xs text-zinc-500 italic">Image ready to send</p>
+                <p className="text-xs text-zinc-500 italic">{t('messages.imageReady')}</p>
               </div>
             )}
 
@@ -738,7 +740,7 @@ export default function Messages() {
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Type a message..."
+                placeholder={t('messages.placeholder')}
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
               />
               <button
@@ -755,9 +757,9 @@ export default function Messages() {
             <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto border border-zinc-800">
               <MessageSquare className="w-8 h-8 text-zinc-700" />
             </div>
-            <h3 className="text-white font-bold">Your Messages</h3>
+            <h3 className="text-white font-bold">{t('messages.windowTitle')}</h3>
             <p className="text-zinc-500 text-sm max-w-xs mx-auto">
-              Select a conversation from the list or visit a user's profile to start a new chat.
+              {t('messages.windowSub')}
             </p>
           </div>
         )}
@@ -773,17 +775,17 @@ export default function Messages() {
               className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">New Message</h2>
+                <h2 className="text-xl font-bold text-white">{t('messages.newDirectTitle')}</h2>
                 <button onClick={() => setIsCreateDirectOpen(false)} className="text-zinc-500 hover:text-white">
                   <X className="w-6 h-6" />
                 </button>
               </div>
 
               <div className="space-y-4">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Select a User</label>
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">{t('messages.selectUser')}</label>
                 <div className="max-h-60 overflow-y-auto space-y-2 no-scrollbar">
                   {availableUsers.length === 0 ? (
-                    <p className="text-center py-8 text-zinc-500 text-sm italic">No users found to message.</p>
+                    <p className="text-center py-8 text-zinc-500 text-sm italic">{t('messages.noUsers')}</p>
                   ) : (
                     availableUsers.map(u => (
                       <button
@@ -794,7 +796,7 @@ export default function Messages() {
                         <img src={u.photoURL || 'https://via.placeholder.com/40'} alt="" className="w-10 h-10 rounded-full object-cover" />
                         <div className="flex-1 text-left">
                           <p className="text-sm text-white font-bold group-hover:text-indigo-400 transition-colors">{u.displayName}</p>
-                          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Click to start chat</p>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{t('messages.clickToStart')}</p>
                         </div>
                       </button>
                     ))
@@ -817,7 +819,7 @@ export default function Messages() {
               className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">New Group Chat</h2>
+                <h2 className="text-xl font-bold text-white">{t('messages.createGroup')}</h2>
                 <button onClick={() => setIsCreateGroupOpen(false)} className="text-zinc-500 hover:text-white">
                   <X className="w-6 h-6" />
                 </button>
@@ -825,18 +827,18 @@ export default function Messages() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Group Name</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">{t('common.groupChat')}</label>
                   <input
                     type="text"
                     value={groupName}
                     onChange={(e) => setGroupName(e.target.value)}
-                    placeholder="Enter group name..."
+                    placeholder={t('common.placeholderFeedback')}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">Add Members</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">{t('common.add')} {t('common.user')}</label>
                   <div className="max-h-40 overflow-y-auto space-y-2 no-scrollbar">
                     {availableUsers.map(u => (
                       <button

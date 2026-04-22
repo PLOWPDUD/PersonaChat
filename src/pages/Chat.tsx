@@ -11,6 +11,7 @@ import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Character {
   id: string;
@@ -45,6 +46,7 @@ interface Memory {
 }
 
 export function Chat() {
+  const { t } = useTranslation();
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user, profile, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
@@ -1628,7 +1630,7 @@ export function Chat() {
         <div className="bg-amber-600/20 border-b border-amber-600/30 px-4 py-2 flex items-center justify-between z-50">
           <div className="flex items-center gap-2 text-amber-500 text-xs font-medium">
             <AlertCircle className="w-4 h-4" />
-            <span>Local Mode: Firestore limit reached. Messages are saved locally.</span>
+            <span>{t('chat.localModeDesc')}</span>
           </div>
           <button onClick={() => setIsLocalMode(false)} className="text-amber-500 hover:text-amber-400">
             <X className="w-4 h-4" />
@@ -1648,14 +1650,14 @@ export function Chat() {
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-500" />
-                Chat History
+                {t('chat.history')}
               </h3>
               <div className="flex items-center gap-1">
                 {chatHistory.length > 0 && (
                   <button
                     onClick={() => setIsHistoryEditMode(!isHistoryEditMode)}
                     className={`p-2 rounded-full transition-colors ${isHistoryEditMode ? 'bg-red-600/20 text-red-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
-                    title={isHistoryEditMode ? "Done" : "Delete Chats"}
+                    title={isHistoryEditMode ? t('common.done') : t('chat.deleteChatHistory')}
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -1678,7 +1680,7 @@ export function Chat() {
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-900/20"
               >
                 <Plus className="w-5 h-5" />
-                New Chat
+                {t('chat.newChat')}
               </button>
             </div>
             
@@ -1705,10 +1707,10 @@ export function Chat() {
                   >
                     <div className="flex-1 min-w-0 pr-8">
                       <p className="text-sm font-medium truncate">
-                        {chat.title || `Chat with ${characters[0]?.name}`}
+                        {chat.title || t('chat.chatWith', { name: characters[0]?.name })}
                       </p>
                       <p className="text-[10px] opacity-50 mt-1">
-                        {chat.updatedAt?.toDate() ? new Date(chat.updatedAt.toDate()).toLocaleString() : 'Just now'}
+                        {chat.updatedAt?.toDate() ? new Date(chat.updatedAt.toDate()).toLocaleString() : t('common.justNow')}
                       </p>
                     </div>
                     {!isHistoryEditMode && (
@@ -1723,7 +1725,7 @@ export function Chat() {
                         ? 'bg-red-600 text-white opacity-100 scale-100 shadow-lg' 
                         : 'text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100'
                     }`}
-                    title="Delete Chat"
+                    title={t('chat.delete')}
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -1738,9 +1740,9 @@ export function Chat() {
       {chatToDelete && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2">Delete Chat?</h3>
+            <h3 className="text-xl font-bold text-white mb-2">{t('chat.deleteHistory')}?</h3>
             <p className="text-zinc-400 mb-6">
-              Are you sure you want to delete this chat history? This action cannot be undone.
+              {t('common.deleteHistoryDesc')}
             </p>
             <div className="flex gap-3">
               <button
@@ -1759,7 +1761,7 @@ export function Chat() {
                 ) : (
                   <>
                     <Trash2 className="w-5 h-5" />
-                    Delete
+                    {t('common.delete')}
                   </>
                 )}
               </button>
@@ -1837,7 +1839,7 @@ export function Chat() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-sm sm:text-lg font-semibold text-white leading-tight truncate flex items-center gap-2">
-                {characters.length > 1 ? 'Group Chat' : characters[0]?.name}
+                {characters.length > 1 ? t('chat.groupChatTitle') : characters[0]?.name}
                 {characters.length === 1 && characters[0]?.averageRating && (
                   <button 
                     onClick={(e) => {
@@ -1852,7 +1854,7 @@ export function Chat() {
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
-                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `By ${characters[0]?.creatorName || 'Unknown'}`}
+                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `${t('common.by')} ${characters[0]?.creatorName || 'Unknown'}`}
               </p>
             </div>
           </div>
@@ -1892,7 +1894,7 @@ export function Chat() {
             <button
                onClick={() => navigate(`/reviews/${characterId}`)}
                className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all flex items-center gap-2"
-               title="View Reviews"
+               title={t('chat.reviewsTitle')}
             >
                <MessageSquare className="w-5 h-5" />
             </button>
@@ -1901,9 +1903,9 @@ export function Chat() {
               value={selectedPersonaId}
               onChange={(e) => setSelectedPersonaId(e.target.value)}
               className="bg-zinc-800 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[120px] sm:max-w-none"
-              title="Select your persona"
+              title={t('settings.selectPersona', 'Select your persona')}
             >
-              <option value="default">Default Persona</option>
+              <option value="default">{t('settings.defaultPersona', 'Default Persona')}</option>
               {personas.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -1922,19 +1924,19 @@ export function Chat() {
             <button
               onClick={() => setIsHistoryOpen(true)}
               className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all flex items-center gap-2"
-              title="Chat History"
+              title={t('chat.history')}
             >
               <History className="w-5 h-5" />
-              <span className="hidden md:inline text-sm font-medium">History</span>
+              <span className="hidden md:inline text-sm font-medium">{t('common.tabRecent')}</span>
             </button>
 
             <button
               onClick={syncToFirestore}
               className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-green-400 transition-all flex items-center gap-2"
-              title="Sync to Cloud"
+              title={t('common.syncToCloud', 'Sync to Cloud')}
             >
               <RefreshCw className="w-5 h-5" />
-              <span className="hidden md:inline text-sm font-medium">Sync</span>
+              <span className="hidden md:inline text-sm font-medium">{t('common.sync', 'Sync')}</span>
             </button>
             
             <div className="hidden sm:block w-px h-6 bg-zinc-800 mx-1" />
@@ -1976,7 +1978,7 @@ export function Chat() {
               }`}
             >
               <MessageSquare className="w-3 h-3 sm:w-4 h-4" />
-              Chat
+              {t('chat.chatTab')}
             </button>
             <button
               onClick={() => setActiveTab('lore')}
@@ -1985,7 +1987,7 @@ export function Chat() {
               }`}
             >
               <BookOpen className="w-3 h-3 sm:w-4 h-4" />
-              Lore
+              {t('chat.loreTab')}
             </button>
           </div>
 
@@ -2005,7 +2007,7 @@ export function Chat() {
         <div className="absolute top-[calc(100%-0.5rem)] sm:top-[calc(100%-2rem)] right-2 sm:right-4 p-4 sm:p-5 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl z-50 w-[calc(100vw-1rem)] max-w-[300px] sm:max-w-[320px] space-y-4 animate-in fade-in zoom-in duration-200 ring-1 ring-white/10">
           {characters.length > 1 && (
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">Select Character</label>
+              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">{t('chat.participants')}</label>
               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                 {characters.map((char) => (
                   <button
@@ -2028,7 +2030,7 @@ export function Chat() {
 
           <div className="flex flex-col items-center gap-1.5">
             <h4 className="text-white font-bold text-xs sm:text-sm text-center">
-              Rate {characters.find(c => c.id === selectedRatingCharId)?.name || 'Character'}
+              {t('common.rate', 'Rate')} {characters.find(c => c.id === selectedRatingCharId)?.name || t('common.personas')}
             </h4>
             <div className="flex justify-center gap-1 sm:gap-1.5" onMouseLeave={() => setHoverRating(null)}>
               {[1, 2, 3, 4, 5].map((star) => (
@@ -2051,13 +2053,13 @@ export function Chat() {
           
           <div className="space-y-2">
             <div className="flex justify-between items-end px-1">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Your Review</label>
+              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{t('chat.reviewsTitle')}</label>
               <span className="text-[10px] text-zinc-600 font-medium">{userReview.length}/1000</span>
             </div>
             <textarea
               value={userReview}
               onChange={(e) => setUserReview(e.target.value)}
-              placeholder="What did you think about this character?"
+              placeholder={t('chat.memoryPlaceholder')}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-3 sm:p-4 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none transition-all leading-relaxed"
               rows={3}
               maxLength={1000}
@@ -2075,7 +2077,7 @@ export function Chat() {
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  {userRating ? 'Update Review' : 'Submit Rating'}
+                  {userRating ? t('chat.saveRating', 'Update Review') : t('chat.submitRating', 'Submit Rating')}
                 </>
               )}
             </button>
@@ -2301,7 +2303,7 @@ export function Chat() {
                           type="button"
                           onClick={() => setRespondingCharacterId(respondingCharacterId === char.id ? null : char.id)}
                           className={`relative transition-all duration-200 ${respondingCharacterId === char.id ? 'scale-110' : 'opacity-40 hover:opacity-80 hover:scale-105'}`}
-                          title={`Make ${char.name} respond`}
+                          title={t('chat.makeRespond', { name: char.name })}
                         >
                           {char.avatarUrl ? (
                             <img 
@@ -2328,7 +2330,7 @@ export function Chat() {
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isTyping}
                     className="p-3 bg-zinc-900 border border-zinc-700 rounded-full text-zinc-400 hover:text-white transition-all disabled:opacity-50"
-                    title="Upload Image"
+                    title={t('common.uploadImage', 'Upload Image')}
                   >
                     <ImageIcon className="w-5 h-5" />
                   </button>
@@ -2338,8 +2340,8 @@ export function Chat() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       placeholder={respondingCharacterId 
-                        ? `Message ${characters.find(c => c.id === respondingCharacterId)?.name}...` 
-                        : `Message ${characters.length > 1 ? 'Group' : characters[0]?.name || 'Character'}...`
+                        ? t('chat.messageWithName', { name: characters.find(c => c.id === respondingCharacterId)?.name })
+                        : t('chat.messagePlaceholderGroup', { name: characters.length > 1 ? t('chat.group') : characters[0]?.name || t('chat.character') })
                       }
                       disabled={isTyping}
                       className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
@@ -2359,7 +2361,7 @@ export function Chat() {
                   onClick={handleSkipResponse}
                   disabled={isTyping || isRegenerating}
                   className="p-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-all disabled:opacity-50 border border-zinc-700"
-                  title="Skip response / Regenerate"
+                  title={t('chat.skipRegenerate', 'Skip response / Regenerate')}
                 >
                   <RefreshCw className={`w-5 h-5 ${isRegenerating ? 'animate-spin' : ''}`} />
                 </button>
@@ -2371,10 +2373,10 @@ export function Chat() {
             <div className="p-6 border-b border-zinc-800">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <BookOpen className="w-6 h-6 text-indigo-500" />
-                Character Lore & Memories
+                {t('chat.loreTab')} & {t('chat.memoryTitle')}
               </h3>
               <p className="text-zinc-400 text-sm mt-1">
-                Add specific details, facts, or context that {characters[0]?.name || 'the characters'} should always remember.
+                {t('chat.loreTabSub')}
               </p>
             </div>
 
@@ -2384,7 +2386,7 @@ export function Chat() {
                   type="text"
                   value={newMemory}
                   onChange={(e) => setNewMemory(e.target.value)}
-                  placeholder="e.g. The user's name is Alex, they are in a forest..."
+                  placeholder={t('chat.memoryPlaceholder')}
                   className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
                 />
                 <button
@@ -2400,7 +2402,7 @@ export function Chat() {
                 {memories.length === 0 ? (
                   <div className="text-center py-12">
                     <BookOpen className="w-12 h-12 text-zinc-800 mx-auto mb-3" />
-                    <p className="text-zinc-500">No memories added yet.</p>
+                    <p className="text-zinc-500">{t('common.noComments', 'No memories added yet.')}</p>
                   </div>
                 ) : (
                   memories.map((mem) => (
@@ -2409,7 +2411,7 @@ export function Chat() {
                       <button
                         onClick={() => handleDeleteMemory(mem.id)}
                         className="p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Delete Memory"
+                        title={t('chat.deleteMemory')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -2425,20 +2427,20 @@ export function Chat() {
       {messageToDelete && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl shadow-2xl max-w-sm w-full">
-            <h3 className="text-lg font-semibold text-white mb-2">Delete Message</h3>
-            <p className="text-zinc-400 mb-6">Are you sure you want to delete this message? This action cannot be undone.</p>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('chat.delete')}</h3>
+            <p className="text-zinc-400 mb-6">{t('common.deleteChatDesc')}</p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setMessageToDelete(null)}
                 className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => handleDeleteMessage(messageToDelete)}
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>
@@ -2451,13 +2453,13 @@ export function Chat() {
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl max-w-md w-full">
             <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
               <Flag className="w-5 h-5 text-yellow-500" />
-              Report Character
+              {t('chat.report')}
             </h3>
-            <p className="text-zinc-400 mb-4 text-sm">Please provide a reason for reporting this character.</p>
+            <p className="text-zinc-400 mb-4 text-sm">{t('common.reportCharDesc')}</p>
             <textarea
               value={reportReason}
               onChange={(e) => setReportReason(e.target.value)}
-              placeholder="Reason for report..."
+              placeholder={t('common.reportCharPlaceholder')}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px] mb-6 resize-none"
             />
             <div className="flex justify-end gap-3">
@@ -2468,7 +2470,7 @@ export function Chat() {
                 }}
                 className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleReport}
@@ -2476,7 +2478,7 @@ export function Chat() {
                 className="px-4 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 {isSubmittingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Submit Report
+                {t('community.submitReport')}
               </button>
             </div>
           </div>
@@ -2490,7 +2492,7 @@ export function Chat() {
             <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-3">
                 <User className="w-6 h-6 text-indigo-500" />
-                Chat Participants
+                {t('chat.participants')}
               </h3>
               <button 
                 onClick={() => setIsParticipantsModalOpen(false)}

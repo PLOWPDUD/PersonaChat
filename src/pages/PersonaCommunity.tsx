@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 interface Post {
   id: string;
@@ -83,6 +84,7 @@ interface Comment {
 }
 
 export default function PersonaCommunity() {
+  const { t } = useTranslation();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reportPostId, setReportPostId] = useState<string | null>(null);
@@ -819,7 +821,7 @@ export default function PersonaCommunity() {
       setIsReportModalOpen(false);
       setReportReason('');
       setReportPostId(null);
-      alert('Report submitted successfully. Thank you for helping keep our community safe!');
+      alert(t('community.reportSuccess'));
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'reports');
     } finally {
@@ -961,19 +963,19 @@ export default function PersonaCommunity() {
         <div className="lg:col-span-2 space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-bold text-white tracking-tight">Community</h1>
+            <h1 className="text-4xl font-bold text-white tracking-tight">{t('community.title')}</h1>
             <div className="flex items-center gap-4 mt-2">
               <button 
                 onClick={() => setFeedFilter('recent')}
                 className={`text-sm font-bold uppercase tracking-widest transition-colors ${feedFilter === 'recent' ? 'text-indigo-500' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                Recent
+                {t('community.recent')}
               </button>
               <button 
                 onClick={() => setFeedFilter('trending')}
                 className={`text-sm font-bold uppercase tracking-widest transition-colors ${feedFilter === 'trending' ? 'text-indigo-500' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                Trending
+                {t('community.trending')}
               </button>
             </div>
           </div>
@@ -982,7 +984,7 @@ export default function PersonaCommunity() {
             className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
           >
             <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">New Post</span>
+            <span className="hidden sm:inline">{t('community.newPost')}</span>
           </button>
         </div>
 
@@ -1027,7 +1029,7 @@ export default function PersonaCommunity() {
                     )}
                   </div>
                   <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">
-                    {post.createdAt?.toDate ? new Date(post.createdAt.toDate()).toLocaleDateString() : 'Just now'}
+                    {post.createdAt?.toDate ? new Date(post.createdAt.toDate()).toLocaleDateString() : t('common.justNow', 'Just now')}
                   </p>
                 </div>
               </div>
@@ -1037,7 +1039,7 @@ export default function PersonaCommunity() {
                     <button 
                       onClick={() => editingPostId === post.id ? setEditingPostId(null) : startEditingPost(post)}
                       className={`p-2 rounded-xl transition-all ${editingPostId === post.id ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10'}`}
-                      title="Edit Post"
+                      title={t('community.editPost')}
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -1045,7 +1047,7 @@ export default function PersonaCommunity() {
                   <button 
                     onClick={() => handleDeletePost(post.id)}
                     className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
-                    title="Delete Post"
+                    title={t('community.deletePost')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1061,13 +1063,13 @@ export default function PersonaCommunity() {
                     type="text"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder="Post Title (optional)"
+                    placeholder={t('community.postTitle')}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-bold focus:outline-none focus:border-indigo-500/50"
                   />
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    placeholder="What's on your mind?"
+                    placeholder={t('community.postContent')}
                     rows={4}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500/50 resize-none"
                   />
@@ -1104,7 +1106,7 @@ export default function PersonaCommunity() {
                           className="w-20 h-20 rounded-lg border-2 border-dashed border-zinc-800 flex flex-col items-center justify-center text-zinc-500 hover:border-indigo-500/50 hover:text-indigo-400 transition-all"
                         >
                           <Plus className="w-5 h-5" />
-                          <span className="text-[8px] font-bold mt-1 uppercase">Add</span>
+                          <span className="text-[8px] font-bold mt-1 uppercase">{t('common.add')}</span>
                         </button>
                       )}
                     </div>
@@ -1123,7 +1125,7 @@ export default function PersonaCommunity() {
                       onClick={() => setEditingPostId(null)}
                       className="px-4 py-2 text-sm font-bold text-zinc-400 hover:text-white transition-colors"
                     >
-                      Cancel
+                      {t('community.cancel')}
                     </button>
                     <button
                       onClick={handleUpdatePost}
@@ -1131,7 +1133,7 @@ export default function PersonaCommunity() {
                       className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2"
                     >
                       {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      Save Changes
+                      {t('community.saveChanges')}
                     </button>
                   </div>
                 </div>
@@ -1171,7 +1173,7 @@ export default function PersonaCommunity() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-zinc-300 text-sm font-medium truncate">{post.link}</p>
-                        <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">External Link</p>
+                        <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">{t('common.externalLink')}</p>
                       </div>
                     </a>
                   )}
@@ -1225,7 +1227,7 @@ export default function PersonaCommunity() {
                 <button
                   onClick={() => handleShare(post)}
                   className="p-2 text-zinc-400 hover:text-white transition-all"
-                  title="Share"
+                  title={t('community.share')}
                 >
                   <Share2 className="w-5 h-5" />
                 </button>
@@ -1236,7 +1238,7 @@ export default function PersonaCommunity() {
                       setIsReportModalOpen(true);
                     }}
                     className="p-2 text-zinc-400 hover:text-red-400 transition-all"
-                    title="Report Post"
+                    title={t('community.reportPost')}
                   >
                     <ShieldAlert className="w-5 h-5" />
                   </button>
@@ -1264,7 +1266,7 @@ export default function PersonaCommunity() {
                   <div className="p-4 space-y-4">
                     <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
                       {comments.length === 0 ? (
-                        <p className="text-center py-4 text-zinc-500 text-sm italic">No comments yet. Be the first!</p>
+                        <p className="text-center py-4 text-zinc-500 text-sm italic">{t('community.noComments')}</p>
                       ) : (
                         comments.filter(c => !c.parentId).map(comment => (
                           <div key={comment.id} className="space-y-3">
@@ -1293,7 +1295,7 @@ export default function PersonaCommunity() {
                                           <button
                                             onClick={() => editingCommentId === comment.id ? setEditingCommentId(null) : startEditingComment(comment)}
                                             className={`transition-colors ${editingCommentId === comment.id ? 'text-indigo-400' : 'text-zinc-600 hover:text-indigo-400'}`}
-                                            title="Edit Comment"
+                                            title={t('community.editPost')}
                                           >
                                             <Edit2 className="w-3 h-3" />
                                           </button>
@@ -1301,7 +1303,7 @@ export default function PersonaCommunity() {
                                         <button
                                           onClick={() => handleDeleteComment(post.id, comment.id)}
                                           className="text-zinc-600 hover:text-red-500 transition-colors"
-                                          title="Delete Comment"
+                                          title={t('community.deletePost')}
                                         >
                                           <Trash2 className="w-3 h-3" />
                                         </button>
@@ -1511,7 +1513,7 @@ export default function PersonaCommunity() {
                       {replyingTo && (
                         <div className="flex items-center justify-between px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
                           <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">
-                            Replying to @{replyingTo.authorName}
+                            {t('community.replyingTo')} @{replyingTo.authorName}
                           </p>
                           <button onClick={() => setReplyingTo(null)} className="text-zinc-500 hover:text-white">
                             <X className="w-3 h-3" />
@@ -1537,7 +1539,7 @@ export default function PersonaCommunity() {
                           type="text"
                           value={newComment}
                           onChange={(e) => setNewComment(e.target.value)}
-                          placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
+                          placeholder={replyingTo ? t('community.writeReply') : t('community.writeComment')}
                           className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
                           onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                         />
@@ -1552,7 +1554,7 @@ export default function PersonaCommunity() {
                     {isModerating && (
                       <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-bold animate-pulse px-2">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>AI is checking your image for safety...</span>
+                        <span>{t('common.aiModerating')}</span>
                       </div>
                     )}
                     {commentImagePreview && (
@@ -1583,18 +1585,18 @@ export default function PersonaCommunity() {
             disabled={isFetchingMore}
             className="w-full py-4 text-zinc-500 hover:text-white text-sm font-bold transition-all flex items-center justify-center gap-2"
           >
-            {isFetchingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Load More Posts'}
+            {isFetchingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : t('community.loadMore')}
           </button>
         )}
 
         {!hasMore && posts.length > 0 && (
-          <p className="text-center py-8 text-zinc-600 text-sm italic">You've reached the end of the community feed.</p>
+          <p className="text-center py-8 text-zinc-600 text-sm italic">{t('community.endOfFeed')}</p>
         )}
 
         {!loading && posts.length === 0 && (
           <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-zinc-800 border-dashed">
             <MessageSquare className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-            <p className="text-zinc-400 text-lg">No posts yet. Start the conversation!</p>
+            <p className="text-zinc-400 text-lg">{t('community.noPosts')}</p>
           </div>
         )}
       </div>
@@ -1613,8 +1615,8 @@ export default function PersonaCommunity() {
               </div>
             )}
             <div>
-              <p className="text-white font-bold">{profile?.displayName || 'User'}</p>
-              <p className="text-zinc-500 text-xs">Level {profile?.level || 1}</p>
+              <p className="text-white font-bold">{profile?.displayName || t('common.user')}</p>
+              <p className="text-zinc-500 text-xs">{t('common.level')} {profile?.level || 1}</p>
             </div>
           </div>
           <LevelProgress level={profile?.level || 1} xp={profile?.xp || 0} />
@@ -1625,7 +1627,7 @@ export default function PersonaCommunity() {
           <div className="p-6 border-b border-zinc-800">
             <h3 className="text-white font-bold flex items-center gap-2">
               <Zap className="w-5 h-5 text-amber-500" />
-              Trending Now
+              {t('community.trendingNow')}
             </h3>
           </div>
           <div className="divide-y divide-zinc-800">
@@ -1673,8 +1675,8 @@ export default function PersonaCommunity() {
                   <ShieldAlert className="w-6 h-6 text-red-500" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-white">Report Post</h2>
-                  <p className="text-zinc-400 text-sm">Help us understand what's wrong.</p>
+                  <h2 className="text-2xl font-bold text-white">{t('community.reportPostTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('community.reportDesc')}</p>
                 </div>
               </div>
 
@@ -1682,7 +1684,7 @@ export default function PersonaCommunity() {
                 <textarea
                   value={reportReason}
                   onChange={(e) => setReportReason(e.target.value)}
-                  placeholder="Why are you reporting this post? (e.g. Spam, Harassment, Inappropriate content...)"
+                  placeholder={t('community.reportPlaceholder')}
                   className="w-full h-32 bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all resize-none"
                 />
 
@@ -1695,14 +1697,14 @@ export default function PersonaCommunity() {
                     }}
                     className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition-all"
                   >
-                    Cancel
+                    {t('community.cancel')}
                   </button>
                   <button
                     onClick={handleReportPost}
                     disabled={isSubmittingReport || !reportReason.trim()}
                     className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit Report'}
+                    {isSubmittingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : t('community.submitReport')}
                   </button>
                 </div>
               </div>
@@ -1722,28 +1724,28 @@ export default function PersonaCommunity() {
               className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">Create Community Post</h2>
+                <h2 className="text-xl font-bold text-white">{t('community.createPost')}</h2>
                 <button onClick={() => setIsCreateModalOpen(false)} className="p-2 text-zinc-500 hover:text-white transition-all">
                   <X className="w-6 h-6" />
                 </button>
               </div>
               <div className="p-6 space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Title (Optional)</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{t('community.postTitle')} ({t('common.optional')})</label>
                   <input
                     type="text"
                     value={newPostTitle}
                     onChange={(e) => setNewPostTitle(e.target.value)}
-                    placeholder="Give your post a title..."
+                    placeholder={t('community.postTitle')}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Content</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{t('common.content')}</label>
                   <textarea
                     value={newPostContent}
                     onChange={(e) => setNewPostContent(e.target.value)}
-                    placeholder="What's on your mind? (Paste a YouTube link here for a preview!)"
+                    placeholder={t('community.postContent')}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-white focus:outline-none focus:border-indigo-500/50 transition-all min-h-[150px] resize-none"
                   />
                 </div>
@@ -1762,7 +1764,7 @@ export default function PersonaCommunity() {
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Image</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{t('common.image')}</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="relative">
                       <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
