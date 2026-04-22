@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { Users, Loader2, User, AlertCircle, ShieldAlert, Award, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -18,31 +18,29 @@ export function Stats() {
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
   useEffect(() => {
-    const fetchStats = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const statsRef = doc(db, 'siteStats', 'global');
-        const statsSnap = await getDoc(statsRef);
-        
-        if (statsSnap.exists()) {
-          setStats(statsSnap.data() as { visitorCount: number; userCount: number });
-        }
-      } catch (error: any) {
-        console.error('Error fetching stats:', error);
-        if (isQuotaError(error)) {
-          setLocalQuotaExceeded(true);
-        } else {
-          handleFirestoreError(error, OperationType.GET, 'siteStats/global');
-          setError(t('stats.loadError'));
-        }
-      } finally {
-        setLoading(false);
+    const statsRef = doc(db, 'siteStats', 'global');
+    
+    // Use onSnapshot for real-time updates
+    const unsubscribe = onSnapshot(statsRef, (doc) => {
+      if (doc.exists()) {
+        setStats(doc.data() as { visitorCount: number; userCount: number });
+      } else {
+        setStats({ visitorCount: 0, userCount: 0 });
       }
-    };
+      setLoading(false);
+      setError(null);
+    }, (error: any) => {
+      console.error('Error listening to stats:', error);
+      if (isQuotaError(error)) {
+        setLocalQuotaExceeded(true);
+      } else {
+        setError(t('stats.loadError'));
+      }
+      setLoading(false);
+    });
 
-    fetchStats();
-  }, []);
+    return () => unsubscribe();
+  }, [t]);
 
   if (loading) {
     return (

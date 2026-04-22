@@ -111,6 +111,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Visitor tracking for everyone (guests and logged in)
+    const trackVisitor = async () => {
+      const lastIncrement = localStorage.getItem('last_visitor_increment');
+      const nowTime = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      
+      if (!lastIncrement || (nowTime - parseInt(lastIncrement)) > oneDay) {
+        try {
+          const statsRef = doc(db, 'siteStats', 'global');
+          await setDoc(statsRef, { 
+            visitorCount: increment(1),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          localStorage.setItem('last_visitor_increment', nowTime.toString());
+          console.log("Visitor count incremented (for everyone, once per 24h)");
+        } catch (error) {
+          console.warn("Could not increment visitor count:", error);
+        }
+      }
+    };
+    trackVisitor();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       console.log("Auth state changed:", currentUser ? `User logged in: ${currentUser.uid}` : "User logged out");
       setUser(currentUser);
@@ -228,18 +250,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Retroactive badge check
           checkAndAwardBadges(currentUser.uid);
-
-          // Increment visitor count only once per 24 hours per device to save writes
-          const lastIncrement = localStorage.getItem('last_visitor_increment');
-          const nowTime = Date.now();
-          const oneDay = 24 * 60 * 60 * 1000;
-          
-          if (!lastIncrement || (nowTime - parseInt(lastIncrement)) > oneDay) {
-            const statsRef = doc(db, 'siteStats', 'global');
-            await setDoc(statsRef, { visitorCount: increment(1) }, { merge: true });
-            localStorage.setItem('last_visitor_increment', nowTime.toString());
-            console.log("Visitor count incremented (once per 24h)");
-          }
 
         } catch (error: any) {
           if (isQuotaError(error)) {

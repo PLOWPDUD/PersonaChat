@@ -177,7 +177,7 @@ service cloud.firestore {
 
     match /siteStats/{docId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if true;
     }
 
     match /notifications/{notificationId} {
