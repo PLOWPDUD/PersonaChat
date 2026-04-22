@@ -138,10 +138,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       
       if (currentUser) {
+        const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
+        
         console.log("Current User Auth Details:", {
           displayName: currentUser.displayName,
           email: currentUser.email,
           photoURL: currentUser.photoURL,
+          googleDisplayName: googleProviderData?.displayName,
+          googlePhotoURL: googleProviderData?.photoURL,
           isAnonymous: currentUser.isAnonymous
         });
         
@@ -184,9 +188,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           const profileData = {
             uid: currentUser.uid,
-            displayName: currentUser.displayName || fallBackName,
-            photoURL: currentUser.photoURL || '',
-            email: currentUser.email || '',
+            displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
+            photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
+            email: currentUser.email || googleProviderData?.email || '',
             updatedAt: serverTimestamp()
           };
 

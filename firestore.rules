@@ -27,9 +27,9 @@ service cloud.firestore {
     }
 
     function isValidProfile(data) {
-      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase']) &&
+      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase', 'hasSeenRules', 'isCounted', 'email']) &&
              (!('displayName' in data) || isValidString(data.displayName, 2, 100)) &&
-             (!('bio' in data) || isValidString(data.bio, 0, 2000)) &&
+             (!('bio' in data) || data.bio == null || isValidString(data.bio, 0, 2000)) &&
              (!('photoURL' in data) || isValidUrl(data.photoURL) || data.photoURL.matches("^data:image/.*")) &&
              (!('bannerURL' in data) || isValidUrl(data.bannerURL) || data.bannerURL.matches("^data:image/.*")) &&
              (!('role' in data) || data.role in ['user', 'moderator', 'admin', 'owner']);

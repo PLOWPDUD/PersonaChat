@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, orderBy, serverTimestamp, where, getDoc, limit, startAfter, addDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot, Award } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, User, Check, X, Loader2, Trash2, ChevronRight, ChevronLeft, Search, Bot, Award, Users, Eye } from 'lucide-react';
 import { BADGES } from '../services/badgeService';
 import { useNavigate } from 'react-router-dom';
 
@@ -26,6 +26,7 @@ export function Admin() {
   const [feedback, setFeedback] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [siteStats, setSiteStats] = useState<{ userCount: number; visitorCount: number } | null>(null);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,6 +39,18 @@ export function Admin() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  useEffect(() => {
+    // Listen to real-time stats
+    const statsRef = doc(db, 'siteStats', 'global');
+    const unsubStats = onSnapshot(statsRef, (snap) => {
+      if (snap.exists()) {
+        setSiteStats(snap.data() as any);
+      }
+    });
+
+    return () => unsubStats();
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -102,7 +115,7 @@ export function Admin() {
       if (activeTab === 'users') {
         const profilesRef = collection(db, 'profiles');
         let q;
-        const pageSize = 10;
+        const pageSize = 50;
 
         if (direction === 'next' && lastVisible) {
           q = query(profilesRef, orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
@@ -333,6 +346,29 @@ export function Admin() {
             <p className="text-zinc-400">Moderator access granted.</p>
           </div>
         </div>
+
+        {siteStats && (
+          <div className="flex gap-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3">
+              <div className="p-2 bg-indigo-500/10 rounded-xl">
+                <Users className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Members</p>
+                <p className="text-white font-bold">{siteStats.userCount}</p>
+              </div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 rounded-xl">
+                <Eye className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Visitors</p>
+                <p className="text-white font-bold">{siteStats.visitorCount}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex bg-zinc-900 p-1 rounded-2xl border border-zinc-800">
           <button

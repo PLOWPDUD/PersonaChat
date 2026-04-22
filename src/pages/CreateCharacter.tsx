@@ -3,22 +3,24 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3 } from 'lucide-react';
+import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3, Download, ChevronRight } from 'lucide-react';
 import { getLocalCharacterById, saveLocalCharacter, deleteLocalCharacter, LocalCharacter } from '../lib/localStorage';
 import { ImageAdjuster } from '../components/ImageAdjuster';
-import { AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export function CreateCharacter() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { characterId } = useParams<{ characterId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [adjustingImage, setAdjustingImage] = useState<string | null>(null);
   const [agreedToRules, setAgreedToRules] = useState(false);
+  const [importModal, setImportModal] = useState<{ isOpen: boolean; data: any }>({ isOpen: false, data: null });
   
   const [formData, setFormData] = useState({
     name: '',
@@ -131,6 +133,64 @@ export function CreateCharacter() {
     setImagePreview(null);
     setFormData(prev => ({ ...prev, avatarUrl: '' }));
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const data = JSON.parse(content);
+        
+        // Normalize CAI format
+        // Handle various common export formats
+        const normalized = {
+          name: data.name || data.char_name || '',
+          greeting: data.greeting || data.char_greeting || '',
+          description: data.description || data.char_persona || '',
+          personality: data.personality || '',
+          // Some formats have definition separate, combined into description
+          extended_description: data.definition || data.example_dialogue || ''
+        };
+
+        if (normalized.extended_description) {
+          normalized.description = `${normalized.description}\n\n[Character Definition]\n${normalized.extended_description}`;
+        }
+
+        if (!normalized.name) {
+          setError('Invalid character file. Name is required.');
+          return;
+        }
+
+        setImportModal({ isOpen: true, data: normalized });
+      } catch (err) {
+        setError('Failed to parse character file. Make sure it is a valid JSON.');
+      }
+    };
+    reader.readAsText(file);
+    if (e.target) e.target.value = '';
+  };
+
+  const confirmImport = (visibility: 'public' | 'private' | 'unlisted') => {
+    const { data } = importModal;
+    setFormData(prev => ({
+      ...prev,
+      name: data.name,
+      greeting: data.greeting,
+      description: data.description,
+      personality: data.personality,
+      visibility
+    }));
+    setImportModal({ isOpen: false, data: null });
+    // Scroll to top to show filled data
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -259,19 +319,40 @@ export function CreateCharacter() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-          {characterId ? (
-            <Edit3 className="w-8 h-8 text-indigo-500" />
-          ) : (
-            <UserPlus className="w-8 h-8 text-indigo-500" />
-          )}
-          {characterId ? 'Edit Character' : 'Create Character'}
-        </h1>
-        <p className="text-zinc-400 mt-2">
-          {characterId ? 'Update your character\'s details.' : 'Design a new AI personality to chat with.'}
-        </p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            {characterId ? (
+              <Edit3 className="w-8 h-8 text-indigo-500" />
+            ) : (
+              <UserPlus className="w-8 h-8 text-indigo-500" />
+            )}
+            {characterId ? 'Edit Character' : 'Create Character'}
+          </h1>
+          <p className="text-zinc-400 mt-2">
+            {characterId ? 'Update your character\'s details.' : 'Design a new AI personality to chat with.'}
+          </p>
+        </div>
+        
+        {!characterId && (
+          <button
+            type="button"
+            onClick={handleImportClick}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-bold transition-all border border-zinc-700 shadow-xl"
+          >
+            <Download className="w-5 h-5 text-indigo-400" />
+            Import from C.AI
+          </button>
+        )}
       </div>
+
+      <input
+        type="file"
+        ref={importInputRef}
+        onChange={handleFileImport}
+        accept=".json"
+        className="hidden"
+      />
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl mb-6 flex items-start gap-3">
@@ -491,6 +572,77 @@ export function CreateCharacter() {
             shape="rect"
             title="Adjust Character Avatar"
           />
+        )}
+
+        {importModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
+              
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-indigo-500/10 rounded-2xl">
+                  <Sparkles className="w-8 h-8 text-indigo-500" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Import Successful!</h2>
+                  <p className="text-zinc-400 text-sm">Character: <span className="text-indigo-400 font-bold">{importModal.data?.name}</span></p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <p className="text-zinc-300 leading-relaxed">
+                  How should this character be listed? You can change this later in the character settings.
+                </p>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <button
+                    onClick={() => confirmImport('public')}
+                    className="flex items-center justify-between p-4 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 rounded-2xl group transition-all"
+                  >
+                    <div className="text-left">
+                      <p className="text-white font-bold">Public</p>
+                      <p className="text-zinc-500 text-xs">Everyone can discover and chat</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-indigo-500 group-hover:translate-x-1 transition-transform" />
+                  </button>
+
+                  <button
+                    onClick={() => confirmImport('private')}
+                    className="flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-2xl group transition-all"
+                  >
+                    <div className="text-left">
+                      <p className="text-white font-bold">Private</p>
+                      <p className="text-zinc-500 text-xs">Only you can see and chat</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-zinc-500 group-hover:translate-x-1 transition-transform" />
+                  </button>
+
+                  <button
+                    onClick={() => confirmImport('unlisted')}
+                    className="flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-2xl group transition-all"
+                  >
+                    <div className="text-left">
+                      <p className="text-white font-bold">Unlisted</p>
+                      <p className="text-zinc-500 text-xs">Only accessible via direct link</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-zinc-500 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setImportModal({ isOpen: false, data: null })}
+                  className="w-full py-4 text-zinc-500 hover:text-zinc-300 font-bold text-sm transition-colors"
+                >
+                  Cancel Import
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

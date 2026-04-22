@@ -12,6 +12,9 @@ const languages = [
   { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
   { code: 'pt', label: 'Português', flag: '🇧🇷' },
   { code: 'ar', label: 'العربية', flag: '🇸🇦' },
+  { code: 'ru', label: 'Русский', flag: '🇷🇺' },
+  { code: 'tr', label: 'Türkçe', flag: '🇹🇷' },
+  { code: 'el', label: 'Ελληνικά', flag: '🇬🇷' },
 ];
 
 const themeColors: { id: ThemeColor; color: string; label: string }[] = [
