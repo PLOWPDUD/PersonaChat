@@ -137,24 +137,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log("Auth state changed:", currentUser ? `User logged in: ${currentUser.uid}` : "User logged out");
       setUser(currentUser);
       
-      // Immediately grant owner/mod roles to the primary admin email
-      if (currentUser?.email === 'videosonli5@gmail.com') {
-        setRoles({ isOwner: true, isModerator: true });
-      }
-      
       if (currentUser) {
+        console.log("Current User Auth Details:", {
+          displayName: currentUser.displayName,
+          email: currentUser.email,
+          photoURL: currentUser.photoURL,
+          isAnonymous: currentUser.isAnonymous
+        });
+        
+        // Immediately grant owner/mod roles to the primary admin email
+        if (currentUser?.email === 'videosonli5@gmail.com') {
+          setRoles({ isOwner: true, isModerator: true });
+        }
+
         // If we have a cached profile for this user, we can stop loading early
         if (profile && profile.uid === currentUser.uid) {
           setLoading(false);
         }
 
-        // Skip if already synced recently (within 1 hour) to save quota
+        // Skip if already synced very recently (within 2 minutes) to save quota while allowing quick tests
         const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
         const now = Date.now();
-        const oneHour = 60 * 60 * 1000;
+        const twoMinutes = 2 * 60 * 1000;
         
-        if (lastSync && (now - parseInt(lastSync)) < oneHour) {
-          console.log("Profile already synced recently, skipping Firestore fetch");
+        if (lastSync && (now - parseInt(lastSync)) < twoMinutes) {
+          console.log("Profile already synced very recently, skipping Firestore fetch");
           setLoading(false);
           return;
         }
@@ -190,10 +197,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               displayName_lowercase: profileData.displayName.toLowerCase(),
               createdAt: serverTimestamp(),
               role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
-              hasSeenRules: false
+              hasSeenRules: false,
+              isCounted: true
             };
             await setDoc(profileRef, newProfile);
-            console.log("New profile created in Firestore");
+            console.log("New profile created in Firestore with isCounted: true");
             
             // For local state, we use a real date instead of serverTimestamp sentinel
             const localProfile = { ...newProfile, updatedAt: new Date(), createdAt: new Date() };
@@ -222,15 +230,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Only update if essential fields are missing or if the display name/photo has changed from Google
             const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid;
             
+            // Flag to check if we need to increment userCount (for legacy profiles or failed first-time counts)
+            const needsCount = !data.isCounted && !currentUser.isAnonymous;
+
             // If the existing profile has the fallback/anonymous name but the Google user now has a real name, update it
-            const hasGoogleNameNow = currentUser.displayName && (data.displayName === 'Anonymous User' || data.displayName === 'Persona User' || data.displayName.startsWith('Guest '));
-            const hasChanged = hasGoogleNameNow || (currentUser.displayName && data.displayName !== currentUser.displayName) || (currentUser.photoURL && data.photoURL !== currentUser.photoURL);
+            const isGenericName = data.displayName === 'Anonymous User' || data.displayName === 'Persona User' || data.displayName.startsWith('Guest ');
+            const hasGoogleNameNow = currentUser.displayName && isGenericName;
+            
+            // Comprehensive change check
+            const hasChanged = hasGoogleNameNow || 
+                               (currentUser.displayName && data.displayName !== currentUser.displayName) || 
+                               (currentUser.photoURL && data.photoURL !== currentUser.photoURL) ||
+                               (currentUser.email && data.email !== currentUser.email) ||
+                               needsCount;
 
             const isOwnerEmail = currentUser.email === 'videosonli5@gmail.com';
             const needsRoleUpgrade = isOwnerEmail && data.role !== 'owner' && data.role !== 'admin';
 
             if (needsUpdate || hasChanged || needsRoleUpgrade) {
-              console.log("Profile needs update/migration or info sync. Reason:", { needsUpdate, hasChanged, needsRoleUpgrade });
+              console.log("Profile needs update. Reason:", { needsUpdate, hasChanged, needsRoleUpgrade, needsCount });
               const updates: any = {
                 uid: data.uid || profileData.uid,
                 displayName: currentUser.displayName || data.displayName || fallBackName,
@@ -239,14 +257,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 email: data.email || currentUser.email || '',
                 updatedAt: serverTimestamp()
               };
-              if (!data.createdAt) updates.createdAt = serverTimestamp();
+              if (!data.createdAt || data.createdAt === null) updates.createdAt = serverTimestamp();
               if (needsRoleUpgrade) updates.role = 'owner';
+              if (needsCount) updates.isCounted = true;
               
               await updateDoc(profileRef, updates);
+              console.log("Profile updated in Firestore with latest info");
+              
+              // Increment user count if needed
+              if (needsCount) {
+                try {
+                  const statsRef = doc(db, 'siteStats', 'global');
+                  await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
+                  console.log("User count incremented (Member # increased)");
+                } catch (statsErr) {
+                  console.warn("Failed to increment user count:", statsErr);
+                }
+              }
+
               const updatedProfile = { ...data, ...updates, updatedAt: new Date() };
               setProfile(updatedProfile);
               localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
             } else {
+              console.log("Profile is up to date");
               setProfile(data);
               localStorage.setItem('cached_profile', JSON.stringify(data));
             }

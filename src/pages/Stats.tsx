@@ -22,6 +22,7 @@ export function Stats() {
     
     // Use onSnapshot for real-time updates
     const unsubscribe = onSnapshot(statsRef, (doc) => {
+      console.log("Stats snapshot received:", doc.exists() ? doc.data() : "Document does not exist");
       if (doc.exists()) {
         setStats(doc.data() as { visitorCount: number; userCount: number });
       } else {
