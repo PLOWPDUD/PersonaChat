@@ -65,4 +65,15 @@ export const ACHIEVEMENTS = {
   FIRST_CHARACTER: { id: 'first_character', name: 'Creator', description: 'Create your first AI character', icon: '🤖', xp: 500 },
   FIRST_FOLLOW: { id: 'first_follow', name: 'Socialite', description: 'Follow your first user', icon: '🤝', xp: 200 },
   POPULAR_POST: { id: 'popular_post', name: 'Rising Star', description: 'Get 10 likes on a post', icon: '⭐', xp: 1000 },
+  CHATTER_10: { id: 'chatter_10', name: 'Small Talk', description: 'Have your first conversation', icon: '💬', xp: 100 },
+  CHATTER_100: { id: 'chatter_100', name: 'Chatterbox', description: 'Talk to 10 different characters', icon: '🗣️', xp: 1000 },
 };
+
+export const BADGES = [
+  { id: 'early_adopter', name: 'Early Adopter', icon: '🚀', color: 'text-indigo-400', bg: 'bg-indigo-400/10' },
+  { id: 'verified', name: 'Verified', icon: '✅', color: 'text-blue-400', bg: 'bg-blue-400/10' },
+  { id: 'creator', name: 'Pro Creator', icon: '🎨', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+  { id: 'supporter', name: 'Supporter', icon: '💖', color: 'text-rose-400', bg: 'bg-rose-400/10' },
+  { id: 'moderator', name: 'Guardian', icon: '🛡️', color: 'text-amber-400', bg: 'bg-amber-400/10' },
+  { id: 'owner', name: 'Founder', icon: '👑', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+];

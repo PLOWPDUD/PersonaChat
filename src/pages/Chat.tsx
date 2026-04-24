@@ -1471,6 +1471,12 @@ export function Chat() {
     };
     localMessages.push(newUserMessage);
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(localMessages));
+
+    // Award XP
+    import('../lib/gamification').then(({ addXP }) => {
+      addXP(user.uid, 5);
+    });
+
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {

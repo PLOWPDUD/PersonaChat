@@ -1,16 +1,33 @@
 {
   "name": "PersonaChat",
   "short_name": "PersonaChat",
+  "description": "AI Personality Chat & Community Hub",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
   "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "categories": ["social", "entertainment", "productivity"],
   "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z'/%3E%3Cpath d='M5 3v4'/%3E%3Cpath d='M3 5h4'/%3E%3Cpath d='M21 17v4'/%3E%3Cpath d='M19 19h4'/%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://api.screenshotone.com/take?url=https%3A%2F%2Fpersona-chat.vercel.app&viewport_width=1280&viewport_height=720&block_ads=true&block_cookie_banners=true&delay=2",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
     }
   ]
 }

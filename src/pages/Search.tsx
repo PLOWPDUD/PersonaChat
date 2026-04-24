@@ -279,6 +279,10 @@ export function Search() {
                 <option value="">All</option>
                 <option value="test">Test</option>
                 <option value="anime">Anime</option>
+                <option value="gaming">Gaming</option>
+                <option value="helper">Helper</option>
+                <option value="roleplay">Roleplay</option>
+                <option value="entertainment">Entertainment</option>
                 <option value="funny">Funny</option>
                 <option value="original character">Original Character</option>
                 <option value="horror">Horror</option>
@@ -287,6 +291,15 @@ export function Search() {
                 <option value="action">Action</option>
                 <option value="romance">Romance</option>
                 <option value="mystery">Mystery</option>
+                <option value="history">History</option>
+                <option value="philosophy">Philosophy</option>
+                <option value="science">Science</option>
+                <option value="education">Education</option>
+                <option value="politics">Politics</option>
+                <option value="religion">Religion</option>
+                <option value="fitness">Fitness</option>
+                <option value="cooking">Cooking</option>
+                <option value="psychology">Psychology</option>
               </select>
             )}
           </div>

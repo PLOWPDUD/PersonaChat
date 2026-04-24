@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, updateDoc, increment, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2, Layout } from 'lucide-react';
+import { User, Save, AlertCircle, Camera, Upload, Trash2, Edit2, Plus, UserCircle, ShieldAlert, Award, MessageSquare, Users, Bot, Star, ChevronRight, Loader2, Layout, Trophy, Zap, TrendingUp } from 'lucide-react';
+import { ACHIEVEMENTS, BADGES as LIB_BADGES } from '../lib/gamification';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { BADGES } from '../services/badgeService';
 import { LevelProgress } from '../components/LevelProgress';
@@ -49,6 +50,8 @@ export function Profile() {
   const [loadingChars, setLoadingChars] = useState(false);
   const [adjustingImage, setAdjustingImage] = useState<string | null>(null);
   const [adjustingType, setAdjustingType] = useState<'photo' | 'banner' | null>(null);
+  const [earnedAchievements, setEarnedAchievements] = useState<Set<string>>(new Set());
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
 
   const getRankInfo = () => {
     if (isOwner) return { label: t('common.owner'), color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
@@ -212,6 +215,22 @@ export function Profile() {
 
     fetchProfile();
     fetchUserCharacters();
+
+    const fetchAchievements = async () => {
+      if (!targetUserId) return;
+      setLoadingAchievements(true);
+      try {
+        const achSnap = await getDocs(collection(db, 'users', targetUserId, 'achievements'));
+        const earned = new Set(achSnap.docs.map(doc => doc.id));
+        setEarnedAchievements(earned);
+      } catch (err) {
+        console.error('Error fetching achievements:', err);
+      } finally {
+        setLoadingAchievements(false);
+      }
+    };
+
+    fetchAchievements();
   }, [user, targetUserId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -403,6 +422,57 @@ export function Profile() {
 
           <div className="mt-6">
             <LevelProgress level={formData.level} xp={formData.xp} />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
+            <div className="p-4 bg-zinc-950/40 border border-zinc-800/50 rounded-2xl text-center">
+              <MessageSquare className="w-5 h-5 text-indigo-400 mx-auto mb-2" />
+              <div className="text-xl font-bold text-white">{userCharacters.reduce((acc, char) => acc + (char.interactionsCount || 0), 0)}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{t('profile.interactions', 'Interactions')}</div>
+            </div>
+            <div className="p-4 bg-zinc-950/40 border border-zinc-800/50 rounded-2xl text-center">
+              <Star className="w-5 h-5 text-yellow-500 mx-auto mb-2" />
+              <div className="text-xl font-bold text-white">
+                {userCharacters.length > 0 
+                  ? (userCharacters.reduce((acc, char) => acc + (char.averageRating || 0), 0) / userCharacters.length).toFixed(1)
+                  : '0.0'}
+              </div>
+              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{t('profile.avgRating', 'Avg Rating')}</div>
+            </div>
+            <div className="p-4 bg-zinc-950/40 border border-zinc-800/50 rounded-2xl text-center">
+              <Trophy className="w-5 h-5 text-amber-500 mx-auto mb-2" />
+              <div className="text-xl font-bold text-white">{earnedAchievements.size}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{t('profile.achievements', 'Unlocked')}</div>
+            </div>
+            <div className="p-4 bg-zinc-950/40 border border-zinc-800/50 rounded-2xl text-center">
+              <Zap className="w-5 h-5 text-indigo-400 mx-auto mb-2" />
+              <div className="text-xl font-bold text-white">{formData.xp}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Total XP</div>
+            </div>
+          </div>
+
+          {/* Achievements Card */}
+          <div className="mt-8 p-6 bg-zinc-950/20 border border-zinc-800/50 rounded-3xl">
+             <div className="flex items-center gap-2 mb-4">
+                < Award className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">{t('profile.achievementMilestones', 'Achievement Milestones')}</h3>
+             </div>
+             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {Object.values(ACHIEVEMENTS).map((ach) => (
+                  <div 
+                    key={ach.id}
+                    className={`p-3 rounded-2xl border transition-all ${
+                      earnedAchievements.has(ach.id)
+                        ? 'bg-amber-500/5 border-amber-500/20 grayscale-0'
+                        : 'bg-zinc-900 border-zinc-800 grayscale opacity-40'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">{ach.icon}</div>
+                    <div className="text-xs font-bold text-white truncate">{ach.name}</div>
+                    <div className="text-[10px] text-zinc-500 line-clamp-1">{ach.description}</div>
+                  </div>
+                ))}
+             </div>
           </div>
 
           {formData.badges.length > 0 && (

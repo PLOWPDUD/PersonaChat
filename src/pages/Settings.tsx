@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/SettingsContext';
-import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe } from 'lucide-react';
+import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor } from 'lucide-react';
 import { getNotificationSupport, requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 import { useTranslation } from 'react-i18next';
 
@@ -331,6 +331,43 @@ export function Settings() {
           </div>
         </section>
       </div>
+
+      {/* Download App (PWA) */}
+      <section className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 border border-indigo-500/20 rounded-3xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-white font-semibold">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+              <Download className="w-5 h-5" />
+            </div>
+            {t('settings.downloadApp', 'Download App (APK)')}
+          </div>
+          <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-1 rounded-full font-bold uppercase tracking-wider">
+            {t('settings.pwaSupport', 'Chromium Based')}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-800 space-y-3">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-5 h-5 text-indigo-400" />
+              <h4 className="text-white font-bold text-sm">Android / APK</h4>
+            </div>
+            <p className="text-zinc-500 text-xs leading-relaxed">
+              Open this site in <b>Chrome</b>. Tap the <b>three dots</b> ⋮ and select <b>"Install App"</b> or <b>"Add to Home Screen"</b>. This creates a lightweight Chromium-based app on your phone.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-800 space-y-3">
+            <div className="flex items-center gap-3">
+              <Monitor className="w-5 h-5 text-indigo-400" />
+              <h4 className="text-white font-bold text-sm">PC / Desktop</h4>
+            </div>
+            <p className="text-zinc-500 text-xs leading-relaxed">
+              Click the <b>Install icon</b> in the Chrome address bar (right side) to install as a standalone desktop application with its own window.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* Preview Section */}
       <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 glass-card">
