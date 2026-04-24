@@ -44,6 +44,42 @@ export function Settings() {
   const { t, i18n } = useTranslation();
   const { settings, updateSettings, resetSettings } = useSettings();
   const [notifStatus, setNotifStatus] = React.useState(getNotificationSupport());
+  const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
+  const [isInstalled, setIsInstalled] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setIsInstalled(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const handleRequestNotif = async () => {
     const granted = await requestNotificationPermission();
@@ -333,37 +369,56 @@ export function Settings() {
       </div>
 
       {/* Download App (PWA) */}
-      <section className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 border border-indigo-500/20 rounded-3xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <section className="bg-gradient-to-br from-theme-primary/10 to-purple-600/10 border border-theme-primary/20 rounded-3xl p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-white font-semibold">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-              <Download className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-theme-primary/20 flex items-center justify-center text-theme-primary">
+              <Smartphone className="w-6 h-6" />
             </div>
-            {t('settings.downloadApp', 'Download App (APK)')}
+            <div>
+              <h3 className="text-lg font-bold">{t('settings.installApp', 'Install PersonaChat App')}</h3>
+              <p className="text-xs text-zinc-400 font-normal">Standalone Chromium-based Application</p>
+            </div>
           </div>
-          <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-1 rounded-full font-bold uppercase tracking-wider">
-            {t('settings.pwaSupport', 'Chromium Based')}
-          </span>
+          
+          {deferredPrompt ? (
+            <button
+              onClick={handleInstallClick}
+              className="px-6 py-2.5 bg-theme-primary hover:bg-theme-primary-hover text-white rounded-xl font-bold transition-all shadow-lg shadow-theme-glow flex items-center justify-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              {t('settings.installNow', 'Install Now')}
+            </button>
+          ) : isInstalled ? (
+            <div className="px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl font-bold text-sm flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              {t('settings.alreadyInstalled', 'App Installed')}
+            </div>
+          ) : (
+            <span className="text-[10px] bg-zinc-800 text-zinc-500 px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">
+              {t('settings.pwaSupport', 'Chromium Required')}
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-800 space-y-3">
             <div className="flex items-center gap-3">
-              <Smartphone className="w-5 h-5 text-indigo-400" />
-              <h4 className="text-white font-bold text-sm">Android / APK</h4>
+              <Smartphone className="w-5 h-5 text-theme-primary" />
+              <h4 className="text-white font-bold text-sm">Android Installation</h4>
             </div>
             <p className="text-zinc-500 text-xs leading-relaxed">
-              Open this site in <b>Chrome</b>. Tap the <b>three dots</b> ⋮ and select <b>"Install App"</b> or <b>"Add to Home Screen"</b>. This creates a lightweight Chromium-based app on your phone.
+              If the <b>Install</b> button above doesn't appear, tap the <b>three dots</b> ⋮ in Chrome and select <b>"Install App"</b> or <b>"Add to Home Screen"</b>.
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-800 space-y-3">
             <div className="flex items-center gap-3">
-              <Monitor className="w-5 h-5 text-indigo-400" />
+              <Monitor className="w-5 h-5 text-theme-primary" />
               <h4 className="text-white font-bold text-sm">PC / Desktop</h4>
             </div>
             <p className="text-zinc-500 text-xs leading-relaxed">
-              Click the <b>Install icon</b> in the Chrome address bar (right side) to install as a standalone desktop application with its own window.
+              Click the <b>Install icon</b> in the address bar (next to the star icon) to install PersonaChat as a standalone window.
             </p>
           </div>
         </div>

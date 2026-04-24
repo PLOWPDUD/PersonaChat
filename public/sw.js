@@ -32,3 +32,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
+
+self.addEventListener('fetch', (event) => {
+  // We don't cache much for now to avoid stale data, but listener is required for PWA installability
+  return;
+});
