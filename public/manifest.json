@@ -1,8 +1,10 @@
 {
-  "name": "PersonaChat",
+  "id": "/",
+  "name": "PersonaChat AI Community",
   "short_name": "PersonaChat",
-  "description": "AI Personality Chat & Community Hub",
+  "description": "The ultimate AI Personality Chat & Community Hub. Create, chat, and share with unique AI personas.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#09090b",
   "theme_color": "#6366f1",
@@ -10,38 +12,60 @@
   "categories": ["social", "entertainment", "productivity"],
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
+      "src": "https://img.icons8.com/color/192/bot.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "https://img.icons8.com/color/192/bot.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z'/%3E%3Cpath d='M5 3v4'/%3E%3Cpath d='M3 5h4'/%3E%3Cpath d='M21 17v4'/%3E%3Cpath d='M19 19h4'/%3E%3C/svg%3E",
+      "src": "https://img.icons8.com/color/512/bot.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/bot.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search Characters",
+      "short_name": "Search",
+      "description": "Find AI personas to chat with",
+      "url": "/search",
+      "icons": [{ "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/search.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Profile",
+      "short_name": "Profile",
+      "description": "View your leveling progress",
+      "url": "/profile",
+      "icons": [{ "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/user.svg", "sizes": "192x192" }]
     }
   ],
   "screenshots": [
     {
-      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
+      "src": "https://images.unsplash.com/photo-1675271591211-126ad94e495d?q=80&w=1280&h=720&auto=format&fit=crop",
       "sizes": "1280x720",
-      "type": "image/svg+xml",
+      "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "PersonaChat Desktop"
+      "label": "PersonaChat Discovery"
     },
     {
-      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
+      "src": "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?q=80&w=1080&h=1920&auto=format&fit=crop",
       "sizes": "1080x1920",
-      "type": "image/svg+xml",
+      "type": "image/jpeg",
       "form_factor": "narrow",
-      "label": "PersonaChat Mobile"
+      "label": "PersonaChat Mobile Feed"
     }
   ]
 }
