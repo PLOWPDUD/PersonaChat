@@ -26,14 +26,45 @@ export function FeedbackPanel({ isOpen, onClose }: FeedbackPanelProps) {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        setError('Image size must be less than 2MB');
+      if (file.size > 5 * 1024 * 1024) { // Allow up to 5MB initial file size
+        setError('Image size must be less than 5MB');
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImage(reader.result as string);
-        setError(null);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Max dimensions for feedback images
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Use compressed JPEG
+          const compressed = canvas.toDataURL('image/jpeg', 0.6);
+          setImage(compressed);
+          setError(null);
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }

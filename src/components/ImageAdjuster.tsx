@@ -50,8 +50,16 @@ export const ImageAdjuster: React.FC<ImageAdjusterProps> = ({
       return '';
     }
 
-    canvas.width = pixelCrop.width;
-    canvas.height = pixelCrop.height;
+    canvas.width = Math.min(pixelCrop.width, 1024);
+    canvas.height = Math.min(pixelCrop.height, 1024);
+
+    // Maintain aspect ratio if we downscale
+    const ratio = Math.min(canvas.width / pixelCrop.width, canvas.height / pixelCrop.height);
+    const finalWidth = pixelCrop.width * ratio;
+    const finalHeight = pixelCrop.height * ratio;
+
+    canvas.width = finalWidth;
+    canvas.height = finalHeight;
 
     ctx.drawImage(
       image,
@@ -61,11 +69,11 @@ export const ImageAdjuster: React.FC<ImageAdjusterProps> = ({
       pixelCrop.height,
       0,
       0,
-      pixelCrop.width,
-      pixelCrop.height
+      finalWidth,
+      finalHeight
     );
 
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return canvas.toDataURL('image/jpeg', 0.6); // Lower quality to further reduce size
   };
 
   const handleComplete = async () => {

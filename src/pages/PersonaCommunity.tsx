@@ -1001,7 +1001,9 @@ export default function PersonaCommunity() {
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Link to={`/profile/${post.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
-                  {post.authorPhoto ? (
+                  {post.authorId === user?.uid && profile?.photoURL ? (
+                    <img src={profile.photoURL} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                  ) : post.authorPhoto ? (
                     <img src={post.authorPhoto} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
@@ -1272,7 +1274,9 @@ export default function PersonaCommunity() {
                           <div key={comment.id} className="space-y-3">
                             <div className="flex gap-3">
                               <Link to={`/profile/${comment.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
-                                {comment.authorPhoto ? (
+                                {comment.authorId === user?.uid && profile?.photoURL ? (
+                                  <img src={profile.photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                                ) : comment.authorPhoto ? (
                                   <img src={comment.authorPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                                 ) : (
                                   <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
@@ -1398,7 +1402,9 @@ export default function PersonaCommunity() {
                             {comments.filter(r => r.parentId === comment.id).map(reply => (
                               <div key={reply.id} className="flex gap-3 ml-8">
                                 <Link to={`/profile/${reply.authorId}`} className="flex-shrink-0 transition-opacity hover:opacity-80">
-                                  {reply.authorPhoto ? (
+                                  {reply.authorId === user?.uid && profile?.photoURL ? (
+                                    <img src={profile.photoURL} alt="" className="w-6 h-6 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                                  ) : reply.authorPhoto ? (
                                     <img src={reply.authorPhoto} alt="" className="w-6 h-6 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                                   ) : (
                                     <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
