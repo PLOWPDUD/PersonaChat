@@ -4,8 +4,8 @@ self.addEventListener('push', function(event) {
   const title = data.title || 'New Notification';
   const options = {
     body: data.message || 'Check the app for updates.',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: 'https://img.icons8.com/isometric/192/sparkling.png',
+    badge: 'https://img.icons8.com/isometric/192/sparkling.png',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/'
@@ -42,6 +42,9 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Only handle GET requests
+  if (event.request.method !== 'GET') return;
+
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -50,5 +53,23 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+
+  // Cache-first for images/icons
+  if (event.request.destination === 'image') {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse;
+        return fetch(event.request).then((networkResponse) => {
+          if (networkResponse.ok) {
+            const cacheCopy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cacheCopy));
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
   event.respondWith(fetch(event.request));
 });
