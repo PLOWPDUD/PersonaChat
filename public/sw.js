@@ -34,6 +34,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // We don't cache much for now to avoid stale data, but listener is required for PWA installability
-  return;
+  // Pass-through fetch handler required for PWA installability
+  event.respondWith(fetch(event.request));
 });

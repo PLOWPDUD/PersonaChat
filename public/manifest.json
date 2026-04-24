@@ -30,10 +30,18 @@
   ],
   "screenshots": [
     {
-      "src": "https://api.screenshotone.com/take?url=https%3A%2F%2Fpersona-chat.vercel.app&viewport_width=1280&viewport_height=720&block_ads=true&block_cookie_banners=true&delay=2",
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
       "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "PersonaChat Desktop"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/bot.svg",
+      "sizes": "1080x1920",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "PersonaChat Mobile"
     }
   ]
 }
