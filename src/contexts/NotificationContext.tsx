@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { db, isQuotaError } from '../lib/firebase';
+import { db, isQuotaError, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { showSystemNotification } from '../lib/notifications';
@@ -135,13 +135,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const notif = notifications.find(n => n.id === id);
     if (!notif || notif.read) return;
 
+    // Optimistic update
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+
     if (notif.type === 'global') {
       const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
       if (!seenGlobal.includes(id)) {
         seenGlobal.push(id);
         localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
       }
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     } else {
       try {
         await updateDoc(doc(db, 'notifications', id), {
@@ -149,15 +151,36 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           updatedAt: serverTimestamp()
         });
       } catch (err) {
-        console.error('Error marking notification as read:', err);
+        handleFirestoreError(err, OperationType.UPDATE, `notifications/${id}`);
       }
     }
   };
 
   const markAllAsRead = async () => {
     const unread = notifications.filter(n => !n.read);
+    const unreadIds = unread.map(n => n.id);
+    if (unreadIds.length === 0) return;
+
+    // Optimistic update
+    setNotifications(prev => prev.map(n => unreadIds.includes(n.id) ? { ...n, read: true } : n));
+
     for (const notif of unread) {
-      await markAsRead(notif.id);
+      if (notif.type === 'global') {
+        const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
+        if (!seenGlobal.includes(notif.id)) {
+          seenGlobal.push(notif.id);
+          localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
+        }
+      } else {
+        try {
+          await updateDoc(doc(db, 'notifications', notif.id), {
+            read: true,
+            updatedAt: serverTimestamp()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `notifications/${notif.id}`);
+        }
+      }
     }
   };
 
