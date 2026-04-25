@@ -159,25 +159,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }
 
-        // Skip if already synced very recently (within 2 minutes) to save quota while allowing quick tests
+        // Skip if already synced recently (within 10 minutes) to save quota
         const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
         const now = Date.now();
-        const twoMinutes = 2 * 60 * 1000;
+        const syncThreshold = 10 * 60 * 1000; // 10 minutes (was smaller)
         
-        if (lastSync && (now - parseInt(lastSync)) < twoMinutes) {
-          console.log("Profile already synced very recently, skipping Firestore fetch");
+        if (lastSync && (now - parseInt(lastSync)) < syncThreshold) {
+          console.log("Profile already synced recently, skipping Firestore fetch");
           setLoading(false);
           return;
         }
 
-        if (isSyncing.current || quotaExceeded) {
+        if (isSyncing.current || (quotaExceeded && !profile)) {
           setLoading(false);
           return;
         }
 
         isSyncing.current = true;
 
-        try {
+        // Wrap the sync in a timeout to avoid initial bursts and check cleanup
+        const syncTimeout = setTimeout(async () => {
+          try {
           const profileRef = doc(db, 'profiles', currentUser.uid);
           console.log("Checking profile for:", currentUser.uid, "Email:", currentUser.email);
           const profileSnap = await getDoc(profileRef);
@@ -304,13 +306,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         } catch (error: any) {
           if (isQuotaError(error)) {
-            setQuotaExceeded(true);
+            // Only set global quota error if we don't even have a cached profile
+            // This prevents a "hard lockout" if we already have data to show
+            if (!profile) {
+              setQuotaExceeded(true);
+            } else {
+              console.warn("Background profile sync hit quota, but proceeding with cached data.");
+            }
           }
           console.error('Error syncing profile:', error);
         } finally {
           isSyncing.current = false;
         }
-      } else {
+      }, 1500);
+
+      return () => clearTimeout(syncTimeout);
+    } else {
         setProfile(null);
         setRoles({ isOwner: false, isModerator: false });
         localStorage.removeItem('cached_profile');
@@ -324,7 +335,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [profile]); // Added profile to deps to allow the quota check logic to see latest state
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isOwner, isModerator, isBanned, quotaExceeded, setQuotaExceeded, updateProfile, updateSeenRules, logOut }}>

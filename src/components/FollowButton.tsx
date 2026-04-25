@@ -24,10 +24,31 @@ export function FollowButton({ targetUserId, targetUserName }: FollowButtonProps
     }
 
     const checkFollow = async () => {
+      const followId = `${user.uid}_${targetUserId}`;
+      const cacheKey = `follow_${followId}`;
+      const cached = localStorage.getItem(cacheKey);
+
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Date.now() - parsed.timestamp < 15 * 60 * 1000) { // 15 min cache
+            setIsFollowing(parsed.status);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("Follow cache parse error");
+        }
+      }
+
       try {
-        const followId = `${user.uid}_${targetUserId}`;
         const followSnap = await getDoc(doc(db, 'followers', followId));
-        setIsFollowing(followSnap.exists());
+        const status = followSnap.exists();
+        setIsFollowing(status);
+        localStorage.setItem(cacheKey, JSON.stringify({
+          status,
+          timestamp: Date.now()
+        }));
       } catch (err) {
         console.error('Error checking follow status:', err);
       } finally {
@@ -54,6 +75,7 @@ export function FollowButton({ targetUserId, targetUserName }: FollowButtonProps
         await updateDoc(targetUserRef, { followersCount: increment(-1) });
         await updateDoc(currentUserRef, { followingCount: increment(-1) });
         setIsFollowing(false);
+        localStorage.setItem(`follow_${followId}`, JSON.stringify({ status: false, timestamp: Date.now() }));
       } else {
         await setDoc(followRef, {
           followerId: user.uid,
@@ -63,6 +85,7 @@ export function FollowButton({ targetUserId, targetUserName }: FollowButtonProps
         await updateDoc(targetUserRef, { followersCount: increment(1) });
         await updateDoc(currentUserRef, { followingCount: increment(1) });
         setIsFollowing(true);
+        localStorage.setItem(`follow_${followId}`, JSON.stringify({ status: true, timestamp: Date.now() }));
         
         // Notify target user
         await addNotification(targetUserId, 'new_follower', 'New Follower!', `${profile?.displayName || 'Someone'} started following you!`, { followerId: user.uid });

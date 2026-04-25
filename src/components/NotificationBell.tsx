@@ -17,100 +17,16 @@ interface Notification {
   createdAt: any;
 }
 
+import { useNotifications } from '../contexts/NotificationContext';
+
 export function NotificationBell() {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, unreadCount, loading, markAsRead } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   const isRtl = i18n.dir() === 'rtl';
-
-  useEffect(() => {
-    if (!user) return;
-
-    // 1. Listen for user-specific notifications
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const userNotifs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Notification));
-      
-      setNotifications(prev => {
-        const globalNotifs = prev.filter(n => n.type === 'global');
-        const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-          return timeB - timeA;
-        });
-        return allNotifs;
-      });
-      setUnreadCount(prev => {
-        // We need to recalculate based on the new merged list
-        // But to be safe and simple, we'll just let the merge handle it
-        return 0; // Will be updated by the next line's effect or similar
-      });
-      setLoading(false);
-    }, (error) => {
-      if (isQuotaError(error)) {
-        console.warn("Quota exceeded for notifications");
-      }
-    });
-
-    // 2. Fetch global notifications once on mount
-    const fetchGlobalOnce = async () => {
-      try {
-        const gq = query(
-          collection(db, 'global_notifications'),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-        const gSnap = await getDocs(gq);
-        const globalNotifs = gSnap.docs.map(doc => {
-          const data = doc.data();
-          const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-          return {
-            id: doc.id,
-            type: 'global',
-            ...data,
-            read: seenGlobal.includes(doc.id)
-          } as Notification;
-        });
-
-        setNotifications(prev => {
-          const userNotifs = prev.filter(n => n.type !== 'global');
-          const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
-            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-            return timeB - timeA;
-          });
-          return allNotifs;
-        });
-      } catch (error) {
-        if (!isQuotaError(error)) {
-          console.error("Error fetching global notifications:", error);
-        }
-      }
-    };
-
-    fetchGlobalOnce();
-
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    setUnreadCount(notifications.filter(n => !n.read).length);
-  }, [notifications]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -122,32 +38,8 @@ export function NotificationBell() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const markAsRead = async (notif: Notification) => {
-    if (notif.read) return;
-
-    if (notif.type === 'global') {
-      const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-      if (!seenGlobal.includes(notif.id)) {
-        seenGlobal.push(notif.id);
-        localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
-      }
-    } else {
-      try {
-        await updateDoc(doc(db, 'notifications', notif.id), {
-          read: true,
-          updatedAt: serverTimestamp()
-        });
-      } catch (error) {
-        console.error("Error marking notification as read:", error);
-      }
-    }
-
-    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  };
-
-  const handleNotifClick = (notif: Notification) => {
-    markAsRead(notif);
+  const handleNotifClick = (notif: any) => {
+    markAsRead(notif.id);
     if (notif.characterId) {
       navigate(`/chat/${notif.characterId}`);
     }
@@ -235,7 +127,7 @@ export function NotificationBell() {
               <div className="p-3 bg-zinc-900/50 border-t border-zinc-800 text-center">
                 <button 
                   onClick={() => {
-                    notifications.forEach(n => markAsRead(n));
+                    notifications.forEach(n => markAsRead(n.id));
                   }}
                   className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                 >

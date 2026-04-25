@@ -55,12 +55,12 @@ interface FirestoreErrorInfo {
 
 export function isQuotaError(error: any): boolean {
   if (!error) return false;
-  const message = error.message || String(error);
+  const message = (error.message || String(error)).toLowerCase();
   return (
-    message.includes('Quota limit exceeded') || 
+    message.includes('quota limit exceeded') || 
+    message.includes('quota exceeded') || 
     message.includes('resource-exhausted') || 
-    error.code === 'resource-exhausted' ||
-    (typeof error === 'string' && (error.includes('Quota limit exceeded') || error.includes('resource-exhausted')))
+    error.code === 'resource-exhausted'
   );
 }
 

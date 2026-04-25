@@ -5,18 +5,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { Bell, Check, Trash2, Loader2, Award, UserPlus, Heart, MessageSquare, Mail, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-import { requestNotificationPermission, showSystemNotification, getNotificationSupport } from '../lib/notifications';
+import { useNotifications } from '../contexts/NotificationContext';
+import { requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 import { useTranslation } from 'react-i18next';
 
 export function NotificationCenter() {
   const { t } = useTranslation();
-  const { user, setQuotaExceeded } = useAuth();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { notifications, loading, unreadCount, markAsRead, deleteNotification } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
-  const unreadCount = notifications.filter(n => !n.read).length;
   const [permissionGranted, setPermissionGranted] = useState(false);
-  const [isFirstLoad, setIsFirstLoad] = useState(true);
 
   useEffect(() => {
     const checkSupport = () => {
@@ -29,76 +26,11 @@ export function NotificationCenter() {
     return () => window.removeEventListener('focus', checkSupport);
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newNotifications = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      // Trigger system notifications if permitted and not initial load
-      if (!isFirstLoad) {
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const data = change.doc.data();
-            if (!data.read) {
-              showSystemNotification(data.title, {
-                body: data.message,
-                tag: change.doc.id, // Group by notification ID
-                icon: '/favicon.ico'
-              });
-            }
-          }
-        });
-      }
-
-      setNotifications(newNotifications);
-      setLoading(false);
-      setIsFirstLoad(false);
-    }, (error) => {
-      if (isQuotaError(error)) {
-        setQuotaExceeded(true);
-      }
-      console.error('Error fetching notifications:', error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [user, setQuotaExceeded, isFirstLoad]);
-
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
     setPermissionGranted(granted);
     if (granted) {
       showSystemNotification(t('notifications.enabledTitle'), { body: t('notifications.enabledBody') });
-    }
-  };
-
-  const markAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'notifications', id), {
-        read: true,
-        updatedAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.error('Error marking notification as read:', err);
-    }
-  };
-
-  const deleteNotification = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'notifications', id));
-    } catch (err) {
-      console.error('Error deleting notification:', err);
     }
   };
 

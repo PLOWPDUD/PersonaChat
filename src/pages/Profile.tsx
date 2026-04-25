@@ -218,13 +218,42 @@ export function Profile() {
 
     const fetchAchievements = async () => {
       if (!targetUserId) return;
+      
+      // Cache-first for own achievements
+      if (isOwnProfile) {
+        const cached = localStorage.getItem(`achievements_${targetUserId}`);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            // Cache valid for 30 mins
+            if (Date.now() - parsed.timestamp < 30 * 60 * 1000) {
+              setEarnedAchievements(new Set(parsed.ids));
+              return;
+            }
+          } catch(e) {
+            console.warn("Failed to parse cached achievements");
+          }
+        }
+      }
+
       setLoadingAchievements(true);
       try {
         const achSnap = await getDocs(collection(db, 'users', targetUserId, 'achievements'));
         const earned = new Set(achSnap.docs.map(doc => doc.id));
         setEarnedAchievements(earned);
+        
+        if (isOwnProfile) {
+          localStorage.setItem(`achievements_${targetUserId}`, JSON.stringify({
+            timestamp: Date.now(),
+            ids: Array.from(earned)
+          }));
+        }
       } catch (err) {
-        console.error('Error fetching achievements:', err);
+        if (isQuotaError(err)) {
+          console.warn("Quota exceeded fetching achievements");
+        } else {
+          console.error('Error fetching achievements:', err);
+        }
       } finally {
         setLoadingAchievements(false);
       }
@@ -268,26 +297,23 @@ export function Profile() {
 
   if (fetching) return <div className="text-white text-center p-8">{t('common.loading')}</div>;
 
-  if (quotaExceeded) {
-    return (
-      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
-        <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">{t('common.quotaLimitDesc')}</h2>
-        <p className="text-zinc-400 mb-6">
-          {t('common.quotaWarnHome')}
-        </p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="text-indigo-400 hover:text-indigo-300 font-medium"
-        >
-          {t('common.btnReset')}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-2xl mx-auto space-y-8 pb-20">
+      {quotaExceeded && (
+        <div className="bg-amber-600/20 border border-amber-600/30 px-6 py-4 rounded-3xl flex items-center justify-between">
+          <div className="flex items-center gap-3 text-amber-500 font-medium">
+            <ShieldAlert className="w-6 h-6 flex-shrink-0" />
+            <span>{t('common.quotaWarnHome')}</span>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-500 px-3 py-1 rounded-lg transition-colors border border-amber-600/30"
+          >
+            {t('common.btnReset')}
+          </button>
+        </div>
+      )}
+      
       {/* Profile Header Card */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl">
         {/* Banner */}

@@ -39,7 +39,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <LoadingScreen />;
   }
 
-  if (quotaExceeded) {
+  if (quotaExceeded && !profile) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
         <QuotaExceeded />
@@ -63,45 +63,49 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+import { NotificationProvider } from './contexts/NotificationContext';
+
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <SettingsProvider>
-          <Router>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/banned" element={<BannedScreen />} />
-              
-              <Route path="/" element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }>
-                <Route index element={<Home />} />
-                <Route path="search" element={<Search />} />
-                <Route path="create" element={<CreateCharacter />} />
-                <Route path="edit/:characterId" element={<CreateCharacter />} />
-                <Route path="personas" element={<Personas />} />
-                <Route path="profile" element={<Profile />} />
-                <Route path="profile/:userId" element={<Profile />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="stats" element={<Stats />} />
-                <Route path="community" element={<PersonaCommunity />} />
-                <Route path="rules" element={<Rules />} />
-                <Route path="messages" element={<Messages />} />
-                <Route path="admin" element={<Admin />} />
-                <Route path="chat/:characterId" element={<Chat />} />
-                <Route path="chat/:characterId/:chatId" element={<Chat />} />
-                <Route path="reviews/:characterId" element={<Reviews />} />
-                <Route path="dashboard" element={<CreatorDashboard />} />
-              </Route>
-              
-              <Route path="/404" element={<NotFound />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Router>
-        </SettingsProvider>
+        <NotificationProvider>
+          <SettingsProvider>
+            <Router>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/banned" element={<BannedScreen />} />
+                
+                <Route path="/" element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }>
+                  <Route index element={<Home />} />
+                  <Route path="search" element={<Search />} />
+                  <Route path="create" element={<CreateCharacter />} />
+                  <Route path="edit/:characterId" element={<CreateCharacter />} />
+                  <Route path="personas" element={<Personas />} />
+                  <Route path="profile" element={<Profile />} />
+                  <Route path="profile/:userId" element={<Profile />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="stats" element={<Stats />} />
+                  <Route path="community" element={<PersonaCommunity />} />
+                  <Route path="rules" element={<Rules />} />
+                  <Route path="messages" element={<Messages />} />
+                  <Route path="admin" element={<Admin />} />
+                  <Route path="chat/:characterId" element={<Chat />} />
+                  <Route path="chat/:characterId/:chatId" element={<Chat />} />
+                  <Route path="reviews/:characterId" element={<Reviews />} />
+                  <Route path="dashboard" element={<CreatorDashboard />} />
+                </Route>
+                
+                <Route path="/404" element={<NotFound />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Router>
+          </SettingsProvider>
+        </NotificationProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

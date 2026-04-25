@@ -51,41 +51,22 @@ export function Stats() {
     );
   }
 
-  if (quotaExceeded) {
-    return (
-      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
-        <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">{t('common.quotaWarnHome')}</h2>
-        <p className="text-zinc-400 mb-6">
-          {t('stats.quotaLimitDesc')}
-        </p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="text-indigo-400 hover:text-indigo-300 font-medium"
-        >
-          {t('common.tryReloading', 'Try reloading')}
-        </button>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-2xl mx-auto p-12 bg-zinc-900 border border-zinc-800 rounded-3xl text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-        <p className="text-red-400 mb-4">{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="text-indigo-400 hover:text-indigo-300 font-medium"
-        >
-          {t('common.tryReloading', 'Try reloading')}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {quotaExceeded && (
+        <div className="bg-amber-600/20 border border-amber-600/30 px-6 py-4 rounded-3xl flex items-center justify-between">
+          <div className="flex items-center gap-3 text-amber-500 font-medium">
+            <ShieldAlert className="w-6 h-6 flex-shrink-0" />
+            <span>{t('common.quotaWarnHome')}</span>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-500 px-3 py-1 rounded-lg transition-colors border border-amber-600/30"
+          >
+            {t('common.btnReset')}
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">{t('stats.dashboardTitle')}</h1>
