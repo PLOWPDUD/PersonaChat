@@ -52,8 +52,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return cached ? JSON.parse(cached) : { isOwner: false, isModerator: false };
   });
 
-  const isOwner = user?.email === 'videosonli5@gmail.com' || roles.isOwner || profile?.role === 'owner' || profile?.role === 'admin';
-  const isModerator = isOwner || roles.isModerator || profile?.role === 'moderator';
+  const isOwner = user?.email === 'videosonli5@gmail.com';
+  const isModerator = isOwner || roles.isModerator || profile?.role === 'owner' || profile?.role === 'admin' || profile?.role === 'moderator';
   const isBanned = !!profile?.isBanned && (!profile.banExpiresAt || new Date(profile.banExpiresAt.toDate()) > new Date());
 
   const updateProfile = async (newProfile: any) => {
@@ -215,7 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('cached_profile', JSON.stringify(localProfile));
             
             const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin',
+              isOwner: currentUser.email === 'videosonli5@gmail.com',
               isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin' || newProfile.role === 'moderator'
             };
             setRoles(newRoles);
@@ -291,7 +291,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin',
+              isOwner: currentUser.email === 'videosonli5@gmail.com',
               isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin' || data.role === 'moderator'
             };
             setRoles(newRoles);

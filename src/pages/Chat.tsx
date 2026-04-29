@@ -10,8 +10,9 @@ import { checkAndAwardBadges } from '../services/badgeService';
 import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { playSound } from '../lib/sounds';
 
 interface Character {
   id: string;
@@ -37,6 +38,9 @@ interface Message {
   content: string;
   imageUrl?: string;
   createdAt: any;
+  replyToId?: string;
+  replyToContent?: string;
+  reactions?: Record<string, string[]>;
 }
 
 interface Memory {
@@ -64,6 +68,7 @@ export function Chat() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [lastInput, setLastInput] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'lore'>('chat');
@@ -621,6 +626,45 @@ export function Chat() {
     e.preventDefault();
     e.stopPropagation();
     setChatToDelete(targetChatId);
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!chatId || !user) return;
+    
+    const message = messages.find(m => m.id === messageId);
+    if (!message) return;
+
+    const currentReactions = message.reactions || {};
+    const users = currentReactions[emoji] || [];
+    
+    let newUsers;
+    if (users.includes(user.uid)) {
+      newUsers = users.filter(uid => uid !== user.uid);
+    } else {
+      newUsers = [...users, user.uid];
+    }
+
+    const newReactions = { ...currentReactions };
+    if (newUsers.length === 0) {
+      delete newReactions[emoji];
+    } else {
+      newReactions[emoji] = newUsers;
+    }
+
+    try {
+      if (isLocalMode || chatId.startsWith('local_chat_')) {
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, reactions: newReactions } : m);
+        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+        setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
+      } else {
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+        await updateDoc(messageRef, { reactions: newReactions });
+      }
+      playSound('click');
+    } catch (error) {
+      console.error('Error toggling reaction:', error);
+    }
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
@@ -1472,16 +1516,21 @@ export function Chat() {
     localMessages.push(newUserMessage);
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(localMessages));
 
-    // Award XP
+    // AWARD XP
     import('../lib/gamification').then(({ addXP }) => {
       addXP(user.uid, 5);
     });
+
+    const currentReplyTo = replyTo;
+    setReplyTo(null);
 
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
         await setDoc(doc(dbChat, `chats/${chatId}/messages`, newUserMessage.id), {
           ...newUserMessage,
+          replyToId: currentReplyTo?.id || null,
+          replyToContent: currentReplyTo?.content || null,
           createdAt: serverTimestamp()
         });
         await updateDoc(doc(dbChat, 'chats', chatId), {
@@ -1514,6 +1563,10 @@ export function Chat() {
       // Enhance user message with explicit mention guidance if needed
       let enhancedPrompt = userMessage;
       let targetCharId: string | null = null;
+      
+      if (currentReplyTo) {
+        enhancedPrompt = `(The user is replying to: "${currentReplyTo.content}")\n\n${userMessage}`;
+      }
       
       if (characters.length > 1) {
         const mentionedChars = characters.filter(c => 
@@ -2170,11 +2223,22 @@ export function Chat() {
                           </div>
                         </div>
                       ) : (
-                        <div className={`relative rounded-2xl p-4 ${
+                        <div className={`relative rounded-2xl p-4 shadow-sm ${
                           isUser 
                             ? 'bg-indigo-600 text-white rounded-tr-sm' 
                             : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
                         }`}>
+                          {/* Reply Quote */}
+                          {msg.replyToId && (
+                            <div className={`mb-3 p-2 rounded-lg text-xs border-l-4 ${
+                              isUser 
+                                ? 'bg-indigo-700/50 border-indigo-400 text-indigo-100' 
+                                : 'bg-zinc-900/50 border-zinc-500 text-zinc-400'
+                            }`}>
+                              <p className="truncate line-clamp-2 opacity-80 italic">"{msg.replyToContent}"</p>
+                            </div>
+                          )}
+
                           {msg.imageUrl && msg.imageUrl.length > 0 && (
                             <div className="mb-3 rounded-lg overflow-hidden border border-white/10 shadow-lg">
                               <img src={msg.imageUrl} alt="Attachment" className="max-w-full h-auto object-contain max-h-96" referrerPolicy="no-referrer" />
@@ -2185,6 +2249,27 @@ export function Chat() {
                               {msg.content}
                             </ReactMarkdown>
                           </div>
+
+                          {/* Reactions Display */}
+                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <div className={`flex flex-wrap gap-1 mt-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                              {Object.entries(msg.reactions).map(([emoji, uids]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleToggleReaction(msg.id, emoji)}
+                                  className={`px-1.5 py-0.5 rounded-full text-[10px] flex items-center gap-1 transition-all border ${
+                                    uids.includes(user?.uid || '')
+                                      ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200'
+                                      : 'bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                                  }`}
+                                  title={uids.length > 1 ? `${uids.length} reactions` : ''}
+                                >
+                                  <span>{emoji}</span>
+                                  {uids.length > 1 && <span>{uids.length}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           
                           {/* Message Actions */}
                           <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20`}>
@@ -2197,6 +2282,31 @@ export function Chat() {
                             
                             {activeMenuId === msg.id && (
                               <div className="absolute top-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 w-32 z-30">
+                                <button
+                                  onClick={() => {
+                                    setReplyTo(msg);
+                                    setActiveMenuId(null);
+                                    playSound('click');
+                                  }}
+                                  className="flex items-center gap-2 w-full p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-white text-sm transition-colors"
+                                >
+                                  <Reply className="w-3.5 h-3.5" />
+                                  Reply
+                                </button>
+                                <div className="flex items-center justify-around p-2 border-y border-zinc-800 my-1">
+                                  {['❤️', '👍', '😂', '🔥'].map(emoji => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => {
+                                        handleToggleReaction(msg.id, emoji);
+                                        setActiveMenuId(null);
+                                      }}
+                                      className="hover:scale-125 transition-transform text-lg p-1"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </div>
                                 {!isUser && (
                                   <button
                                     onClick={() => {
@@ -2280,6 +2390,17 @@ export function Chat() {
 
             {/* Input Area */}
             <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+              {replyTo && (
+                <div className="mb-3 p-3 bg-zinc-900 border-l-4 border-indigo-500 rounded-lg flex items-start justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">{t('messages.replyingTo', 'Replying to')}</p>
+                    <p className="text-sm text-zinc-400 truncate max-w-md">{replyTo.content}</p>
+                  </div>
+                  <button onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {selectedImage && selectedImage.length > 0 && (
                 <div className="mb-3 relative inline-block">
                   <img src={selectedImage} alt="Preview" className="w-20 h-20 object-cover rounded-xl border border-zinc-700" />

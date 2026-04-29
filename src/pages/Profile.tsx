@@ -42,7 +42,8 @@ export function Profile() {
     xp: 0,
     followersCount: 0,
     followingCount: 0,
-    role: 'user'
+    role: 'user',
+    email: ''
   });
   const [newPersona, setNewPersona] = useState({ name: '', description: '', personality: '' });
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
@@ -54,9 +55,13 @@ export function Profile() {
   const [loadingAchievements, setLoadingAchievements] = useState(false);
 
   const getRankInfo = () => {
-    if (isOwner) return { label: t('common.owner'), color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
-    if (isModerator) return { label: t('common.mod'), color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
-    if (user?.isAnonymous) return { label: t('common.guest'), color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
+    const targetEmail = targetUserId === user?.uid ? user?.email : formData.email;
+    const isTargetOwner = targetEmail === 'videosonli5@gmail.com';
+    
+    if (isTargetOwner) return { label: t('common.owner'), color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+    if (formData.role === 'owner' || formData.role === 'admin') return { label: t('common.admin', 'Admin'), color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (formData.role === 'moderator') return { label: t('common.mod'), color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' };
+    if (user?.isAnonymous && targetUserId === user.uid) return { label: t('common.guest'), color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
     return { label: t('common.user'), color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };
   };
 
@@ -127,20 +132,21 @@ export function Profile() {
       const cached = getCachedProfile(targetUserId);
       if (cached && typeof cached === 'object') {
         const data = cached as any;
-        setFormData({
-          displayName: data.displayName || '',
-          photoURL: data.photoURL || '',
-          bannerURL: data.bannerURL || '',
-          themeColor: data.themeColor || '',
-          userPersona: data.userPersona || '',
-          personas: data.personas || [],
-          badges: data.badges || [],
-          level: data.level || 1,
-          xp: data.xp || 0,
-          followersCount: data.followersCount || 0,
-          followingCount: data.followingCount || 0,
-          role: data.role || 'user'
-        });
+          setFormData({
+            displayName: data.displayName || '',
+            photoURL: data.photoURL || '',
+            bannerURL: data.bannerURL || '',
+            themeColor: data.themeColor || '',
+            userPersona: data.userPersona || '',
+            personas: data.personas || [],
+            badges: data.badges || [],
+            level: data.level || 1,
+            xp: data.xp || 0,
+            followersCount: data.followersCount || 0,
+            followingCount: data.followingCount || 0,
+            role: data.role || 'user',
+            email: data.email || ''
+          });
         setFetching(false);
       }
 
@@ -162,7 +168,8 @@ export function Profile() {
             xp: data.xp || 0,
             followersCount: data.followersCount || 0,
             followingCount: data.followingCount || 0,
-            role: data.role || 'user'
+            role: data.role || 'user',
+            email: data.email || ''
           };
           setFormData(profileData);
           setCachedProfile(targetUserId, profileData);

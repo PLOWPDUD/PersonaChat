@@ -5,6 +5,7 @@ import { getCachedProfile, setCachedProfiles, getCachedData, updateGlobalCache }
 import { getLocalCharacters } from '../lib/localStorage';
 import { Search as SearchIcon, User, Users, Bot, ChevronRight, ArrowLeft, Loader2, Star, ShieldAlert } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { Profile, Character } from '../types';
@@ -23,15 +24,19 @@ export function Search() {
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const getRankInfo = (profile: Profile) => {
-    if (profile.email === 'videosonli5@gmail.com' || profile.role === 'owner') {
+    if (profile.email === 'videosonli5@gmail.com') {
       return { label: 'Owner', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
     }
-    if (profile.role === 'moderator') {
-      return { label: 'Mod', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
+    if (profile.role === 'owner' || profile.role === 'admin') {
+      return { label: 'Admin', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' };
     }
-    if (!profile.email) {
+    if (profile.role === 'moderator') {
+      return { label: 'Mod', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' };
+    }
+    if (user?.isAnonymous && profile.uid === user.uid) {
       return { label: 'Guest', color: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20' };
     }
     return { label: 'User', color: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' };

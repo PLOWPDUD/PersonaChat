@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, dbPrivate, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2 } from 'lucide-react';
+import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { addNotification } from '../lib/gamification';
@@ -31,10 +31,15 @@ interface Message {
   id: string;
   senderId: string;
   senderName?: string;
+  senderPhotoURL?: string;
   content: string;
   imageUrl?: string;
   isBot?: boolean;
   createdAt: any;
+  replyToId?: string;
+  replyToContent?: string;
+  replyToSenderName?: string;
+  reactions?: Record<string, string[]>;
 }
 
 export default function Messages() {
@@ -67,6 +72,7 @@ export default function Messages() {
   const [editContent, setEditContent] = useState('');
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
 
   // Initialize Gemini
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -280,16 +286,23 @@ export default function Messages() {
     setIsSubmitting(true);
     const content = newMessage.trim();
     const imageUrl = selectedImage;
+    const currentReplyTo = replyTo;
+    
     setNewMessage('');
     setSelectedImage(null);
+    setReplyTo(null);
     playSound('click');
 
     try {
       await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
         senderId: user.uid,
         senderName: profile?.displayName || 'User',
+        senderPhotoURL: profile?.photoURL || '',
         content,
         imageUrl,
+        replyToId: currentReplyTo?.id || null,
+        replyToContent: currentReplyTo?.content || null,
+        replyToSenderName: currentReplyTo?.senderName || null,
         createdAt: serverTimestamp()
       });
 
@@ -439,6 +452,38 @@ export default function Messages() {
 
     } catch (err) {
       console.error('Error getting bot response:', err);
+    }
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!activeChat || !user) return;
+    
+    const message = messages.find(m => m.id === messageId);
+    if (!message) return;
+
+    const currentReactions = message.reactions || {};
+    const users = currentReactions[emoji] || [];
+    
+    let newUsers;
+    if (users.includes(user.uid)) {
+      newUsers = users.filter(uid => uid !== user.uid);
+    } else {
+      newUsers = [...users, user.uid];
+    }
+
+    const newReactions = { ...currentReactions };
+    if (newUsers.length === 0) {
+      delete newReactions[emoji];
+    } else {
+      newReactions[emoji] = newUsers;
+    }
+
+    try {
+      const messageRef = doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId);
+      await updateDoc(messageRef, { reactions: newReactions });
+      playSound('click');
+    } catch (error) {
+      console.error('Error toggling reaction:', error);
     }
   };
 
@@ -604,99 +649,198 @@ export default function Messages() {
                 </div>
               ) : (
                 messages.map((msg) => (
-                  <div key={msg.id} className={`flex flex-col group ${msg.senderId === user?.uid ? 'items-end' : 'items-start'}`}>
-                    {activeChat.type === 'group' && msg.senderId !== user?.uid && (
-                      <span className="text-[10px] text-zinc-500 mb-1 ml-1">{msg.senderName || 'User'}</span>
-                    )}
-                    <div className="relative flex items-center gap-2 max-w-[90%] md:max-w-[80%]">
-                      {msg.senderId === user?.uid && !editingMessageId && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setEditingMessageId(msg.id);
-                              setEditContent(msg.content);
-                            }}
-                            className="p-1.5 text-zinc-500 hover:text-white transition-colors"
-                            title={t('common.edit')}
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setMessageToDelete(msg.id)}
-                            className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
-                            title={t('common.delete')}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                  <div key={msg.id} className={`flex gap-3 group ${msg.senderId === user?.uid ? 'flex-row-reverse' : 'flex-row'}`}>
+                    {/* Message Avatar */}
+                    <div className="flex-shrink-0 mt-auto">
+                      {msg.senderPhotoURL ? (
+                        <img src={msg.senderPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                          <User className="w-4 h-4 text-zinc-500" />
                         </div>
                       )}
+                    </div>
 
-                      <div className="w-full">
-                        {editingMessageId === msg.id ? (
-                          <div className="flex flex-col gap-2 min-w-[200px] bg-zinc-800 p-3 rounded-2xl border border-indigo-500">
-                            <textarea
-                              value={editContent}
-                              onChange={(e) => setEditContent(e.target.value)}
-                              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm focus:outline-none resize-none"
-                              rows={3}
-                              autoFocus
-                            />
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => setEditingMessageId(null)}
-                                className="p-1.5 hover:bg-zinc-700 rounded-lg text-zinc-400"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleEditMessage(msg.id, editContent)}
-                                className="p-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white"
-                              >
-                                <Check className="w-4 h-4" />
-                              </button>
+                    <div className={`flex flex-col max-w-[85%] md:max-w-[75%] ${msg.senderId === user?.uid ? 'items-end' : 'items-start'}`}>
+                      {activeChat.type === 'group' && msg.senderId !== user?.uid && (
+                        <span className="text-[10px] text-zinc-500 mb-1 ml-1">{msg.senderName || 'User'}</span>
+                      )}
+                      
+                      <div className="relative flex items-center gap-2 group-hover:block">
+                        <div className="w-full">
+                          {editingMessageId === msg.id ? (
+                            <div className="flex flex-col gap-2 min-w-[200px] bg-zinc-800 p-3 rounded-2xl border border-indigo-500 shadow-xl">
+                              <textarea
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-white text-sm focus:outline-none resize-none"
+                                rows={3}
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => setEditingMessageId(null)}
+                                  className="p-1.5 hover:bg-zinc-700 rounded-lg text-zinc-400"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleEditMessage(msg.id, editContent)}
+                                  className="p-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className={`p-3 rounded-2xl text-sm shadow-sm ${
+                              msg.senderId === user?.uid 
+                                ? 'bg-indigo-600 text-white rounded-tr-none' 
+                                : msg.isBot 
+                                  ? 'bg-purple-600/20 border border-purple-500/30 text-purple-200 rounded-tl-none'
+                                  : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
+                            }`}>
+                              {/* Quoted Message */}
+                              {msg.replyToId && (
+                                <div className={`mb-2 p-2 rounded-lg text-xs border-l-4 ${
+                                  msg.senderId === user?.uid 
+                                    ? 'bg-indigo-700/50 border-indigo-400 text-indigo-100' 
+                                    : 'bg-zinc-900/50 border-zinc-500 text-zinc-400'
+                                }`}>
+                                  <p className="font-bold opacity-75 mb-0.5">{msg.replyToSenderName}</p>
+                                  <p className="truncate line-clamp-1">{msg.replyToContent}</p>
+                                </div>
+                              )}
+
+                              {msg.imageUrl && (
+                                <img 
+                                  src={msg.imageUrl} 
+                                  alt="" 
+                                  className="rounded-lg mb-2 max-w-full h-auto border border-white/10" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+
+                              {/* Reactions Display */}
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className={`flex flex-wrap gap-1 mt-2 ${msg.senderId === user?.uid ? 'justify-end' : 'justify-start'}`}>
+                                  {Object.entries(msg.reactions).map(([emoji, uids]) => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => handleToggleReaction(msg.id, emoji)}
+                                      className={`px-1.5 py-0.5 rounded-full text-[10px] flex items-center gap-1 transition-all border ${
+                                        uids.includes(user?.uid || '')
+                                          ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200'
+                                          : 'bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                                      }`}
+                                      title={uids.length > 1 ? `${uids.length} reactions` : ''}
+                                    >
+                                      <span>{emoji}</span>
+                                      {uids.length > 1 && <span>{uids.length}</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {msg.createdAt?.seconds && (
+                                <div className={`text-[10px] mt-1 opacity-70 ${msg.senderId === user?.uid ? 'text-right' : ''}`}>
+                                  {new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Toolbar on Hover */}
+                        <div className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 bg-zinc-900/90 border border-zinc-800 rounded-full px-1 py-0.5 shadow-lg z-10 ${
+                          msg.senderId === user?.uid ? 'right-full mr-2' : 'left-full ml-2'
+                        }`}>
+                          <button
+                            onClick={() => {
+                              setReplyTo(msg);
+                              playSound('click');
+                            }}
+                            className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                            title={t('messages.reply', 'Reply')}
+                          >
+                            <Reply className="w-3.5 h-3.5" />
+                          </button>
+
+                          <div className="relative group/emoji">
+                            <button
+                              className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                              title={t('messages.react', 'React')}
+                            >
+                              <Smile className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-1 shadow-2xl flex items-center gap-1.5 opacity-0 pointer-events-none group-hover/emoji:opacity-100 group-hover/emoji:pointer-events-auto transition-all z-20">
+                              {['❤️', '👍', '😂', '😮', '😢', '🔥'].map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleToggleReaction(msg.id, emoji)}
+                                  className="hover:scale-125 transition-transform p-0.5"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                        ) : (
-                          <div className={`p-3 rounded-2xl text-sm ${
-                            msg.senderId === user?.uid 
-                              ? 'bg-indigo-600 text-white rounded-tr-none' 
-                              : msg.isBot 
-                                ? 'bg-purple-600/20 border border-purple-500/30 text-purple-200 rounded-tl-none'
-                                : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
-                          }`}>
-                            {msg.imageUrl && (
-                              <img 
-                                src={msg.imageUrl} 
-                                alt="" 
-                                className="rounded-lg mb-2 max-w-full h-auto border border-white/10" 
-                                referrerPolicy="no-referrer"
-                              />
-                            )}
-                            {msg.content}
-                            {msg.createdAt?.seconds && (
-                              <div className={`text-[10px] mt-1 ${msg.senderId === user?.uid ? 'text-indigo-200 text-right' : 'text-zinc-500'}`}>
-                                {new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          
+                          {msg.senderId === user?.uid && !editingMessageId && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setEditContent(msg.content);
+                                }}
+                                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                                title={t('common.edit')}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setMessageToDelete(msg.id)}
+                                className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
+                                title={t('common.delete')}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          
+                          {msg.senderId !== user?.uid && isOwner && (
+                            <button
+                              onClick={() => setMessageToDelete(msg.id)}
+                              className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
+                              title="Delete (Admin)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-
-                      {msg.senderId !== user?.uid && !editingMessageId && isOwner && (
-                        <button
-                          onClick={() => setMessageToDelete(msg.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-red-500 transition-all"
-                          title="Delete (Admin)"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {replyTo && (
+              <div className="px-4 py-2 border-t border-indigo-500/30 bg-indigo-500/5 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="flex-1 min-w-0 border-l-2 border-indigo-500 pl-3">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">{t('messages.replyingTo', 'Replying to')} {replyTo.senderName}</p>
+                  <p className="text-sm text-zinc-400 truncate">{replyTo.content}</p>
+                </div>
+                <button 
+                  onClick={() => setReplyTo(null)}
+                  className="p-1.5 text-zinc-500 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {selectedImage && (
               <div className="px-4 py-2 border-t border-zinc-800 bg-zinc-900/50 flex items-center gap-3">

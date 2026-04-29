@@ -20,7 +20,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { getCachedData, updateGlobalCache, getCachedUserLikes, setCachedUserLikes, getCachedUserSaves, setCachedUserSaves } from '../lib/cache';
+import { getCachedData, updateGlobalCache, getCachedUserLikes, setCachedUserLikes, getCachedUserSaves, setCachedUserSaves, dataCache } from '../lib/cache';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { moderateImage, ModerationResult } from '../services/aiService';
 import { BADGES } from '../services/badgeService';
@@ -49,7 +49,8 @@ import {
   ShieldAlert,
   Zap,
   Edit2,
-  Save
+  Save,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -215,28 +216,32 @@ export default function PersonaCommunity() {
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
 
-  // Fetch initial posts with real-time updates
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Fetch initial posts - Optimized for less reads
   useEffect(() => {
-    // Check cache first for instant loading
-    const cached = getCachedData('community_posts');
-    if (cached && cached.length > 0) {
-      setPosts(cached);
-      setLoading(false);
-    }
+    const fetchData = async () => {
+      // Check cache first for instant loading
+      const cached = getCachedData('community_posts');
+      if (cached && cached.length > 0) {
+        setPosts(cached);
+        setLoading(false);
+        // If cache is fresh (< 5 mins), don't even poll
+        const cacheEntry = (dataCache as any)['community_posts'];
+        if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
+          return;
+        }
+      }
 
-    const q = query(
-      collection(db, 'community_posts'),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
+      setLoading(true);
+      try {
+        const q = query(
+          collection(db, 'community_posts'),
+          orderBy('createdAt', 'desc'),
+          limit(20)
+        );
 
-    let unsubscribe: (() => void) | null = null;
-
-    const startListener = () => {
-      // Don't restart if already hit quota recently
-      if (localQuotaExceeded || globalQuotaExceeded) return;
-
-      unsubscribe = onSnapshot(q, (snapshot) => {
+        const snapshot = await getDocs(q);
         const newPosts = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -246,24 +251,46 @@ export default function PersonaCommunity() {
         updateGlobalCache('community_posts', newPosts);
         setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
         setHasMore(snapshot.docs.length === 20);
-        setLoading(false);
-      }, (error: any) => {
-        console.error("Error with community posts listener:", error);
+      } catch (error: any) {
         if (isQuotaError(error)) {
           setLocalQuotaExceeded(true);
         } else {
           handleFirestoreError(error, OperationType.LIST, 'community_posts');
         }
+      } finally {
         setLoading(false);
-      });
+      }
     };
 
-    startListener();
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+    fetchData();
   }, [user, globalQuotaExceeded]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const q = query(
+        collection(db, 'community_posts'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+
+      const snapshot = await getDocs(q);
+      const newPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Post));
+      
+      setPosts(newPosts);
+      updateGlobalCache('community_posts', newPosts);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 20);
+      playSound('success');
+    } catch (error: any) {
+      if (isQuotaError(error)) setLocalQuotaExceeded(true);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Fetch trending posts - use getDocs instead of onSnapshot for feed
   useEffect(() => {
@@ -966,13 +993,25 @@ export default function PersonaCommunity() {
               </button>
             </div>
           </div>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">{t('community.newPost')}</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-all disabled:opacity-50"
+              title={t('common.refresh')}
+            >
+              <motion.div animate={isRefreshing ? { rotate: 360 } : {}}>
+                <RefreshCw className="w-5 h-5" />
+              </motion.div>
+            </button>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 font-bold"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">{t('community.newPost')}</span>
+            </button>
+          </div>
         </div>
 
         {/* Posts Feed */}

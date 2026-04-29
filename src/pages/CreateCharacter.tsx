@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { db, dbChat, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, deleteDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3, Download, ChevronRight } from 'lucide-react';
+import { UserPlus, Image as ImageIcon, Sparkles, AlertCircle, Upload, X, Edit3, Download, ChevronRight, MessageSquare } from 'lucide-react';
 import { getLocalCharacterById, saveLocalCharacter, deleteLocalCharacter, LocalCharacter } from '../lib/localStorage';
 import { ImageAdjuster } from '../components/ImageAdjuster';
 import { motion, AnimatePresence } from 'motion/react';
@@ -157,7 +157,9 @@ export function CreateCharacter() {
           description: data.description || data.char_persona || '',
           personality: data.personality || '',
           // Some formats have definition separate, combined into description
-          extended_description: data.definition || data.example_dialogue || ''
+          extended_description: data.definition || data.example_dialogue || '',
+          // Extract history if present
+          history: data.history || data.messages || data.chat_history || null
         };
 
         if (normalized.extended_description) {
@@ -188,7 +190,12 @@ export function CreateCharacter() {
       personality: data.personality,
       visibility
     }));
-    setImportModal({ isOpen: false, data: null });
+    // Note: data.history is preserved in importModal.data for handleSubmit
+    setImportModal({ isOpen: true, data: { ...data, visibility } });
+    
+    // We don't close the modal yet if there's history, or maybe we do and just store it in a ref?
+    // Let's store it in a hidden state or just use the importModal.data in handleSubmit
+    setImportModal({ isOpen: false, data: { ...data, visibility } });
     // Scroll to top to show filled data
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -230,6 +237,7 @@ export function CreateCharacter() {
       };
 
       try {
+        let finalCharId = characterId;
         if (characterId && !characterId.startsWith('local_')) {
           // Update existing Firestore character
           const charRef = doc(db, 'characters', characterId);
@@ -247,14 +255,12 @@ export function CreateCharacter() {
           // Clear caches
           localStorage.removeItem('cached_public_characters');
           localStorage.removeItem('last_public_fetch');
-          
-          navigate(`/chat/${characterId}`);
         } else {
           // Create new Firestore character
           const charData = {
             ...formData,
             creatorId: user.uid,
-            creatorName,
+            creatorName: creatorName,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             likesCount: 0,
@@ -263,6 +269,7 @@ export function CreateCharacter() {
           };
 
           const docRef = await addDoc(collection(db, 'characters'), charData);
+          finalCharId = docRef.id;
           
           // If owner creates a public character, notify everyone
           if (user.email === 'videosonli5@gmail.com' && formData.visibility === 'public') {
@@ -292,8 +299,66 @@ export function CreateCharacter() {
           // Clear caches
           localStorage.removeItem('cached_public_characters');
           localStorage.removeItem('last_public_fetch');
-          
-          navigate(`/chat/${docRef.id}`);
+        }
+
+        // Handle history import if applicable
+        if (importModal.data?.history && finalCharId) {
+          try {
+            const history = importModal.data.history;
+            const chatRef = doc(collection(dbChat, 'chats'));
+            const chatId = chatRef.id;
+
+            // Normalize messages
+            const messages = (Array.isArray(history) ? history : []).map((msg: any, index: number) => {
+              // C.AI messages often have 'author' or 'src__name'
+              const isUser = msg.author?.role === 'user' || msg.src__name === 'user' || msg.is_human === true;
+              return {
+                role: isUser ? 'user' : 'model',
+                content: msg.text || msg.content || '',
+                characterId: isUser ? null : finalCharId,
+                createdAt: new Date(Date.now() - (indices_reverse(index, history.length) * 1000)).toISOString()
+              };
+            }).filter(m => m.content);
+
+            function indices_reverse(idx: number, total: number) {
+              return total - idx;
+            }
+
+            if (messages.length > 0) {
+              await setDoc(chatRef, {
+                userId: user.uid,
+                characterId: finalCharId,
+                characterIds: [finalCharId],
+                characterName: formData.name,
+                characterAvatarUrl: formData.avatarUrl,
+                creatorId: user.uid,
+                creatorName,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                title: `Imported Chat with ${formData.name}`
+              });
+
+              // Add messages in sequential batches to preserve order
+              const messagesColl = collection(dbChat, `chats/${chatId}/messages`);
+              for (const msg of messages) {
+                await addDoc(messagesColl, {
+                  ...msg,
+                  createdAt: serverTimestamp()
+                });
+                await new Promise(resolve => setTimeout(resolve, 10));
+              }
+
+              setImportModal({ isOpen: false, data: null });
+              navigate(`/chat/${finalCharId}/${chatId}`);
+              return;
+            }
+          } catch (histErr) {
+            console.error("Failed to import chat history:", histErr);
+          }
+        }
+
+        if (finalCharId) {
+          navigate(`/chat/${finalCharId}`);
         }
       } catch (fbErr: any) {
         console.warn("Firestore save failed, falling back to local storage:", fbErr);
@@ -603,7 +668,15 @@ export function CreateCharacter() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-white">Import Successful!</h2>
-                  <p className="text-zinc-400 text-sm">Character: <span className="text-indigo-400 font-bold">{importModal.data?.name}</span></p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <p className="text-zinc-400 text-sm">Character: <span className="text-indigo-400 font-bold">{importModal.data?.name}</span></p>
+                    {importModal.data?.history && (
+                      <span className="bg-green-500/10 text-green-400 text-[10px] px-2 py-0.5 rounded-full font-bold border border-green-500/20 flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        History Detected
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

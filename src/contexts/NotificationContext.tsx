@@ -48,88 +48,77 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
-    // Single listener for all USER notifications
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(30)
-    );
+    const fetchNotifications = async (isBackground = false) => {
+      if (!isBackground) setLoading(true);
+      
+      try {
+        // Fetch USER notifications
+        const q = query(
+          collection(db, 'notifications'),
+          where('userId', '==', user.uid),
+          orderBy('createdAt', 'desc'),
+          limit(30)
+        );
+        const snapshot = await getDocs(q);
+        const userNotifs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Notification));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const userNotifs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Notification));
-
-      // Fetch global notifications (cached locally for each user)
-      const fetchGlobal = async () => {
-        try {
-          const gq = query(
-            collection(db, 'global_notifications'),
-            orderBy('createdAt', 'desc'),
-            limit(5)
-          );
-          const gSnap = await getDocs(gq);
-          const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-          const globalNotifs = gSnap.docs.map(doc => ({
-            id: doc.id,
-            type: 'global',
-            ...doc.data(),
-            read: seenGlobal.includes(doc.id)
-          } as Notification));
-
-          setNotifications(prev => {
-            const merged = [...userNotifs, ...globalNotifs].sort((a, b) => {
-              const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-              const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-              return timeB - timeA;
-            });
-            return merged;
-          });
-        } catch (err) {
-          console.warn("Global notifications fetch failed:", err);
-        }
-      };
-
-      if (isFirstLoad.current) {
-        fetchGlobal();
-        isFirstLoad.current = false;
-      } else {
-        // Handle new notification alerts
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const data = change.doc.data();
-            if (!data.read) {
-              showSystemNotification(data.title, {
-                body: data.message,
-                tag: change.doc.id,
-                icon: '/favicon.ico'
-              });
-            }
-          }
-        });
-        
-        setNotifications(prev => {
-           const globalNotifs = prev.filter(n => n.type === 'global');
-           return [...userNotifs, ...globalNotifs].sort((a, b) => {
-              const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-              const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-              return timeB - timeA;
+        // Background Check for system notifications (only if we have new unread ones)
+        if (isBackground) {
+           const prevUnreadIds = new Set(notifications.filter(n => !n.read).map(n => n.id));
+           userNotifs.forEach(n => {
+             if (!n.read && !prevUnreadIds.has(n.id)) {
+               showSystemNotification(n.title, {
+                 body: n.message,
+                 tag: n.id,
+                 icon: '/favicon.ico'
+               });
+             }
            });
+        }
+
+        // Fetch global notifications (cached locally for each user)
+        const gq = query(
+          collection(db, 'global_notifications'),
+          orderBy('createdAt', 'desc'),
+          limit(5)
+        );
+        const gSnap = await getDocs(gq);
+        const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
+        const globalNotifs = gSnap.docs.map(doc => ({
+          id: doc.id,
+          type: 'global',
+          ...doc.data(),
+          read: seenGlobal.includes(doc.id)
+        } as Notification));
+
+        const merged = [...userNotifs, ...globalNotifs].sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+          return timeB - timeA;
         });
-      }
 
-      setLoading(false);
-    }, (error) => {
-      if (isQuotaError(error)) {
-        console.warn("Notification syncing hit quota, but proceeding silently.");
+        setNotifications(merged);
+      } catch (err) {
+        if (isQuotaError(err)) {
+          console.warn("Notification sync hit quota.");
+        } else {
+          console.warn("Notifications fetch failed:", err);
+        }
+      } finally {
+        if (!isBackground) setLoading(false);
       }
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, [user, setQuotaExceeded]);
+    fetchNotifications();
+
+    // Pull every 2 minutes instead of real-time connection
+    const interval = setInterval(() => fetchNotifications(true), 120000);
+    
+    return () => clearInterval(interval);
+  }, [user]);
 
   const markAsRead = async (id: string) => {
     const notif = notifications.find(n => n.id === id);
