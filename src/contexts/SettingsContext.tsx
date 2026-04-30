@@ -10,6 +10,7 @@ interface Settings {
   displayDensity: DisplayDensity;
   enableAnimations: boolean;
   glassmorphism: boolean;
+  logoStyle: 'new' | 'classic';
 }
 
 interface SettingsContextType {
@@ -24,6 +25,7 @@ const defaultSettings: Settings = {
   displayDensity: 'comfortable',
   enableAnimations: true,
   glassmorphism: true,
+  logoStyle: 'new',
 };
 
 const SettingsContext = createContext<SettingsContextType>({

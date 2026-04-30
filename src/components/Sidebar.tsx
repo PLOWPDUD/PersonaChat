@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, PlusCircle, Search, UserCircle, Home, User, Users, Shield, LogOut, X, Settings, Globe, BookOpen, Bug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { BrandLogo } from './BrandLogo';
 import { NotificationBell } from './NotificationBell';
 import { FeedbackPanel } from './FeedbackPanel';
 import { useTranslation } from 'react-i18next';
@@ -44,7 +45,7 @@ export function Sidebar({ onClose, onOpenFeedback }: SidebarProps) {
     <div className="w-full bg-zinc-950 border-r border-zinc-800 flex flex-col h-full overflow-y-auto">
       <div className="p-6 flex items-center justify-between">
         <Link to="/" onClick={handleNavClick} className="flex items-center gap-2 text-xl font-bold text-white">
-          <MessageSquare className="w-8 h-8 text-theme-primary" />
+          <BrandLogo className="w-8 h-8" />
           <span>{t('common.appName')}</span>
         </Link>
         <div className="flex items-center gap-2">

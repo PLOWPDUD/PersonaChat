@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { signInWithGoogle, signInAnonymously } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageSquare, Sparkles, UserCircle } from 'lucide-react';
+import { BrandLogo } from '../components/BrandLogo';
+import { Sparkles, UserCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export function Login() {
@@ -48,8 +49,8 @@ export function Login() {
       
       <div className="z-10 w-full max-w-md bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 shadow-2xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/20">
-            <MessageSquare className="w-8 h-8 text-white" />
+          <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/10 border border-zinc-700">
+            <BrandLogo className="w-10 h-10" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2 text-center">{t('common.appName')}</h1>
           <p className="text-zinc-400 text-center flex items-center gap-2">

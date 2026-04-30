@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/SettingsContext';
-import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor } from 'lucide-react';
+import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor, MessageSquare } from 'lucide-react';
 import { getNotificationSupport, requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 import { useTranslation } from 'react-i18next';
 
@@ -363,6 +363,42 @@ export function Settings() {
                   settings.enableAnimations ? 'left-7' : 'left-1'
                 }`} />
               </button>
+            </div>
+
+            <div className="flex flex-col gap-3 p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <LayoutIcon className="w-5 h-5 text-zinc-400" />
+                  <div>
+                    <div className="text-sm font-medium text-white">{t('settings.appLogoStyle')}</div>
+                    <div className="text-xs text-zinc-500">{t('settings.appLogoStyleDesc')}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button
+                  onClick={() => updateSettings({ logoStyle: 'new' })}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                    settings.logoStyle === 'new' 
+                      ? 'bg-zinc-800 border-theme-primary text-white' 
+                      : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  <Monitor className="w-4 h-4" />
+                  <span className="text-sm font-medium">{t('settings.logoNew')}</span>
+                </button>
+                <button
+                  onClick={() => updateSettings({ logoStyle: 'classic' })}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                    settings.logoStyle === 'classic' 
+                      ? 'bg-zinc-800 border-theme-primary text-white' 
+                      : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span className="text-sm font-medium">{t('settings.logoClassic')}</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>

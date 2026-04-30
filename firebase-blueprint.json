@@ -22,6 +22,7 @@
           "items": { "type": "string" },
           "description": "A list of badge IDs the user has earned."
         },
+        "blockedUsers": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs this user has blocked." },
         "userPersona": { "type": "string", "description": "A description of the user's persona for AI interactions." },
         "personas": { 
           "type": "array", 
@@ -244,9 +245,13 @@
         "chatId": { "type": "string" },
         "senderId": { "type": "string" },
         "content": { "type": "string" },
+        "fileUrl": { "type": "string", "description": "Optional URL to an attached file." },
+        "fileName": { "type": "string", "description": "Optional name of the attached file." },
+        "fileType": { "type": "string", "description": "Optional MIME type of the attached file." },
+        "fileSize": { "type": "number", "description": "Optional size of the attached file in bytes." },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["chatId", "senderId", "content", "createdAt"]
+      "required": ["chatId", "senderId", "createdAt"]
     },
     "Achievement": {
       "title": "Achievement",

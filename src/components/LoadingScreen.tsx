@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 
@@ -14,8 +14,8 @@ export function LoadingScreen() {
         className="flex flex-col items-center"
       >
         <div className="relative mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-500/20">
-            <MessageSquare className="w-10 h-10 text-white" />
+          <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-500/10">
+            <BrandLogo className="w-12 h-12" />
           </div>
           <div className="absolute -inset-4 border-2 border-indigo-500/20 rounded-3xl animate-pulse"></div>
         </div>

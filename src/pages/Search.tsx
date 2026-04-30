@@ -117,10 +117,18 @@ export function Search() {
           }
         });
 
-        const charactersWithNames: Character[] = mergedChars.map(char => ({
-          ...char,
-          creatorName: char.creatorName || getCachedProfile(char.creatorId)
-        }));
+        const charactersWithNames: Character[] = mergedChars.map(char => {
+          const cachedProfile = getCachedProfile(char.creatorId);
+          let currentCreatorName = char.creatorName;
+          if (typeof currentCreatorName === 'object' && currentCreatorName !== null) {
+            currentCreatorName = (currentCreatorName as any).displayName;
+          }
+          
+          return {
+            ...char,
+            creatorName: currentCreatorName || (typeof cachedProfile === 'object' ? cachedProfile?.displayName : null)
+          };
+        });
         
         const creatorIds = new Set<string>();
         charactersWithNames.forEach(char => {

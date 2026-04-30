@@ -27,12 +27,13 @@ service cloud.firestore {
     }
 
     function isValidProfile(data) {
-      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase', 'hasSeenRules', 'isCounted', 'email']) &&
+      return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase', 'hasSeenRules', 'isCounted', 'email', 'blockedUsers']) &&
              (!('displayName' in data) || isValidString(data.displayName, 2, 100)) &&
              (!('bio' in data) || data.bio == null || isValidString(data.bio, 0, 2000)) &&
              (!('photoURL' in data) || isValidUrl(data.photoURL) || data.photoURL.matches("^data:image/.*")) &&
              (!('bannerURL' in data) || isValidUrl(data.bannerURL) || data.bannerURL.matches("^data:image/.*")) &&
-             (!('role' in data) || data.role in ['user', 'moderator', 'admin', 'owner']);
+             (!('role' in data) || data.role in ['user', 'moderator', 'admin', 'owner']) &&
+             (!('blockedUsers' in data) || data.blockedUsers is list);
     }
 
     function isValidCharacter(data) {
@@ -229,10 +230,19 @@ service cloud.firestore {
       allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
       allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
       allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {
         allow read: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants;
-        allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId;
+        allow create: if isAuthenticated() && 
+                      request.auth.uid == request.resource.data.senderId &&
+                      // Prevent sending to blocked users in Direct Chats
+                      (get(/databases/$(database)/documents/private_chats/$(chatId)).data.type != 'direct' || 
+                       !exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) ||
+                       !(get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[0] == request.auth.uid ? 
+                         get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[1] : 
+                         get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[0] 
+                         in get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.get('blockedUsers', [])));
         allow update: if isAuthenticated() && resource.data.senderId == request.auth.uid;
         allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
       }

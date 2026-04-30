@@ -309,11 +309,15 @@ export function Home() {
         
         snapshot.forEach((doc) => {
           const data = doc.data() as Record<string, any>;
+          let creatorName = data.creatorName;
+          if (typeof creatorName === 'object' && creatorName !== null) {
+            creatorName = (creatorName as any).displayName;
+          }
           
           chars.push({ 
             id: doc.id, 
             ...data,
-            creatorName: data.creatorName || 'Unknown'
+            creatorName: creatorName || 'Unknown'
           } as Character);
         });
 
@@ -409,7 +413,14 @@ export function Home() {
         const chunk = charIdsArray.slice(i, i + 30);
         const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
         const charSnap = await getDocs(charQ);
-        charSnap.forEach(doc => chars.push({ id: doc.id, ...doc.data() } as Character));
+        charSnap.forEach(doc => {
+          const data = doc.data();
+          let creatorName = data.creatorName;
+          if (typeof creatorName === 'object' && creatorName !== null) {
+            creatorName = (creatorName as any).displayName;
+          }
+          chars.push({ id: doc.id, ...data, creatorName: creatorName || 'Unknown' } as Character);
+        });
       }
       setRecentCharacters(chars);
       setCachedRecentCharacters(chars);

@@ -603,16 +603,33 @@ export function Chat() {
   };
 
   const confirmDeleteChat = async () => {
-    if (!chatToDelete) return;
+    if (!chatToDelete || !user) return;
     
     setIsDeletingChat(true);
     try {
-      await deleteDoc(doc(dbChat, 'chats', chatToDelete));
-      if (chatId === chatToDelete) {
-        navigate('/');
+      if (chatToDelete.startsWith('local_chat_')) {
+        const localChatsString = localStorage.getItem(`local_chats_${user.uid}`);
+        if (localChatsString) {
+          const localChats = JSON.parse(localChatsString);
+          const updated = localChats.filter((c: any) => c.id !== chatToDelete);
+          localStorage.setItem(`local_chats_${user.uid}`, JSON.stringify(updated));
+        }
+        localStorage.removeItem(`chat_${chatToDelete}`);
+        
+        if (chatId === chatToDelete) {
+          navigate('/');
+        } else {
+          setChatHistory(prev => prev.filter(c => c.id !== chatToDelete));
+        }
       } else {
-        setChatHistory(prev => prev.filter(c => c.id !== chatToDelete));
+        await deleteDoc(doc(dbChat, 'chats', chatToDelete));
+        if (chatId === chatToDelete) {
+          navigate('/');
+        } else {
+          setChatHistory(prev => prev.filter(c => c.id !== chatToDelete));
+        }
       }
+      playSound('success');
     } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatToDelete}`);
       setNotification({ message: `Failed to delete chat: ${error.message || 'Unknown error'}`, type: 'error' });
@@ -1153,7 +1170,12 @@ export function Chat() {
             const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
             const charSnap = await getDocs(charQ);
             charSnap.forEach(doc => {
-              const charData = { id: doc.id, ...doc.data() } as Character;
+              const data = doc.data();
+              let creatorName = data.creatorName;
+              if (typeof creatorName === 'object' && creatorName !== null) {
+                creatorName = (creatorName as any).displayName;
+              }
+              const charData = { id: doc.id, ...data, creatorName: creatorName || 'Unknown' } as Character;
               fetchedChars.push(charData);
               localStorage.setItem(`cached_char_${doc.id}`, JSON.stringify(charData));
             });
@@ -1168,9 +1190,9 @@ export function Chat() {
         // Fetch missing creator names from profiles
         const creatorIds = new Set<string>();
         fetchedChars.forEach(char => {
-          const cachedName = char.creatorId ? getCachedProfile(char.creatorId) : null;
-          if (cachedName) {
-            char.creatorName = cachedName;
+          const cachedProfile = char.creatorId ? getCachedProfile(char.creatorId) : null;
+          if (cachedProfile && typeof cachedProfile === 'object') {
+            char.creatorName = cachedProfile.displayName || 'Anonymous';
           } else if (!char.creatorName && char.creatorId) {
             creatorIds.add(char.creatorId);
           }
@@ -1913,7 +1935,7 @@ export function Chat() {
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
-                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `${t('common.by')} ${characters[0]?.creatorName || 'Unknown'}`}
+                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `${t('common.by')} ${typeof characters[0]?.creatorName === 'object' ? (characters[0].creatorName as any).displayName : (characters[0]?.creatorName || 'Unknown')}`}
               </p>
             </div>
           </div>
@@ -2272,7 +2294,35 @@ export function Chat() {
                           )}
                           
                           {/* Message Actions */}
-                          <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20`}>
+                          <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                            <button
+                              onClick={() => {
+                                setActiveMenuId(activeMenuId === `reaction_${msg.id}` ? null : `reaction_${msg.id}`);
+                                playSound('click');
+                              }}
+                              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-indigo-400 transition-colors bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 shadow-xl"
+                              title="Add reaction"
+                            >
+                              <Smile className="w-4 h-4" />
+                            </button>
+
+                            {activeMenuId === `reaction_${msg.id}` && (
+                              <div className={`absolute bottom-full mb-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 flex items-center gap-1 z-50 animate-in slide-in-from-bottom-1 duration-200 ${isUser ? 'right-0' : 'left-0'}`}>
+                                {['❤️', '👍', '😂', '🔥', '😮', '😢', '🎉'].map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => {
+                                      handleToggleReaction(msg.id, emoji);
+                                      setActiveMenuId(null);
+                                    }}
+                                    className="hover:scale-125 transition-transform text-xl p-1.5 hover:bg-zinc-800 rounded-lg"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
                             <button
                               onClick={() => setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}
                               className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 shadow-xl"
@@ -2281,7 +2331,7 @@ export function Chat() {
                             </button>
                             
                             {activeMenuId === msg.id && (
-                              <div className="absolute top-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 w-32 z-30">
+                              <div className={`absolute bottom-full mb-2 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 w-32 z-30 ${isUser ? 'right-0' : 'left-0'}`}>
                                 <button
                                   onClick={() => {
                                     setReplyTo(msg);
@@ -2293,20 +2343,6 @@ export function Chat() {
                                   <Reply className="w-3.5 h-3.5" />
                                   Reply
                                 </button>
-                                <div className="flex items-center justify-around p-2 border-y border-zinc-800 my-1">
-                                  {['❤️', '👍', '😂', '🔥'].map(emoji => (
-                                    <button
-                                      key={emoji}
-                                      onClick={() => {
-                                        handleToggleReaction(msg.id, emoji);
-                                        setActiveMenuId(null);
-                                      }}
-                                      className="hover:scale-125 transition-transform text-lg p-1"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
                                 {!isUser && (
                                   <button
                                     onClick={() => {
@@ -2645,7 +2681,7 @@ export function Chat() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-bold text-white">{char.name}</p>
-                      <p className="text-xs text-zinc-500 truncate">By {char.creatorName || 'Unknown'}</p>
+                      <p className="text-xs text-zinc-500 truncate">By {typeof char.creatorName === 'object' ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button

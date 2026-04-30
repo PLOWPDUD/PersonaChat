@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { db, dbPrivate, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile } from 'lucide-react';
+import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { addNotification } from '../lib/gamification';
@@ -25,6 +26,7 @@ interface Chat {
     displayName: string;
     photoURL: string;
   };
+  participantInfo?: Record<string, { displayName: string; photoURL: string }>;
 }
 
 interface Message {
@@ -34,6 +36,10 @@ interface Message {
   senderPhotoURL?: string;
   content: string;
   imageUrl?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
   isBot?: boolean;
   createdAt: any;
   replyToId?: string;
@@ -44,9 +50,10 @@ interface Message {
 
 export default function Messages() {
   const { t } = useTranslation();
-  const { user, profile, isOwner } = useAuth();
+  const { user, profile, isOwner, toggleBlockUser } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -55,6 +62,7 @@ export default function Messages() {
   const [isModerating, setIsModerating] = useState(false);
   const [moderationError, setModerationError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ url: string; name: string; type: string; size: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState('');
@@ -73,6 +81,10 @@ export default function Messages() {
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeReactionPickerId, setActiveReactionPickerId] = useState<string | null>(null);
+
+  const isBlocked = (targetId: string) => profile?.blockedUsers?.includes(targetId);
 
   // Initialize Gemini
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -94,11 +106,12 @@ export default function Messages() {
         let otherUser = null;
         if (data.type !== 'group') {
           const otherUserId = data.participants.find((id: string) => id !== user.uid);
-          if (otherUserId && data.participantInfo?.[otherUserId]) {
+          if (otherUserId) {
+            const info = data.participantInfo?.[otherUserId];
             otherUser = {
               uid: otherUserId,
-              displayName: data.participantInfo[otherUserId].displayName,
-              photoURL: data.participantInfo[otherUserId].photoURL
+              displayName: info?.displayName || t('common.user'),
+              photoURL: info?.photoURL || ''
             };
           }
         }
@@ -106,7 +119,8 @@ export default function Messages() {
         return {
           id: chatDoc.id,
           ...data,
-          otherUser
+          otherUser,
+          name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
         } as Chat;
       });
       setChats(chatList);
@@ -194,10 +208,28 @@ export default function Messages() {
 
     setIsSubmitting(true);
     try {
+      const participantInfo = {
+        [user.uid]: {
+          displayName: profile?.displayName || 'User',
+          photoURL: profile?.photoURL || ''
+        }
+      };
+
+      selectedUsers.forEach(uId => {
+        const u = availableUsers.find(au => au.uid === uId);
+        if (u) {
+          participantInfo[uId] = {
+            displayName: u.displayName || 'User',
+            photoURL: u.photoURL || ''
+          };
+        }
+      });
+
       const chatData = {
         type: 'group',
         name: groupName.trim(),
         participants: [user.uid, ...selectedUsers],
+        participantInfo,
         characterIds: selectedBots,
         createdBy: user.uid,
         updatedAt: serverTimestamp(),
@@ -281,15 +313,25 @@ export default function Messages() {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!user || !activeChat || (!newMessage.trim() && !selectedImage) || isSubmitting || isModerating) return;
+    if (!user || !activeChat || (!newMessage.trim() && !selectedImage && !selectedFile) || isSubmitting || isModerating) return;
+
+    // Check if other user has blocked us or we have blocked them
+    if (activeChat.type === 'direct' && activeChat.otherUser) {
+      if (profile?.blockedUsers?.includes(activeChat.otherUser.uid)) {
+        setModerationError(t('messages.youBlocked', 'You have blocked this user. Unblock them to send messages.'));
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     const content = newMessage.trim();
     const imageUrl = selectedImage;
+    const currentFile = selectedFile;
     const currentReplyTo = replyTo;
     
     setNewMessage('');
     setSelectedImage(null);
+    setSelectedFile(null);
     setReplyTo(null);
     playSound('click');
 
@@ -300,6 +342,10 @@ export default function Messages() {
         senderPhotoURL: profile?.photoURL || '',
         content,
         imageUrl,
+        fileUrl: currentFile?.url || null,
+        fileName: currentFile?.name || null,
+        fileType: currentFile?.type || null,
+        fileSize: currentFile?.size || null,
         replyToId: currentReplyTo?.id || null,
         replyToContent: currentReplyTo?.content || null,
         replyToSenderName: currentReplyTo?.senderName || null,
@@ -307,7 +353,7 @@ export default function Messages() {
       });
 
       await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
-        lastMessage: imageUrl ? 'Sent an image' : content,
+        lastMessage: imageUrl ? 'Sent an image' : currentFile ? `Sent a file: ${currentFile.name}` : content,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -379,12 +425,14 @@ export default function Messages() {
     });
   };
 
-  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      setModerationError('Please select an image file.');
+    // 20MB limit as requested
+    const MAX_SIZE = 20 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setModerationError('File size exceeds the 20MB limit.');
       return;
     }
 
@@ -392,19 +440,39 @@ export default function Messages() {
     setModerationError(null);
 
     try {
-      const base64 = await compressImage(file);
-      const pureBase64 = base64.split(',')[1];
-      
-      const result = await moderateImage(pureBase64, 'image/jpeg');
-      
-      if (result.isAppropriate) {
-        setSelectedImage(base64);
+      if (file.type.startsWith('image/')) {
+        const base64 = await compressImage(file);
+        
+        // Only moderate images if they are small enough for AI processing
+        if (base64.length < 4000000) {
+          const pureBase64 = base64.split(',')[1];
+          const result = await moderateImage(pureBase64, 'image/jpeg');
+          
+          if (result.isAppropriate) {
+            setSelectedImage(base64);
+          } else {
+            setModerationError(result.suggestion || 'This image contains inappropriate content.');
+          }
+        } else {
+          setSelectedImage(base64);
+        }
       } else {
-        setModerationError(result.suggestion || 'This image contains inappropriate content.');
+        // For other files, we just read as data URL for local simulation
+        // Note: Large base64 strings in Firestore will fail, but we show the UI
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setSelectedFile({
+            url: event.target?.result as string,
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            size: file.size
+          });
+        };
+        reader.readAsDataURL(file);
       }
     } catch (err) {
-      console.error('Error processing image:', err);
-      setModerationError('Failed to process image.');
+      console.error('Error processing file:', err);
+      setModerationError('Failed to process file.');
     } finally {
       setIsModerating(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -439,6 +507,7 @@ export default function Messages() {
       await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
         senderId: bot.id,
         senderName: bot.name,
+        senderPhotoURL: bot.avatarUrl || '',
         content: responseText,
         isBot: true,
         createdAt: serverTimestamp()
@@ -510,6 +579,36 @@ export default function Messages() {
       playSound('success');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `private_chats/${activeChat.id}/messages/${messageId}`);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    if (!user || !activeChat) return;
+    
+    const confirmMsg = activeChat.type === 'group' 
+      ? t('messages.confirmLeaveGroup', 'Are you sure you want to leave this group?') 
+      : t('messages.confirmDeleteChat', 'Are you sure you want to delete this conversation? This will delete it for everyone.');
+      
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const chatRef = doc(dbPrivate, 'private_chats', activeChat.id);
+      
+      if (activeChat.type === 'group') {
+        // Just leave the group
+        await updateDoc(chatRef, {
+          participants: arrayRemove(user.uid)
+        });
+      } else {
+        // Delete the entire direct chat
+        await deleteDoc(chatRef);
+      }
+      
+      setActiveChat(null);
+      setIsInfoOpen(false);
+      playSound('success');
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.DELETE, `private_chats/${activeChat.id}`);
     }
   };
 
@@ -599,7 +698,11 @@ export default function Messages() {
                 onClick={() => setActiveChat(chat)}
                 className={`w-full p-4 flex gap-3 hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/50 ${activeChat?.id === chat.id ? 'bg-indigo-500/10' : ''}`}
               >
-                {chat.otherUser?.photoURL ? (
+                {chat.type === 'group' ? (
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                    <Users className="w-6 h-6 text-indigo-400" />
+                  </div>
+                ) : chat.otherUser?.photoURL ? (
                   <img src={chat.otherUser.photoURL} alt="" className="w-12 h-12 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
@@ -622,20 +725,32 @@ export default function Messages() {
       <div className={`flex-1 flex flex-col bg-zinc-950 ${!activeChat ? 'hidden md:flex items-center justify-center' : 'flex'}`}>
         {activeChat ? (
           <>
-            <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
-              <button onClick={() => setActiveChat(null)} className="md:hidden p-2 text-zinc-400 hover:text-white">
-                <ArrowLeft className="w-5 h-5" />
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setActiveChat(null)} className="md:hidden p-2 text-zinc-400 hover:text-white">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                {activeChat.type === 'group' ? (
+                  <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                    <Users className="w-5 h-5 text-indigo-400" />
+                  </div>
+                ) : activeChat.otherUser?.photoURL ? (
+                  <img src={activeChat.otherUser.photoURL} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                    <User className="w-5 h-5 text-zinc-500" />
+                  </div>
+                )}
+                <h3 className="text-white font-bold">
+                  {activeChat.type === 'group' ? activeChat.name : activeChat.otherUser?.displayName}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsInfoOpen(!isInfoOpen)}
+                className={`p-2 rounded-xl transition-all ${isInfoOpen ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+              >
+                <Info className="w-5 h-5" />
               </button>
-              {activeChat.otherUser?.photoURL ? (
-                <img src={activeChat.otherUser.photoURL} alt="" className="w-10 h-10 rounded-full object-cover border border-zinc-700" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                  <User className="w-5 h-5 text-zinc-500" />
-                </div>
-              )}
-              <h3 className="text-white font-bold">
-                {activeChat.type === 'group' ? activeChat.name : activeChat.otherUser?.displayName}
-              </h3>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
@@ -650,13 +765,31 @@ export default function Messages() {
               ) : (
                 messages.map((msg) => (
                   <div key={msg.id} className={`flex gap-3 group ${msg.senderId === user?.uid ? 'flex-row-reverse' : 'flex-row'}`}>
-                    {/* Message Avatar */}
                     <div className="flex-shrink-0 mt-auto">
-                      {msg.senderPhotoURL ? (
-                        <img src={msg.senderPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                      {!msg.isBot ? (
+                        <Link to={`/profile/${msg.senderId}`} className="block hover:opacity-80 transition-opacity">
+                          {msg.senderPhotoURL ? (
+                            <img src={msg.senderPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                          ) : activeChat.participantInfo?.[msg.senderId]?.photoURL ? (
+                            <img 
+                              src={activeChat.participantInfo[msg.senderId].photoURL} 
+                              alt="" 
+                              className="w-8 h-8 rounded-full object-cover border border-zinc-800" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                              <User className="w-4 h-4 text-zinc-500" />
+                            </div>
+                          )}
+                        </Link>
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                          <User className="w-4 h-4 text-zinc-500" />
+                        <div className="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center border border-purple-500/30">
+                          {msg.senderPhotoURL ? (
+                            <img src={msg.senderPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <Bot className="w-4 h-4 text-purple-400" />
+                          )}
                         </div>
                       )}
                     </div>
@@ -720,6 +853,26 @@ export default function Messages() {
                                   referrerPolicy="no-referrer"
                                 />
                               )}
+
+                              {msg.fileUrl && (
+                                <div className={`flex items-center gap-3 p-3 bg-black/20 rounded-xl border border-white/10 mb-2 ${msg.senderId === user?.uid ? 'border-indigo-400/30' : ''}`}>
+                                  <FileText className="w-8 h-8 text-zinc-500" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-white truncate">{msg.fileName}</p>
+                                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest">
+                                      {msg.fileType?.split('/')[1] || 'FILE'} • {Math.round(msg.fileSize! / 1024)} KB
+                                    </p>
+                                  </div>
+                                  <a 
+                                    href={msg.fileUrl} 
+                                    download={msg.fileName}
+                                    className="p-2 hover:bg-zinc-800 rounded-lg text-indigo-400 transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </a>
+                                </div>
+                              )}
                               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
 
                               {/* Reactions Display */}
@@ -728,16 +881,19 @@ export default function Messages() {
                                   {Object.entries(msg.reactions).map(([emoji, uids]) => (
                                     <button
                                       key={emoji}
-                                      onClick={() => handleToggleReaction(msg.id, emoji)}
-                                      className={`px-1.5 py-0.5 rounded-full text-[10px] flex items-center gap-1 transition-all border ${
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleReaction(msg.id, emoji);
+                                      }}
+                                      className={`px-2 py-1 rounded-full text-[10px] flex items-center gap-1.5 transition-all border ${
                                         uids.includes(user?.uid || '')
-                                          ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200'
-                                          : 'bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                                          ? 'bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/20'
+                                          : 'bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900'
                                       }`}
                                       title={uids.length > 1 ? `${uids.length} reactions` : ''}
                                     >
-                                      <span>{emoji}</span>
-                                      {uids.length > 1 && <span>{uids.length}</span>}
+                                      <span className="scale-110">{emoji}</span>
+                                      {uids.length > 1 && <span className="font-bold">{uids.length}</span>}
                                     </button>
                                   ))}
                                 </div>
@@ -767,24 +923,44 @@ export default function Messages() {
                             <Reply className="w-3.5 h-3.5" />
                           </button>
 
-                          <div className="relative group/emoji">
+                          <div className="relative">
                             <button
-                              className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                              onClick={() => {
+                                setActiveReactionPickerId(activeReactionPickerId === msg.id ? null : msg.id);
+                                playSound('click');
+                              }}
+                              className={`p-1.5 rounded-full transition-colors ${
+                                activeReactionPickerId === msg.id 
+                                  ? 'bg-indigo-600 text-white' 
+                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                              }`}
                               title={t('messages.react', 'React')}
                             >
                               <Smile className="w-3.5 h-3.5" />
                             </button>
-                            <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-1 shadow-2xl flex items-center gap-1.5 opacity-0 pointer-events-none group-hover/emoji:opacity-100 group-hover/emoji:pointer-events-auto transition-all z-20">
-                              {['❤️', '👍', '😂', '😮', '😢', '🔥'].map(emoji => (
-                                <button
-                                  key={emoji}
-                                  onClick={() => handleToggleReaction(msg.id, emoji)}
-                                  className="hover:scale-125 transition-transform p-0.5"
+                            <AnimatePresence>
+                              {activeReactionPickerId === msg.id && (
+                                <motion.div 
+                                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-2 z-50 min-w-[200px]"
                                 >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
+                                  {['❤️', '👍', '😂', '😮', '😢', '🔥', '🎉', '🙏'].map(emoji => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => {
+                                        handleToggleReaction(msg.id, emoji);
+                                        setActiveReactionPickerId(null);
+                                      }}
+                                      className="hover:scale-125 transition-transform text-lg"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                           
                           {msg.senderId === user?.uid && !editingMessageId && (
@@ -864,22 +1040,71 @@ export default function Messages() {
               </div>
             )}
 
+            {selectedFile && (
+              <div className="px-4 py-2 border-t border-zinc-800 bg-zinc-900/50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                    <FileText className="w-6 h-6 text-indigo-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{selectedFile.name}</p>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest">{Math.round(selectedFile.size / 1024)} KB</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedFile(null)}
+                  className="p-1.5 text-zinc-500 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {showEmojiPicker && (
+              <div className="px-4 py-3 border-t border-zinc-800 bg-zinc-900 grid grid-cols-8 gap-2 animate-in fade-in slide-in-from-bottom-2">
+                {['❤️', '👍', '😂', '😮', '😢', '🔥', '🎉', '🙏', '✨', '💯', '🤔', '👀', '✅', '❌', '🚀', '⭐'].map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      setNewMessage(prev => prev + emoji);
+                      setShowEmojiPicker(false);
+                    }}
+                    className="text-xl hover:scale-125 transition-transform p-1"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <form onSubmit={handleSendMessage} className="p-4 border-t border-zinc-800 flex gap-2">
               <input
                 type="file"
                 ref={fileInputRef}
-                onChange={handleImageSelect}
-                accept="image/*"
+                onChange={handleFileSelect}
                 className="hidden"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isSubmitting || isModerating}
-                className="p-2 bg-zinc-800 text-zinc-400 rounded-xl hover:text-white hover:bg-zinc-700 transition-all disabled:opacity-50"
-              >
-                {isModerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-              </button>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting || isModerating}
+                  className="p-2 bg-zinc-800 text-zinc-400 rounded-xl hover:text-white hover:bg-zinc-700 transition-all disabled:opacity-50"
+                  title={t('messages.attach', 'Attach File')}
+                >
+                  {isModerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className={`p-2 rounded-xl transition-all ${
+                    showEmojiPicker ? 'bg-indigo-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                  }`}
+                  title={t('messages.emojis', 'Emojis')}
+                >
+                  <Smile className="w-4 h-4" />
+                </button>
+              </div>
               <input
                 type="text"
                 value={newMessage}
@@ -908,6 +1133,140 @@ export default function Messages() {
           </div>
         )}
       </div>
+
+      {/* Chat Info Sidebar */}
+      <AnimatePresence>
+        {isInfoOpen && activeChat && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 300, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="border-l border-zinc-800 bg-zinc-900 overflow-hidden hidden lg:flex flex-col flex-shrink-0"
+          >
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="text-white font-bold">{t('messages.chatInfo', 'Chat Info')}</h3>
+              <button onClick={() => setIsInfoOpen(false)} className="text-zinc-500 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar">
+              {/* Profile Card */}
+              <div className="text-center space-y-3">
+                <div className="relative mx-auto w-24 h-24">
+                  {activeChat.type === 'group' ? (
+                    <div className="w-24 h-24 rounded-full bg-indigo-500/10 flex items-center justify-center border-2 border-indigo-500/20">
+                      <Users className="w-10 h-10 text-indigo-400" />
+                    </div>
+                  ) : activeChat.otherUser?.photoURL ? (
+                    <img src={activeChat.otherUser.photoURL} alt="" className="w-24 h-24 rounded-full object-cover border-2 border-zinc-700" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-zinc-800 flex items-center justify-center border-2 border-zinc-700">
+                      <User className="w-10 h-10 text-zinc-500" />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-lg">
+                    {activeChat.type === 'group' ? activeChat.name : activeChat.otherUser?.displayName}
+                  </h4>
+                  <p className="text-zinc-500 text-xs">
+                    {activeChat.type === 'group' ? `${activeChat.participants.length} ${t('common.members', 'Members')}` : t('messages.directChat')}
+                  </p>
+                </div>
+              </div>
+
+              {activeChat.type === 'direct' && activeChat.otherUser && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => toggleBlockUser(activeChat.otherUser!.uid)}
+                    className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all font-bold text-sm ${
+                      profile?.blockedUsers?.includes(activeChat.otherUser.uid)
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    {profile?.blockedUsers?.includes(activeChat.otherUser.uid) ? (
+                      <><UserCheck className="w-4 h-4" /> {t('messages.unblock', 'Unblock User')}</>
+                    ) : (
+                      <><UserX className="w-4 h-4" /> {t('messages.block', 'Block User')}</>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-zinc-500 px-2 italic text-center">
+                    {profile?.blockedUsers?.includes(activeChat.otherUser.uid) 
+                      ? 'You have blocked this user. They cannot message you.' 
+                      : 'Blocking prevents the user from messaging you directly.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Members/Bots List */}
+              <div className="space-y-3">
+                <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{t('messages.participants', 'Participants')}</h5>
+                <div className="space-y-2">
+                  {activeChat.participants.map(pId => {
+                    const info = activeChat.participantInfo?.[pId];
+                    return (
+                      <div key={pId} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors">
+                        <img 
+                          src={info?.photoURL || 'https://via.placeholder.com/32'} 
+                          alt="" 
+                          className="w-8 h-8 rounded-full object-cover border border-zinc-800" 
+                        />
+                        <span className="text-sm text-zinc-300 font-medium truncate">
+                          {info?.displayName || 'User'}
+                        </span>
+                        {pId !== user?.uid && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(isBlocked(pId) ? 'Unblock this user?' : 'Block this user? They will not be able to send you messages.')) {
+                                toggleBlockUser(pId);
+                              }
+                            }}
+                            className={`ml-auto p-1.5 rounded-lg transition-colors ${
+                              isBlocked(pId) 
+                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white' 
+                                : 'text-zinc-600 hover:text-red-400 hover:bg-red-500/10'
+                            }`}
+                            title={isBlocked(pId) ? 'Unblock' : 'Block'}
+                          >
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {pId === user?.uid && <span className="text-[10px] text-zinc-600 ml-auto">(Me)</span>}
+                      </div>
+                    );
+                  })}
+                  {activeChat.characterIds?.map(botId => {
+                    const bot = availableBots.find(b => b.id === botId);
+                    if (!bot) return null;
+                    return (
+                      <div key={botId} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors">
+                        <img src={bot.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-purple-500/30" />
+                        <span className="text-sm text-purple-300 font-medium truncate">{bot.name}</span>
+                        <Bot className="w-3 h-3 text-purple-400 ml-auto" />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Chat Actions */}
+              <div className="pt-4 border-t border-zinc-800 space-y-2">
+                <button
+                  className="w-full p-2 text-left text-xs text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex items-center gap-2"
+                  onClick={handleDeleteChat}
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  {activeChat.type === 'group' ? t('messages.leaveGroup', 'Leave Group') : t('messages.deleteChat', 'Delete Conversation')}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Create Direct Message Modal */}
       <AnimatePresence>
         {isCreateDirectOpen && (

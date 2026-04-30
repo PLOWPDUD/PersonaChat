@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
-import { Menu, X, MessageSquare } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
+import { Menu, X } from 'lucide-react';
 import { NotificationCenter } from './NotificationCenter';
 import { FeedbackPanel } from './FeedbackPanel';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +17,7 @@ export function Layout() {
       {/* Mobile Header */}
       <header className="lg:hidden h-16 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-4 sticky top-0 z-50">
         <Link to="/" className="flex items-center gap-2 text-lg font-bold text-white">
-          <MessageSquare className="w-6 h-6 text-theme-primary" />
+          <BrandLogo className="w-6 h-6" />
           <span>{t('common.appName')}</span>
         </Link>
         <div className="flex items-center gap-2">

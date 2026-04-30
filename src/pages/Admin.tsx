@@ -100,7 +100,15 @@ export function Admin() {
           limit(20)
         );
         const snap = await getDocs(q);
-        setCharResults(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const results = snap.docs.map(doc => {
+          const data = doc.data();
+          let creatorName = data.creatorName;
+          if (typeof creatorName === 'object' && creatorName !== null) {
+            creatorName = (creatorName as any).displayName;
+          }
+          return { id: doc.id, ...data, creatorName: creatorName || 'Unknown' };
+        });
+        setCharResults(results);
       }
     } catch (error) {
       console.error('Search error:', error);
@@ -226,7 +234,14 @@ export function Admin() {
     try {
       const charQ = query(collection(db, 'characters'), where('creatorId', '==', userId), limit(20));
       const charSnap = await getDocs(charQ);
-      const userChars = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const userChars = charSnap.docs.map(d => {
+        const data = d.data();
+        let creatorName = data.creatorName;
+        if (typeof creatorName === 'object' && creatorName !== null) {
+          creatorName = (creatorName as any).displayName;
+        }
+        return { id: d.id, ...data, creatorName: creatorName || 'Unknown' };
+      });
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, characters: userChars } : p));
     } catch (error) {
       console.error('Error fetching user characters:', error);
