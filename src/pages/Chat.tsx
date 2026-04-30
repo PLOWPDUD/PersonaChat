@@ -2245,7 +2245,8 @@ export function Chat() {
                           </div>
                         </div>
                       ) : (
-                        <div className={`relative rounded-2xl p-4 shadow-sm ${
+                        <div 
+                          className={`relative rounded-2xl p-4 shadow-sm ${
                           isUser 
                             ? 'bg-indigo-600 text-white rounded-tr-sm' 
                             : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
@@ -2294,7 +2295,7 @@ export function Chat() {
                           )}
                           
                           {/* Message Actions */}
-                          <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                          <div className={`absolute -bottom-8 ${isUser ? 'right-0' : 'left-0'} z-20 flex items-center gap-1 opacity-100 transition-opacity`}>
                             <button
                               onClick={() => {
                                 setActiveMenuId(activeMenuId === `reaction_${msg.id}` ? null : `reaction_${msg.id}`);
