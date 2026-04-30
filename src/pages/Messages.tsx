@@ -21,6 +21,7 @@ interface Chat {
   lastMessage?: string;
   lastMessageAt?: any;
   updatedAt?: any;
+  createdBy?: string;
   otherUser?: {
     uid: string;
     displayName: string;
@@ -582,6 +583,21 @@ export default function Messages() {
     }
   };
 
+  const handleRemoveBot = async (botId: string) => {
+    if (!activeChat || !user || activeChat.createdBy !== user.uid) return;
+    
+    try {
+      const chatRef = doc(dbPrivate, 'private_chats', activeChat.id);
+      await updateDoc(chatRef, {
+        characterIds: arrayRemove(botId)
+      });
+      playSound('success');
+    } catch (err) {
+      console.error('Error removing bot:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `private_chats/${activeChat.id}`);
+    }
+  };
+
   const handleDeleteChat = async () => {
     if (!user || !activeChat) return;
     
@@ -611,6 +627,7 @@ export default function Messages() {
       handleFirestoreError(err, OperationType.DELETE, `private_chats/${activeChat.id}`);
     }
   };
+
 
   useEffect(() => {
     if (!activeChat) return;
@@ -1245,7 +1262,16 @@ export default function Messages() {
                       <div key={botId} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors">
                         <img src={bot.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-purple-500/30" />
                         <span className="text-sm text-purple-300 font-medium truncate">{bot.name}</span>
-                        <Bot className="w-3 h-3 text-purple-400 ml-auto" />
+                        {activeChat.createdBy === user?.uid && (
+                          <button
+                            onClick={() => handleRemoveBot(botId)}
+                            className="ml-auto p-1 text-zinc-600 hover:text-red-500 transition-colors"
+                            title="Remove Bot"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!activeChat.createdBy || activeChat.createdBy !== user?.uid && <Bot className="w-3 h-3 text-purple-400 ml-auto" />}
                       </div>
                     );
                   })}
