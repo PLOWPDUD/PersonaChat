@@ -1425,12 +1425,12 @@ export function Chat() {
     }
 
     const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-    const mq = query(messagesRef, orderBy('createdAt', 'asc'), limit(50));
+    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(30));
     
     const unsubscribe = onSnapshot(mq, (snapshot) => {
       const msgs: Message[] = [];
       const seenIds = new Set<string>();
-      snapshot.forEach((doc) => {
+      snapshot.docs.forEach((doc) => {
         if (seenIds.has(doc.id)) return;
         seenIds.add(doc.id);
         const data = doc.data();
@@ -1439,6 +1439,13 @@ export function Chat() {
         } else {
           msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
         }
+      });
+
+      // Sort by creation time ascending for UI
+      msgs.sort((a, b) => {
+        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return timeA - timeB;
       });
       
       const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');

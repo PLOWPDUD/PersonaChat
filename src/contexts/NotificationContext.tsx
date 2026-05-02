@@ -114,8 +114,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     fetchNotifications();
 
-    // Pull every 2 minutes instead of real-time connection
-    const interval = setInterval(() => fetchNotifications(true), 120000);
+    // Pull every 10 minutes only if tab is visible to save reads
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications(true);
+      }
+    }, 600000);
     
     return () => clearInterval(interval);
   }, [user]);

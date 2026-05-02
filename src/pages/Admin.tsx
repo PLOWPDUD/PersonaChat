@@ -41,15 +41,18 @@ export function Admin() {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   useEffect(() => {
-    // Listen to real-time stats
-    const statsRef = doc(db, 'siteStats', 'global');
-    const unsubStats = onSnapshot(statsRef, (snap) => {
-      if (snap.exists()) {
-        setSiteStats(snap.data() as any);
+    const fetchStats = async () => {
+      try {
+        const statsRef = doc(db, 'siteStats', 'global');
+        const snap = await getDoc(statsRef);
+        if (snap.exists()) {
+          setSiteStats(snap.data() as any);
+        }
+      } catch (err) {
+        console.error("Error fetching admin stats:", err);
       }
-    });
-
-    return () => unsubStats();
+    };
+    fetchStats();
   }, []);
 
   useEffect(() => {

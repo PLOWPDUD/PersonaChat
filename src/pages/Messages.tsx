@@ -635,15 +635,15 @@ export default function Messages() {
     setLoadingMessages(true);
     const q = query(
       collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
-      orderBy('createdAt', 'asc'),
-      limit(50)
+      orderBy('createdAt', 'desc'),
+      limit(30)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const messageList = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Message[];
+      })).reverse() as Message[];
       setMessages(messageList);
       setLoadingMessages(false);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);

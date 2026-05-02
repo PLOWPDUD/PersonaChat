@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Users, Loader2, User, AlertCircle, ShieldAlert, Award, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -20,27 +20,28 @@ export function Stats() {
   useEffect(() => {
     const statsRef = doc(db, 'siteStats', 'global');
     
-    // Use onSnapshot for real-time updates
-    const unsubscribe = onSnapshot(statsRef, (doc) => {
-      console.log("Stats snapshot received:", doc.exists() ? doc.data() : "Document does not exist");
-      if (doc.exists()) {
-        setStats(doc.data() as { visitorCount: number; userCount: number });
-      } else {
-        setStats({ visitorCount: 0, userCount: 0 });
+    const fetchStats = async () => {
+      try {
+        const docSnap = await getDoc(statsRef);
+        if (docSnap.exists()) {
+          setStats(docSnap.data() as { visitorCount: number; userCount: number });
+        } else {
+          setStats({ visitorCount: 0, userCount: 0 });
+        }
+        setError(null);
+      } catch (error: any) {
+        console.error('Error fetching stats:', error);
+        if (isQuotaError(error)) {
+          setLocalQuotaExceeded(true);
+        } else {
+          setError(t('stats.loadError'));
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-      setError(null);
-    }, (error: any) => {
-      console.error('Error listening to stats:', error);
-      if (isQuotaError(error)) {
-        setLocalQuotaExceeded(true);
-      } else {
-        setError(t('stats.loadError'));
-      }
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchStats();
   }, [t]);
 
   if (loading) {
