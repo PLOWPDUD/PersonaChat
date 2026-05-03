@@ -306,10 +306,12 @@ export function Chat() {
       if (currentIds.includes(char.id)) return;
 
       const newIds = [...currentIds, char.id];
-      await updateDoc(chatRef, {
-        characterIds: newIds,
-        updatedAt: serverTimestamp()
-      });
+      if (!isLocalMode && !chatId.startsWith('local_chat_')) {
+        await updateDoc(chatRef, {
+          characterIds: newIds,
+          updatedAt: serverTimestamp()
+        });
+      }
 
       // Update local state
       setCharacters(prev => [...prev, char]);
@@ -769,12 +771,14 @@ export function Chat() {
         }
 
         // Update chat timestamp
-        try {
-          await setDoc(doc(dbChat, 'chats', chatId), {
-            updatedAt: serverTimestamp()
-          }, { merge: true });
-        } catch (e) {
-          handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+        if (!isLocalMode && !chatId.startsWith('local_chat_')) {
+          try {
+            await setDoc(doc(dbChat, 'chats', chatId), {
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+          }
         }
         
         setIsTyping(false);
@@ -984,12 +988,14 @@ export function Chat() {
         await saveSplitMessages(chatId, fullAiResponse, targetCharId);
       }
 
-      try {
-        await setDoc(doc(dbChat, 'chats', chatId), {
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+      if (!isLocalMode && !chatId.startsWith('local_chat_')) {
+        try {
+          await setDoc(doc(dbChat, 'chats', chatId), {
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.UPDATE, `chats/${chatId}`);
+        }
       }
     } catch (error: any) {
       console.error('Error regenerating response:', error);
@@ -1383,7 +1389,8 @@ export function Chat() {
           chatsRef, 
           where('userId', '==', user.uid), 
           where('characterIds', 'array-contains', characterId),
-          orderBy('updatedAt', 'desc')
+          orderBy('updatedAt', 'desc'),
+          limit(20)
         );
         const historySnapshot = await getDocs(hq);
         const history = historySnapshot.docs.map(doc => ({
