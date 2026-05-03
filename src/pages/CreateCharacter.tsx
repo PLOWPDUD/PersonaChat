@@ -248,10 +248,6 @@ export function CreateCharacter() {
             updatedAt: serverTimestamp()
           });
           
-          if (formData.visibility === 'private') {
-            saveLocal();
-          }
-
           // Clear caches
           localStorage.removeItem('cached_public_characters');
           localStorage.removeItem('last_public_fetch');
@@ -286,12 +282,7 @@ export function CreateCharacter() {
             }
           }
           
-          // Always save locally for private characters too
-          if (formData.visibility === 'private') {
-            saveLocal();
-          }
-
-          // If it was a local character being made public, delete the old local one
+          // If it was a local character, delete the old local one
           if (characterId?.startsWith('local_')) {
             deleteLocalCharacter(characterId);
           }
