@@ -268,7 +268,7 @@ export function Home() {
               id: charId || 'unknown', 
               name: chatData.characterName || 'Unknown Character', 
               avatarUrl: chatData.characterAvatarUrl || '',
-              creatorName: chatData.creatorName || 'Unknown',
+              creatorName: typeof chatData.creatorName === 'object' && chatData.creatorName !== null ? chatData.creatorName.displayName || 'Unknown' : chatData.creatorName || 'Unknown',
               creatorId: chatData.creatorId || null,
               likesCount: chatData.likesCount || 0,
               interactionsCount: chatData.interactionsCount || 0,
@@ -488,7 +488,7 @@ export function Home() {
         characterId: charIds[0], // legacy support for single-character views
         characterName: selectedCharacters[0].name,
         characterAvatarUrl: selectedCharacters[0].avatarUrl,
-        creatorName: selectedCharacters[0].creatorName || 'Unknown',
+        creatorName: typeof selectedCharacters[0].creatorName === 'object' && selectedCharacters[0].creatorName !== null ? (selectedCharacters[0].creatorName as any).displayName : selectedCharacters[0].creatorName || 'Unknown',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: selectedCharacters.length > 1 ? `Group Chat with ${selectedCharacters.map(c => c.name).join(', ')}` : `Chat with ${selectedCharacters[0].name}`
@@ -743,13 +743,17 @@ export function Home() {
                 )}
                 <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{char.name}</h3>
                 <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
-                  {t('common.by')} <Link 
-                    to={`/profile/${char.creatorId}`} 
-                    className="hover:text-indigo-400 transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {char.creatorName || 'Unknown'}
-                  </Link>
+                  {t('common.by')} {char.creatorId ? (
+                    <Link 
+                      to={`/profile/${char.creatorId}`} 
+                      className="hover:text-indigo-400 transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}
+                    </Link>
+                  ) : (
+                    typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')
+                  )}
                 </p>
                 
                 <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">

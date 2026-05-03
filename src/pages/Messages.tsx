@@ -100,38 +100,49 @@ export default function Messages() {
       limit(20)
     );
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const chatList = snapshot.docs.map((chatDoc) => {
-        const data = chatDoc.data();
-        
-        let otherUser = null;
-        if (data.type !== 'group') {
-          const otherUserId = data.participants.find((id: string) => id !== user.uid);
-          if (otherUserId) {
-            const info = data.participantInfo?.[otherUserId];
-            otherUser = {
-              uid: otherUserId,
-              displayName: info?.displayName || t('common.user'),
-              photoURL: info?.photoURL || ''
-            };
+    const fetchChats = async () => {
+      try {
+        const snapshot = await getDocs(q);
+        const chatList = snapshot.docs.map((chatDoc) => {
+          const data = chatDoc.data();
+          
+          let otherUser = null;
+          if (data.type !== 'group') {
+            const otherUserId = data.participants.find((id: string) => id !== user.uid);
+            if (otherUserId) {
+              const info = data.participantInfo?.[otherUserId];
+              otherUser = {
+                uid: otherUserId,
+                displayName: info?.displayName || t('common.user'),
+                photoURL: info?.photoURL || ''
+              };
+            }
           }
-        }
 
-        return {
-          id: chatDoc.id,
-          ...data,
-          otherUser,
-          name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
-        } as Chat;
-      });
-      setChats(chatList);
-      setLoading(false);
-    }, (error) => {
-      console.error('Error fetching chats:', error);
-      setLoading(false);
-    });
+          return {
+            id: chatDoc.id,
+            ...data,
+            otherUser,
+            name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
+          } as Chat;
+        });
+        setChats(chatList);
+      } catch (error) {
+        console.error('Error fetching chats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchChats();
+    // Refresh every 30 seconds if tab is visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchChats();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [user]);
 
   useEffect(() => {
@@ -337,7 +348,8 @@ export default function Messages() {
     playSound('click');
 
     try {
-      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
+      const newLocalMsg: Message = {
+        id: `local_${Date.now()}`,
         senderId: user.uid,
         senderName: profile?.displayName || 'User',
         senderPhotoURL: profile?.photoURL || '',
@@ -350,8 +362,13 @@ export default function Messages() {
         replyToId: currentReplyTo?.id || null,
         replyToContent: currentReplyTo?.content || null,
         replyToSenderName: currentReplyTo?.senderName || null,
-        createdAt: serverTimestamp()
-      });
+        createdAt: { toDate: () => new Date() } as any,
+        reactions: {}
+      };
+      
+      setMessages(prev => [newLocalMsg, ...prev]);
+
+      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), Object.assign({}, newLocalMsg, { id: undefined, createdAt: serverTimestamp() }));
 
       await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
         lastMessage: imageUrl ? 'Sent an image' : currentFile ? `Sent a file: ${currentFile.name}` : content,
@@ -633,26 +650,36 @@ export default function Messages() {
     if (!activeChat) return;
 
     setLoadingMessages(true);
-    const q = query(
-      collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
-      orderBy('createdAt', 'desc'),
-      limit(30)
-    );
+    const fetchMessages = async () => {
+      try {
+        const q = query(
+          collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
+          orderBy('createdAt', 'desc'),
+          limit(30)
+        );
+        const snapshot = await getDocs(q);
+        const messageList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })).reverse() as Message[];
+        
+        // Auto-scroll if it's the first time
+        const initialLoad = messages.length === 0 && messageList.length > 0;
+        setMessages(messageList);
+        setLoadingMessages(false);
+        if (initialLoad) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } catch (e) {
+        console.error("Error fetching private chat messages", e);
+        setLoadingMessages(false);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messageList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).reverse() as Message[];
-      setMessages(messageList);
-      setLoadingMessages(false);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    }, (error) => {
-      console.error('Error fetching messages:', error);
-      setLoadingMessages(false);
-    });
+    fetchMessages();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchMessages();
+    }, 20000); // 20s polling to save read units
 
-    return () => unsubscribe();
+    return () => clearInterval(interval);
   }, [activeChat]);
 
   if (loading) {

@@ -401,13 +401,17 @@ export function Search() {
                               )}
                             </h3>
                             <p className="text-zinc-500 text-[10px] mb-1">
-                              By <Link 
-                                to={`/profile/${char.creatorId}`} 
-                                className="hover:text-indigo-400 transition-colors"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {char.creatorName || 'Unknown'}
-                              </Link>
+                              By {char.creatorId ? (
+                                <Link 
+                                  to={`/profile/${char.creatorId}`} 
+                                  className="hover:text-indigo-400 transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}
+                                </Link>
+                              ) : (
+                                typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')
+                              )}
                             </p>
                             <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
                           </div>

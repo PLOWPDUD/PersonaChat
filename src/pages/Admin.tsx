@@ -597,7 +597,7 @@ export function Admin() {
                   )}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-white font-bold text-lg truncate group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{char.name}</h3>
-                    <p className="text-zinc-500 text-sm truncate">by {char.creatorName || 'Unknown'}</p>
+                    <p className="text-zinc-500 text-sm truncate">by {typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}</p>
                     <div className="flex gap-2 mt-1">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                         char.visibility === 'public' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :

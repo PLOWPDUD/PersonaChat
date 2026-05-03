@@ -570,7 +570,7 @@ export function Chat() {
     for (let i = 0; i < currentMessages.length; i++) {
       const msg = currentMessages[i];
       const newMessage = {
-        id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+        id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2)}`,
         chatId,
         role: 'model' as const,
         characterId: msg.charId || characters[0].id,
@@ -602,6 +602,20 @@ export function Chat() {
     const updatedLocalMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
     updatedLocalMessages.push(...newMessages);
     localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMessages));
+    
+    // Update state immediately to prevent flicker
+    setMessages(prev => {
+      const merged = [...prev];
+      newMessages.forEach(nm => {
+        if (!merged.some(m => m.id === nm.id)) {
+          merged.push({
+            ...nm,
+            createdAt: { toDate: () => new Date(nm.createdAt) }
+          } as any);
+        }
+      });
+      return merged;
+    });
   };
 
   const confirmDeleteChat = async () => {
@@ -696,12 +710,19 @@ export function Chat() {
     const isUserMessage = originalMessage.role === 'user';
 
     try {
-      // 1. Update the message itself
-      const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-      await setDoc(messageRef, {
-        content: newContent.trim(),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      if (isLocalMode || chatId.startsWith('local_chat_')) {
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() } : m);
+        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+        setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
+      } else {
+        // 1. Update the message itself
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+        await setDoc(messageRef, {
+          content: newContent.trim(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
       
       setEditingMessageId(null);
 
@@ -711,12 +732,19 @@ export function Chat() {
         
         // Delete subsequent messages to "rewind" the conversation
         const subsequentMessages = messages.slice(messageIndex + 1);
-        for (const msg of subsequentMessages) {
-          try {
-            await deleteDoc(doc(dbChat, `chats/${chatId}/messages`, msg.id));
-          } catch (e) {
-            console.error('Error deleting subsequent message:', e);
-          }
+        if (isLocalMode || chatId.startsWith('local_chat_')) {
+            const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+            const updatedLocalMsgs = localMsgs.filter((m: any) => !subsequentMessages.some(sm => sm.id === m.id));
+            localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMsgs));
+            setMessages(prev => prev.filter(m => !subsequentMessages.some(sm => sm.id === m.id)));
+        } else {
+            for (const msg of subsequentMessages) {
+              try {
+                await deleteDoc(doc(dbChat, `chats/${chatId}/messages`, msg.id));
+              } catch (e) {
+                console.error('Error deleting subsequent message:', e);
+              }
+            }
         }
 
         // Generate new AI response based on updated history
@@ -838,11 +866,18 @@ export function Chat() {
           setStreamingText(fullAiResponse);
         }
 
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        await setDoc(messageRef, {
-          content: fullAiResponse,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+        if (isLocalMode || chatId.startsWith('local_chat_')) {
+          const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+          const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: new Date().toISOString() } : m);
+          localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+          setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
+        } else {
+          const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+          await setDoc(messageRef, {
+            content: fullAiResponse,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
       } else {
         prompt = "(Continue the conversation)";
         finalHistory = historyUntilThis.map(m => ({
@@ -871,11 +906,18 @@ export function Chat() {
           setStreamingText(fullAiResponse);
         }
 
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        await setDoc(messageRef, {
-          content: fullAiResponse,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+        if (isLocalMode || chatId.startsWith('local_chat_')) {
+          const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+          const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: new Date().toISOString() } : m);
+          localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+          setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
+        } else {
+          const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+          await setDoc(messageRef, {
+            content: fullAiResponse,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
       }
 
     } catch (error: any) {
@@ -895,8 +937,15 @@ export function Chat() {
     if (!chatId) return;
     
     try {
-      const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-      await deleteDoc(messageRef);
+      if (isLocalMode || chatId.startsWith('local_chat_')) {
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        const updatedMsgs = localMsgs.filter((m: any) => m.id !== messageId);
+        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+        setMessages(prev => prev.filter(m => m.id !== messageId));
+      } else {
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+        await deleteDoc(messageRef);
+      }
       setMessageToDelete(null);
     } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/messages/${messageId}`);
@@ -1082,11 +1131,25 @@ export function Chat() {
 
     setIsAddingMemory(true);
     try {
-      await addDoc(collection(dbChat, `chats/${chatId}/memories`), {
+      const memoryObj = {
         chatId,
         content: newMemory.trim(),
-        createdAt: serverTimestamp()
-      });
+        createdAt: new Date().toISOString()
+      };
+      
+      if (isLocalMode || chatId.startsWith('local_chat_')) {
+        const localMemories = JSON.parse(localStorage.getItem(`memories_${chatId}`) || '[]');
+        const newLocalMemory = { id: Date.now().toString(), ...memoryObj };
+        localMemories.push(newLocalMemory);
+        localStorage.setItem(`memories_${chatId}`, JSON.stringify(localMemories));
+        setMemories(prev => [...prev, newLocalMemory as any]);
+      } else {
+        await addDoc(collection(dbChat, `chats/${chatId}/memories`), {
+          chatId,
+          content: newMemory.trim(),
+          createdAt: serverTimestamp()
+        });
+      }
       setNewMemory('');
     } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, `chats/${chatId}/memories`);
@@ -1099,7 +1162,14 @@ export function Chat() {
   const handleDeleteMemory = async (memoryId: string) => {
     if (!chatId) return;
     try {
-      await deleteDoc(doc(dbChat, `chats/${chatId}/memories`, memoryId));
+      if (isLocalMode || chatId.startsWith('local_chat_')) {
+        const localMemories = JSON.parse(localStorage.getItem(`memories_${chatId}`) || '[]');
+        const updatedMemories = localMemories.filter((m: any) => m.id !== memoryId);
+        localStorage.setItem(`memories_${chatId}`, JSON.stringify(updatedMemories));
+        setMemories(prev => prev.filter(m => m.id !== memoryId));
+      } else {
+        await deleteDoc(doc(dbChat, `chats/${chatId}/memories`, memoryId));
+      }
     } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/memories/${memoryId}`);
       setNotification({ message: `Failed to delete memory: ${error.message || 'Unknown error'}`, type: 'error' });
@@ -1374,29 +1444,51 @@ export function Chat() {
         setChatId(currentChatId);
 
         // 4. Fetch memories (one-time)
-        const memoriesRef = collection(dbChat, `chats/${currentChatId}/memories`);
-        const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
-        const memSnapshot = await getDocs(memQ);
         const mems: Memory[] = [];
-        memSnapshot.forEach((doc) => {
-          mems.push({ id: doc.id, ...doc.data() } as Memory);
-        });
+        if (isLocalMode || currentChatId.startsWith('local_chat_')) {
+           const localMemories = JSON.parse(localStorage.getItem(`memories_${currentChatId}`) || '[]');
+           mems.push(...localMemories);
+        } else {
+          try {
+            const memoriesRef = collection(dbChat, `chats/${currentChatId}/memories`);
+            const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
+            const memSnapshot = await getDocs(memQ);
+            memSnapshot.forEach((doc) => {
+              mems.push({ id: doc.id, ...doc.data() } as Memory);
+            });
+          } catch (e: any) {
+            console.error("Error fetching memories:", e);
+          }
+        }
         setMemories(mems);
 
         // 5. Fetch chat history (one-time)
-        const chatsRef = collection(dbChat, 'chats');
-        const hq = query(
-          chatsRef, 
-          where('userId', '==', user.uid), 
-          where('characterIds', 'array-contains', characterId),
-          orderBy('updatedAt', 'desc'),
-          limit(20)
-        );
-        const historySnapshot = await getDocs(hq);
-        const history = historySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const history: any[] = [];
+        if (isLocalMode || currentChatId.startsWith('local_chat_')) {
+          const localChatsString = localStorage.getItem(`local_chats_${user.uid}`);
+          if (localChatsString) {
+             const localChats = JSON.parse(localChatsString);
+             history.push(...localChats.filter((c: any) => c.characterIds?.includes(characterId) || c.characterId === characterId));
+          }
+        } else {
+          try {
+            const chatsRef = collection(dbChat, 'chats');
+            const hq = query(
+              chatsRef, 
+              where('userId', '==', user.uid), 
+              where('characterIds', 'array-contains', characterId),
+              orderBy('updatedAt', 'desc'),
+              limit(20)
+            );
+            const historySnapshot = await getDocs(hq);
+            history.push(...historySnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })));
+          } catch (e: any) {
+            console.error("Error fetching history:", e);
+          }
+        }
         setChatHistory(history);
 
       } catch (error: any) {
@@ -1542,7 +1634,7 @@ export function Chat() {
     // 1. Save user message to localStorage
     const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
     const newUserMessage = {
-      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+      id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2)}`,
       chatId,
       role: 'user',
       content: userMessage,
@@ -1949,7 +2041,7 @@ export function Chat() {
                 )}
               </h2>
               <p className="text-[10px] sm:text-xs text-zinc-400">
-                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `${t('common.by')} ${typeof characters[0]?.creatorName === 'object' ? (characters[0].creatorName as any).displayName : (characters[0]?.creatorName || 'Unknown')}`}
+                {characters.length > 1 ? `${characters.length} characters • Click to manage` : `${t('common.by')} ${typeof characters[0]?.creatorName === 'object' && characters[0]?.creatorName !== null ? (characters[0].creatorName as any).displayName : (characters[0]?.creatorName || 'Unknown')}`}
               </p>
             </div>
           </div>
@@ -2696,7 +2788,7 @@ export function Chat() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-bold text-white">{char.name}</p>
-                      <p className="text-xs text-zinc-500 truncate">By {typeof char.creatorName === 'object' ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}</p>
+                      <p className="text-xs text-zinc-500 truncate">By {typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button

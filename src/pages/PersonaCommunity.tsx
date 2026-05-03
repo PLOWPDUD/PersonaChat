@@ -654,36 +654,35 @@ export default function PersonaCommunity() {
     }
   };
 
-  const fetchComments = (postId: string) => {
+  const fetchComments = async (postId: string) => {
     setActiveCommentsPostId(postId);
-    const q = query(
-      collection(db, `community_posts/${postId}/comments`),
-      orderBy('createdAt', 'asc'),
-      limit(20)
-    );
+    try {
+      const q = query(
+        collection(db, `community_posts/${postId}/comments`),
+        orderBy('createdAt', 'asc'),
+        limit(20)
+      );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const snapshot = await getDocs(q);
       const newComments = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as Comment));
       setComments(newComments);
-    });
-
-    return unsubscribe;
+    } catch (e) {
+      console.error("Error fetching comments:", e);
+    }
+    
+    // Return empty cleanup fn for useEffect compatibility
+    return () => {};
   };
 
-  // Handle comment subscription cleanup
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
     if (activeCommentsPostId) {
-      unsubscribe = fetchComments(activeCommentsPostId);
+      fetchComments(activeCommentsPostId);
     } else {
       setComments([]);
     }
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
   }, [activeCommentsPostId]);
 
   const handleAddComment = async () => {
@@ -718,6 +717,23 @@ export default function PersonaCommunity() {
       await updateDoc(doc(db, 'community_posts', activeCommentsPostId), {
         commentsCount: increment(1)
       });
+      
+      const newLocalComment: Comment = {
+        id: `local_${Date.now()}`,
+        postId: activeCommentsPostId,
+        authorId: user.uid,
+        authorName: profile.displayName,
+        authorPhoto: profile.photoURL || '',
+        authorBadges: profile.badges || [],
+        content: commentData.content,
+        imageUrls: imageUrls.length > 0 ? imageUrls : null,
+        createdAt: new Date().toISOString(),
+        likes: [],
+        dislikes: [],
+        parentId: replyingTo?.id
+      } as Comment;
+      
+      setComments(prev => [...prev, newLocalComment]);
 
       setNewComment('');
       setCommentImage(null);
@@ -941,7 +957,12 @@ export default function PersonaCommunity() {
         updatedAt: serverTimestamp()
       });
 
-      // Local state update is handled by onSnapshot listener for comments
+      setComments(prev => prev.map(c => c.id === editingCommentId ? {
+        ...c, 
+        content: editContent.trim(),
+        imageUrls: finalImageUrls.length > 0 ? finalImageUrls : null
+      } : c));
+
       setEditingCommentId(null);
       playSound('success');
     } catch (error) {
