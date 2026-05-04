@@ -13,6 +13,7 @@ interface Notification {
   read: boolean;
   createdAt: any;
   userId?: string;
+  isGlobal?: boolean;
 }
 
 interface NotificationContextType {
@@ -39,7 +40,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { user, setQuotaExceeded } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const isFirstLoad = React.useRef(true);
+  const notificationsRef = React.useRef<Notification[]>([]);
+  
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   useEffect(() => {
     if (!user) {
@@ -67,7 +72,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
         // Background Check for system notifications (only if we have new unread ones)
         if (isBackground) {
-           const prevUnreadIds = new Set(notifications.filter(n => !n.read).map(n => n.id));
+           const prevUnreadIds = new Set(notificationsRef.current.filter(n => !n.read).map(n => n.id));
            userNotifs.forEach(n => {
              if (!n.read && !prevUnreadIds.has(n.id)) {
                showSystemNotification(n.title, {
@@ -83,16 +88,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const gq = query(
           collection(db, 'global_notifications'),
           orderBy('createdAt', 'desc'),
-          limit(5)
+          limit(10)
         );
         const gSnap = await getDocs(gq);
         const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-        const globalNotifs = gSnap.docs.map(doc => ({
-          id: doc.id,
-          type: 'global',
-          ...doc.data(),
-          read: seenGlobal.includes(doc.id)
-        } as Notification));
+        const deletedGlobal = JSON.parse(localStorage.getItem('deleted_global_notifs') || '[]');
+
+        const globalNotifs = gSnap.docs
+          .filter(doc => !deletedGlobal.includes(doc.id))
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            isGlobal: true,
+            read: seenGlobal.includes(doc.id)
+          } as Notification));
 
         const merged = [...userNotifs, ...globalNotifs].sort((a, b) => {
           const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
@@ -131,7 +140,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Optimistic update
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
 
-    if (notif.type === 'global') {
+    if (notif.isGlobal) {
       const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
       if (!seenGlobal.includes(id)) {
         seenGlobal.push(id);
@@ -157,34 +166,53 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Optimistic update
     setNotifications(prev => prev.map(n => unreadIds.includes(n.id) ? { ...n, read: true } : n));
 
-    for (const notif of unread) {
-      if (notif.type === 'global') {
-        const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
-        if (!seenGlobal.includes(notif.id)) {
-          seenGlobal.push(notif.id);
-          localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
+    const globalUnread = unread.filter(n => n.isGlobal);
+    if (globalUnread.length > 0) {
+      const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
+      let mutated = false;
+      globalUnread.forEach(n => {
+        if (!seenGlobal.includes(n.id)) {
+          seenGlobal.push(n.id);
+          mutated = true;
         }
-      } else {
-        try {
-          await updateDoc(doc(db, 'notifications', notif.id), {
-            read: true,
-            updatedAt: serverTimestamp()
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `notifications/${notif.id}`);
-        }
+      });
+      if (mutated) {
+        localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
+      }
+    }
+
+    const userUnread = unread.filter(n => !n.isGlobal);
+    for (const notif of userUnread) {
+      try {
+        await updateDoc(doc(db, 'notifications', notif.id), {
+          read: true,
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.warn("Failed to mark user notification as read:", err);
       }
     }
   };
 
   const deleteNotification = async (id: string) => {
     const notif = notifications.find(n => n.id === id);
-    if (!notif || notif.type === 'global') return;
+    if (!notif) return;
 
-    try {
-      await deleteDoc(doc(db, 'notifications', id));
-    } catch (err) {
-      console.error('Error deleting notification:', err);
+    // Optimistic remove
+    setNotifications(prev => prev.filter(n => n.id !== id));
+
+    if (notif.isGlobal) {
+      const deletedGlobal = JSON.parse(localStorage.getItem('deleted_global_notifs') || '[]');
+      if (!deletedGlobal.includes(id)) {
+        deletedGlobal.push(id);
+        localStorage.setItem('deleted_global_notifs', JSON.stringify(deletedGlobal));
+      }
+    } else {
+      try {
+        await deleteDoc(doc(db, 'notifications', id));
+      } catch (err) {
+        console.error('Error deleting notification:', err);
+      }
     }
   };
 

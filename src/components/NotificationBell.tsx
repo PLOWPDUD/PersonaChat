@@ -21,7 +21,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 
 export function NotificationBell() {
   const { t, i18n } = useTranslation();
-  const { notifications, unreadCount, loading, markAsRead } = useNotifications();
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -126,9 +126,7 @@ export function NotificationBell() {
             {notifications.length > 0 && (
               <div className="p-3 bg-zinc-900/50 border-t border-zinc-800 text-center">
                 <button 
-                  onClick={() => {
-                    notifications.forEach(n => markAsRead(n.id));
-                  }}
+                  onClick={() => markAllAsRead()}
                   className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                 >
                   {t('notifications.markAllRead')}

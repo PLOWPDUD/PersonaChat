@@ -50,7 +50,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (request.auth.token.email.lower() == "videosonli5@gmail.com" && request.auth.token.email_verified == true || 
+        (('email' in request.auth.token && request.auth.token.email.lower() == "videosonli5@gmail.com" && request.auth.token.email_verified == true) || 
          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
           (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner" ||
            get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "admin")));
@@ -178,14 +178,15 @@ service cloud.firestore {
 
     match /siteStats/{docId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'updatedAt']);
-      allow create: if isAuthenticated(); // Allow users to notify others (e.g., on like/follow)
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && 
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'updatedAt']) || isAdmin());
+      allow create: if isAuthenticated(); 
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /global_notifications/{notificationId} {

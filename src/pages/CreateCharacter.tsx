@@ -270,13 +270,20 @@ export function CreateCharacter() {
           // If owner creates a public character, notify everyone
           if (user.email === 'videosonli5@gmail.com' && formData.visibility === 'public') {
             try {
-              await addDoc(collection(db, 'global_notifications'), {
+              const docRef = await addDoc(collection(db, 'global_notifications'), {
                 type: 'new_character',
                 title: 'New Character from Owner!',
                 message: `${creatorName} has just released a new character: ${formData.name}`,
-                characterId: docRef.id,
+                characterId: finalCharId,
                 createdAt: serverTimestamp()
               });
+
+              // Mark as seen for the owner locally
+              const seenGlobal = JSON.parse(localStorage.getItem('seen_global_notifs') || '[]');
+              if (!seenGlobal.includes(docRef.id)) {
+                seenGlobal.push(docRef.id);
+                localStorage.setItem('seen_global_notifs', JSON.stringify(seenGlobal));
+              }
             } catch (e) {
               console.error("Failed to create global notification:", e);
             }
