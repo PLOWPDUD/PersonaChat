@@ -81,20 +81,20 @@ export function Search() {
             where('visibility', '==', 'public'),
             where('name_lowercase', '>=', lowerQuery),
             where('name_lowercase', '<=', lowerQuery + '\uf8ff'),
-            limit(20)
+            limit(12) // Reduced from 20
           );
         } else if (selectedCategory) {
           q = query(
             charRef,
             where('visibility', '==', 'public'),
             where('category', '==', selectedCategory),
-            limit(20)
+            limit(12) // Reduced from 20
           );
         } else {
           q = query(
             charRef,
             where('visibility', '==', 'public'),
-            limit(20)
+            limit(12) // Reduced from 20
           );
         }
         
@@ -186,10 +186,10 @@ export function Search() {
             profilesRef,
             where('displayName_lowercase', '>=', lowerQuery),
             where('displayName_lowercase', '<=', lowerQuery + '\uf8ff'),
-            limit(20)
+            limit(12) // Reduced from 20
           );
         } else {
-          q = query(profilesRef, limit(20));
+          q = query(profilesRef, limit(12)); // Reduced from 20
         }
         
         const snap = await getDocs(q);

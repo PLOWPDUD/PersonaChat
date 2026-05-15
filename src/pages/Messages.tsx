@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { db, dbPrivate, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip } from 'lucide-react';
@@ -97,52 +97,45 @@ export default function Messages() {
       collection(dbPrivate, 'private_chats'),
       where('participants', 'array-contains', user.uid),
       orderBy('updatedAt', 'desc'),
-      limit(20)
+      limit(15) // Reduced from 30
     );
 
-    const fetchChats = async () => {
-      try {
-        const snapshot = await getDocs(q);
-        const chatList = snapshot.docs.map((chatDoc) => {
-          const data = chatDoc.data();
-          
-          let otherUser = null;
-          if (data.type !== 'group') {
-            const otherUserId = data.participants.find((id: string) => id !== user.uid);
-            if (otherUserId) {
-              const info = data.participantInfo?.[otherUserId];
-              otherUser = {
-                uid: otherUserId,
-                displayName: info?.displayName || t('common.user'),
-                photoURL: info?.photoURL || ''
-              };
-            }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const chatList = snapshot.docs.map((chatDoc) => {
+        const data = chatDoc.data();
+        
+        let otherUser = null;
+        if (data.type !== 'group') {
+          const otherUserId = data.participants.find((id: string) => id !== user.uid);
+          if (otherUserId) {
+            const info = data.participantInfo?.[otherUserId];
+            otherUser = {
+              uid: otherUserId,
+              displayName: info?.displayName || t('common.user'),
+              photoURL: info?.photoURL || ''
+            };
           }
+        }
 
-          return {
-            id: chatDoc.id,
-            ...data,
-            otherUser,
-            name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
-          } as Chat;
-        });
-        setChats(chatList);
-      } catch (error) {
-        console.error('Error fetching chats:', error);
-      } finally {
-        setLoading(false);
+        return {
+          id: chatDoc.id,
+          ...data,
+          otherUser,
+          name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
+        } as Chat;
+      });
+      setChats(chatList);
+      setLoading(false);
+    }, (error) => {
+      if (isQuotaError(error)) {
+        console.warn("Private chats sync hit quota.");
+      } else {
+        console.error("Error syncing private chats:", error);
       }
-    };
+      setLoading(false);
+    });
 
-    fetchChats();
-    // Refresh every 30 seconds if tab is visible
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchChats();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
@@ -649,37 +642,32 @@ export default function Messages() {
   useEffect(() => {
     if (!activeChat) return;
 
-    setLoadingMessages(true);
-    const fetchMessages = async () => {
-      try {
-        const q = query(
-          collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
-          orderBy('createdAt', 'desc'),
-          limit(30)
-        );
-        const snapshot = await getDocs(q);
-        const messageList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })).reverse() as Message[];
-        
-        // Auto-scroll if it's the first time
-        const initialLoad = messages.length === 0 && messageList.length > 0;
-        setMessages(messageList);
-        setLoadingMessages(false);
-        if (initialLoad) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      } catch (e) {
-        console.error("Error fetching private chat messages", e);
-        setLoadingMessages(false);
+    const q = query(
+      collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
+      orderBy('createdAt', 'desc'),
+      limit(20) // Further reduced to save quota
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const messageList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).reverse() as Message[];
+      
+      const initialLoad = messages.length === 0 && messageList.length > 0;
+      setMessages(messageList);
+      setLoadingMessages(false);
+      if (initialLoad) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }, (error) => {
+      if (isQuotaError(error)) {
+        console.warn("Messages sync hit quota.");
+      } else {
+        console.error("Error syncing private messages:", error);
       }
-    };
+      setLoadingMessages(false);
+    });
 
-    fetchMessages();
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchMessages();
-    }, 20000); // 20s polling to save read units
-
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, [activeChat]);
 
   if (loading) {

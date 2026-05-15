@@ -50,7 +50,8 @@ import {
   Zap,
   Edit2,
   Save,
-  RefreshCw
+  RefreshCw,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -238,7 +239,7 @@ export default function PersonaCommunity() {
         const q = query(
           collection(db, 'community_posts'),
           orderBy('createdAt', 'desc'),
-          limit(20)
+          limit(12)
         );
 
         const snapshot = await getDocs(q);
@@ -250,7 +251,7 @@ export default function PersonaCommunity() {
         setPosts(newPosts);
         updateGlobalCache('community_posts', newPosts);
         setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-        setHasMore(snapshot.docs.length === 20);
+        setHasMore(snapshot.docs.length === 12);
       } catch (error: any) {
         if (isQuotaError(error)) {
           setLocalQuotaExceeded(true);
@@ -271,7 +272,7 @@ export default function PersonaCommunity() {
       const q = query(
         collection(db, 'community_posts'),
         orderBy('createdAt', 'desc'),
-        limit(20)
+        limit(12)
       );
 
       const snapshot = await getDocs(q);
@@ -283,7 +284,7 @@ export default function PersonaCommunity() {
       setPosts(newPosts);
       updateGlobalCache('community_posts', newPosts);
       setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      setHasMore(snapshot.docs.length === 20);
+      setHasMore(snapshot.docs.length === 12);
       playSound('success');
     } catch (error: any) {
       if (isQuotaError(error)) setLocalQuotaExceeded(true);
@@ -304,7 +305,7 @@ export default function PersonaCommunity() {
         const q = query(
           collection(db, 'community_posts'),
           orderBy('likesCount', 'desc'),
-          limit(5)
+          limit(3)
         );
 
         const snapshot = await getDocs(q);
@@ -1633,14 +1634,23 @@ export default function PersonaCommunity() {
         ))}
 
         {hasMore && (
-          <button
-            onClick={fetchMorePosts}
-            disabled={isFetchingMore}
-            className="w-full py-4 text-zinc-500 hover:text-white text-sm font-bold transition-all flex items-center justify-center gap-2"
-          >
-            {isFetchingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : t('community.loadMore')}
-          </button>
-        )}
+           <div className="flex justify-center mt-8">
+             <button
+               onClick={fetchMorePosts}
+               disabled={isFetchingMore}
+               className="px-10 py-4 bg-zinc-900 border border-zinc-800 hover:border-indigo-600 text-white rounded-2xl font-bold transition-all shadow-xl hover:shadow-indigo-600/10 flex items-center gap-2 group disabled:opacity-50"
+             >
+               {isFetchingMore ? (
+                 <Loader2 className="w-5 h-5 animate-spin" />
+               ) : (
+                 <>
+                   {t('community.loadMore')}
+                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                 </>
+               )}
+             </button>
+           </div>
+         )}
 
         {!hasMore && posts.length > 0 && (
           <p className="text-center py-8 text-zinc-600 text-sm italic">{t('community.endOfFeed')}</p>

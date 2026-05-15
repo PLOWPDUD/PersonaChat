@@ -30,8 +30,8 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['uid', 'displayName', 'bio', 'photoURL', 'bannerURL', 'role', 'personas', 'isBanned', 'banReason', 'banExpiresAt', 'updatedAt', 'createdAt', 'badges', 'followersCount', 'followingCount', 'isCreator', 'themeColor', 'userPersona', 'xp', 'level', 'displayName_lowercase', 'hasSeenRules', 'isCounted', 'email', 'blockedUsers']) &&
              (!('displayName' in data) || isValidString(data.displayName, 2, 100)) &&
              (!('bio' in data) || data.bio == null || isValidString(data.bio, 0, 2000)) &&
-             (!('photoURL' in data) || isValidUrl(data.photoURL) || data.photoURL.matches("^data:image/.*")) &&
-             (!('bannerURL' in data) || isValidUrl(data.bannerURL) || data.bannerURL.matches("^data:image/.*")) &&
+             (!('photoURL' in data) || data.photoURL == "" || isValidUrl(data.photoURL) || data.photoURL.matches("^data:image/.*")) &&
+             (!('bannerURL' in data) || data.bannerURL == "" || isValidUrl(data.bannerURL) || data.bannerURL.matches("^data:image/.*")) &&
              (!('role' in data) || data.role in ['user', 'moderator', 'admin', 'owner']) &&
              (!('blockedUsers' in data) || data.blockedUsers is list);
     }
@@ -43,7 +43,7 @@ service cloud.firestore {
              (!('personality' in data) || isValidString(data.personality, 0, 5000)) &&
              (!('scenario' in data) || isValidString(data.scenario, 0, 5000)) &&
              (!('greeting' in data) || isValidString(data.greeting, 0, 2000)) &&
-             (!('avatarUrl' in data) || isValidUrl(data.avatarUrl) || data.avatarUrl.matches("^data:image/.*")) &&
+             (!('avatarUrl' in data) || data.avatarUrl == "" || isValidUrl(data.avatarUrl) || data.avatarUrl.matches("^data:image/.*")) &&
              data.visibility in ['public', 'private', 'unlisted'] &&
              data.creatorId == request.auth.uid;
     }
@@ -74,7 +74,7 @@ service cloud.firestore {
     }
 
     function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+      return fields.hasAll(request.resource.data.keys());
     }
 
     function isValidCommunityPost(data) {

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { collection, query, getDocs, doc, getDoc, orderBy, limit, startAfter } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, orderBy, limit, startAfter, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCachedProfile, setCachedProfiles } from '../lib/cache';
 import { Star, User, Loader2, ArrowLeft, MessageSquare, Bot, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -50,26 +51,40 @@ export function Reviews() {
         const q = query(reviewsRef, orderBy('createdAt', 'desc'), limit(pageSize));
         const snap = await getDocs(q);
         
-        const fetchedReviews = await Promise.all(snap.docs.map(async (reviewDoc) => {
-          const data = reviewDoc.data();
-          let userData = null;
-          try {
-            const userSnap = await getDoc(doc(db, 'profiles', data.userId));
-            if (userSnap.exists()) {
-              userData = userSnap.data();
-            }
-          } catch (e) {
-            console.error('Error fetching user profile for review:', e);
+        const reviewData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review));
+        const missingProfileIds = new Set<string>();
+        
+        reviewData.forEach(r => {
+          const cached = getCachedProfile(r.userId);
+          if (cached) {
+            r.user = cached;
+          } else {
+            missingProfileIds.add(r.userId);
+          }
+        });
+
+        if (missingProfileIds.size > 0) {
+          const idsArray = Array.from(missingProfileIds);
+          const profilesMap: Record<string, any> = {};
+          
+          for (let i = 0; i < idsArray.length; i += 30) {
+            const chunk = idsArray.slice(i, i + 30);
+            const profilesQ = query(collection(db, 'profiles'), where('__name__', 'in', chunk));
+            const profilesSnap = await getDocs(profilesQ);
+            profilesSnap.forEach(pDoc => {
+              profilesMap[pDoc.id] = pDoc.data();
+            });
           }
           
-          return {
-            id: reviewDoc.id,
-            ...data,
-            user: userData
-          } as Review;
-        }));
+          setCachedProfiles(profilesMap);
+          reviewData.forEach(r => {
+            if (!r.user && profilesMap[r.userId]) {
+              r.user = profilesMap[r.userId];
+            }
+          });
+        }
 
-        setReviews(fetchedReviews);
+        setReviews(reviewData);
         setLastVisible(snap.docs[snap.docs.length - 1]);
         setHasMore(snap.docs.length === pageSize);
       } catch (error) {
@@ -90,26 +105,40 @@ export function Reviews() {
       const q = query(reviewsRef, orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
       const snap = await getDocs(q);
       
-      const newReviews = await Promise.all(snap.docs.map(async (reviewDoc) => {
-        const data = reviewDoc.data();
-        let userData = null;
-        try {
-          const userSnap = await getDoc(doc(db, 'profiles', data.userId));
-          if (userSnap.exists()) {
-            userData = userSnap.data();
-          }
-        } catch (e) {
-          console.error('Error fetching user profile for review:', e);
+      const newReviewData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review));
+      const missingProfileIds = new Set<string>();
+      
+      newReviewData.forEach(r => {
+        const cached = getCachedProfile(r.userId);
+        if (cached) {
+          r.user = cached;
+        } else {
+          missingProfileIds.add(r.userId);
+        }
+      });
+
+      if (missingProfileIds.size > 0) {
+        const idsArray = Array.from(missingProfileIds);
+        const profilesMap: Record<string, any> = {};
+        
+        for (let i = 0; i < idsArray.length; i += 30) {
+          const chunk = idsArray.slice(i, i + 30);
+          const profilesQ = query(collection(db, 'profiles'), where('__name__', 'in', chunk));
+          const profilesSnap = await getDocs(profilesQ);
+          profilesSnap.forEach(pDoc => {
+            profilesMap[pDoc.id] = pDoc.data();
+          });
         }
         
-        return {
-          id: reviewDoc.id,
-          ...data,
-          user: userData
-        } as Review;
-      }));
+        setCachedProfiles(profilesMap);
+        newReviewData.forEach(r => {
+          if (!r.user && profilesMap[r.userId]) {
+            r.user = profilesMap[r.userId];
+          }
+        });
+      }
 
-      setReviews(prev => [...prev, ...newReviews]);
+      setReviews(prev => [...prev, ...newReviewData]);
       setLastVisible(snap.docs[snap.docs.length - 1]);
       setHasMore(snap.docs.length === pageSize);
     } catch (error) {

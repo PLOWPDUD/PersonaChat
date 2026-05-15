@@ -1,10 +1,70 @@
 // Global cache to reduce Firestore reads
-export const profileCache: Record<string, { data: any, timestamp: number }> = {};
+const loadProfileCache = () => {
+  try {
+    const stored = localStorage.getItem('profile_cache');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const now = Date.now();
+      // Clean up expired profiles
+      const cleaned: Record<string, { data: any, timestamp: number }> = {};
+      Object.entries(parsed).forEach(([uid, entry]: [string, any]) => {
+        if (now - entry.timestamp < 24 * 60 * 60 * 1000) { // Keep for 24 hours
+          cleaned[uid] = entry;
+        }
+      });
+      return cleaned;
+    }
+  } catch (e) {
+    console.error("Failed to load profile cache", e);
+  }
+  return {};
+};
+
+export const profileCache: Record<string, { data: any, timestamp: number }> = loadProfileCache();
+
+const saveProfileCache = () => {
+  try {
+    localStorage.setItem('profile_cache', JSON.stringify(profileCache));
+  } catch (e) {
+    console.error("Failed to save profile cache", e);
+  }
+};
+
 export let favoritesCache: { data: Set<string>, timestamp: number } | null = null;
 export let userLikesCache: { data: Set<string>, timestamp: number } | null = null;
 export let userSavesCache: { data: Set<string>, timestamp: number } | null = null;
 
 const CACHE_EXPIRY = 30 * 60 * 1000; // 30 minutes
+
+// Helper to save Set to localStorage
+const saveSetToLocal = (key: string, data: Set<string>, timestamp: number) => {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data: Array.from(data), timestamp }));
+  } catch (e) {
+    console.error(`Failed to save ${key} to local storage`, e);
+  }
+};
+
+// Helper to load Set from localStorage
+const loadSetFromLocal = (key: string) => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Date.now() - parsed.timestamp < CACHE_EXPIRY) {
+        return { data: new Set<string>(parsed.data), timestamp: parsed.timestamp };
+      }
+    }
+  } catch (e) {
+    console.error(`Failed to load ${key} from local storage`, e);
+  }
+  return null;
+};
+
+// Load initial caches
+favoritesCache = loadSetFromLocal('user_favorites_cache');
+userLikesCache = loadSetFromLocal('user_likes_cache');
+userSavesCache = loadSetFromLocal('user_saves_cache');
 
 // Load initial dataCache from localStorage if available
 const loadDataCache = () => {
@@ -55,6 +115,7 @@ export const getCachedProfile = (uid: string) => {
 
 export const setCachedProfile = (uid: string, profile: any) => {
   profileCache[uid] = { data: profile, timestamp: Date.now() };
+  saveProfileCache();
 };
 
 export const setCachedProfiles = (profiles: Record<string, any>) => {
@@ -71,7 +132,9 @@ export const getCachedFavorites = () => {
 };
 
 export const setCachedFavorites = (favorites: Set<string>) => {
-  favoritesCache = { data: favorites, timestamp: Date.now() };
+  const now = Date.now();
+  favoritesCache = { data: favorites, timestamp: now };
+  saveSetToLocal('user_favorites_cache', favorites, now);
 };
 
 export const clearFavoritesCache = () => {
@@ -106,7 +169,9 @@ export const getCachedUserLikes = () => {
 };
 
 export const setCachedUserLikes = (likes: Set<string>) => {
-  userLikesCache = { data: likes, timestamp: Date.now() };
+  const now = Date.now();
+  userLikesCache = { data: likes, timestamp: now };
+  saveSetToLocal('user_likes_cache', likes, now);
 };
 
 export const getCachedUserSaves = () => {
@@ -117,5 +182,7 @@ export const getCachedUserSaves = () => {
 };
 
 export const setCachedUserSaves = (saves: Set<string>) => {
-  userSavesCache = { data: saves, timestamp: Date.now() };
+  const now = Date.now();
+  userSavesCache = { data: saves, timestamp: now };
+  saveSetToLocal('user_saves_cache', saves, now);
 };

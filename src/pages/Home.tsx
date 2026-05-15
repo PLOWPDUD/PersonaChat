@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { addNotification } from '../lib/gamification';
 import { getCachedProfile, setCachedProfiles, getCachedFavorites, setCachedFavorites, getCachedData, updateGlobalCache } from '../lib/cache';
 import { getLocalCharacters } from '../lib/localStorage';
-import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert } from 'lucide-react';
+import { MessageCircle, User, Globe, Lock, Bot, Edit2, Star, Users, Plus, X, Check, Search, Loader2, Trash2, Heart, ShieldAlert, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { QuotaExceeded } from '../components/QuotaExceeded';
 import { Character, Chat } from '../types';
@@ -88,10 +88,15 @@ export function Home() {
     setIsReportModalOpen(true);
   };
 
-  const toggleFavorite = async (e: React.MouseEvent, charId: string) => {
+  const handleToggleFavorite = async (e: React.MouseEvent, charId: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (!user) return;
+
+    if (quotaExceeded) {
+       alert(t('common.quotaLimit'));
+       return;
+    }
 
     const isFavorite = favorites.has(charId);
     const newFavorites = new Set(favorites);
@@ -199,14 +204,14 @@ export function Home() {
         return;
       }
 
-      // Check localStorage for 'public' tab (10 min cache)
+      // Check localStorage for 'public' tab (2 hour cache)
       if (tab === 'public' && !isLoadMore) {
         const cached = localStorage.getItem('cached_public_characters');
         const lastFetch = localStorage.getItem('last_public_fetch');
         const now = Date.now();
-        const tenMinutes = 10 * 60 * 1000;
+        const twoHours = 2 * 60 * 60 * 1000;
 
-        if (cached && lastFetch && (now - parseInt(lastFetch)) < tenMinutes) {
+        if (cached && lastFetch && (now - parseInt(lastFetch)) < twoHours) {
           const parsed = JSON.parse(cached);
           setCharacters(parsed);
           setLoading(false);
@@ -250,7 +255,7 @@ export function Home() {
     try {
       if (tab === 'recent') {
         const chatsRef = collection(dbChat, 'chats');
-        const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(15));
+        const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(8)); // Reduced from 10
         const snapshot = await getDocs(q);
         
         const chats: any[] = [];
@@ -285,21 +290,21 @@ export function Home() {
         let q;
         
         if (tab === 'public') {
-          const pageSize = 15;
+          const pageSize = 10; // Further reduced from 12
           if (isLoadMore && lastVisible) {
             q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
           } else {
             q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), limit(pageSize));
           }
         } else {
-          q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'), limit(20));
+          q = query(charactersRef, where('creatorId', '==', user.uid), orderBy('createdAt', 'desc'), limit(8)); // Reduced from 10
         }
-
+        
         const snapshot = await getDocs(q);
         const lastDoc = snapshot.docs[snapshot.docs.length - 1];
         setLastVisible(lastDoc);
         if (tab === 'public') {
-          setHasMore(snapshot.docs.length === 15);
+          setHasMore(snapshot.docs.length === 12);
         } else {
           setHasMore(false);
         }
@@ -380,37 +385,48 @@ export function Home() {
     fetchData();
   }, [user, tab]);
 
-  const fetchRecentCharacters = async () => {
+    const fetchRecentCharacters = async () => {
     if (!user) return;
+    
+    // Check global data cache first (30 min cache)
+    const globalCached = getCachedData('recent_group_chars');
+    if (globalCached && globalCached.length > 0) {
+      setRecentCharacters(globalCached);
+      return;
+    }
+
     if (cachedRecentCharacters.length > 0) {
       setRecentCharacters(cachedRecentCharacters);
       return;
     }
+
     setIsFetchingRecent(true);
     try {
       const chatsRef = collection(dbChat, 'chats');
-      const q = query(chatsRef, where('userId', '==', user.uid), limit(20));
+      // Reduced limit from 15 to 8 for recent preview
+      const q = query(chatsRef, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'), limit(8));
       const snapshot = await getDocs(q);
       
       const charIds = new Set<string>();
       snapshot.docs.forEach(doc => {
         const data = doc.data();
         if (data.characterId) charIds.add(data.characterId);
-        if (data.characterIds) {
+        if (data.characterIds && Array.isArray(data.characterIds)) {
           data.characterIds.forEach((id: string) => charIds.add(id));
         }
       });
 
       if (charIds.size === 0) {
         setRecentCharacters([]);
+        setIsFetchingRecent(false);
         return;
       }
 
-      const charIdsArray = Array.from(charIds).slice(0, 30);
+      const charIdsArray = Array.from(charIds).slice(0, 10);
       
       const chars: Character[] = [];
-      for (let i = 0; i < charIdsArray.length; i += 30) {
-        const chunk = charIdsArray.slice(i, i + 30);
+      for (let i = 0; i < charIdsArray.length; i += 10) {
+        const chunk = charIdsArray.slice(i, i + 10);
         const charQ = query(collection(db, 'characters'), where('__name__', 'in', chunk));
         const charSnap = await getDocs(charQ);
         charSnap.forEach(doc => {
@@ -424,6 +440,7 @@ export function Home() {
       }
       setRecentCharacters(chars);
       setCachedRecentCharacters(chars);
+      updateGlobalCache('recent_group_chars', chars);
     } catch (error) {
       console.error('Error fetching recent characters:', error);
     } finally {
@@ -718,7 +735,7 @@ export function Home() {
           {characters.map((char) => (
             <div key={char.id} className="relative group">
               <button
-                  onClick={(e) => toggleFavorite(e, char.id)}
+                  onClick={(e) => handleToggleFavorite(e, char.id)}
                   className="absolute top-2 left-2 p-2 rounded-full bg-zinc-800/80 backdrop-blur-sm hover:bg-zinc-700 transition-colors z-10"
                 >
                   <Heart className={`w-4 h-4 ${favorites.has(char.id) ? 'fill-red-500 text-red-500' : 'text-zinc-400'}`} />
@@ -1032,15 +1049,15 @@ export function Home() {
           <button
             onClick={() => fetchData(true)}
             disabled={isFetchingMore}
-            className="px-8 py-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl font-medium border border-zinc-800 transition-all disabled:opacity-50 flex items-center gap-2"
+            className="px-10 py-4 bg-zinc-900 border border-zinc-800 hover:border-indigo-600 text-white rounded-2xl font-bold transition-all shadow-xl hover:shadow-indigo-600/10 flex items-center gap-2 group disabled:opacity-50"
           >
             {isFetchingMore ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                {t('common.loading')}
-              </>
+              <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              t('common.loadMore')
+              <>
+                {t('common.loadMore')}
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </>
             )}
           </button>
         </div>

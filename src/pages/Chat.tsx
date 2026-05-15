@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedProfile, setCachedProfiles } from '../lib/cache';
@@ -565,37 +565,42 @@ export function Chat() {
     }
 
     const newMessages: Message[] = [];
+    const batch = writeBatch(dbChat);
 
-    // Save each message sequentially to help with ordering
+    // Save messages in a batch for efficiency
     for (let i = 0; i < currentMessages.length; i++) {
-      const msg = currentMessages[i];
-      const newMessage = {
-        id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2)}`,
-        chatId,
-        role: 'model' as const,
-        characterId: msg.charId || characters[0].id,
-        content: msg.content,
-        createdAt: new Date().toISOString()
-      };
-      
-      newMessages.push(newMessage);
+        const msg = currentMessages[i];
+        const newMessage = {
+            id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2)}_${i}`,
+            chatId,
+            role: 'model' as const,
+            characterId: msg.charId || characters[0].id,
+            content: msg.content,
+            createdAt: new Date().toISOString(),
+            sequenceIndex: i // Added for strict ordering within the same second
+        };
 
-      try {
+        newMessages.push(newMessage);
+
         if (!isLocalMode && !chatId.startsWith('local_chat_')) {
-          await setDoc(doc(dbChat, `chats/${chatId}/messages`, newMessage.id), {
-            ...newMessage,
-            createdAt: serverTimestamp()
-          });
+            const msgRef = doc(dbChat, `chats/${chatId}/messages`, newMessage.id);
+            batch.set(msgRef, {
+                ...newMessage,
+                createdAt: serverTimestamp()
+            });
         }
-        // Small delay to ensure distinct timestamps
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } catch (e) {
-        if (isQuotaError(e)) {
-          setIsLocalMode(true);
-        } else {
-          handleFirestoreError(e, OperationType.CREATE, `chats/${chatId}/messages`);
+    }
+
+    if (!isLocalMode && !chatId.startsWith('local_chat_') && currentMessages.length > 0) {
+        try {
+            await batch.commit();
+        } catch (e) {
+            if (isQuotaError(e)) {
+                setIsLocalMode(true);
+            } else {
+                handleFirestoreError(e, OperationType.WRITE, `chats/${chatId}/messages`);
+            }
         }
-      }
     }
 
     // Update local storage
@@ -1264,19 +1269,20 @@ export function Chat() {
         }
 
         // Fetch missing creator names from profiles
-        const creatorIds = new Set<string>();
+        const missingCreatorIds = new Set<string>();
         fetchedChars.forEach(char => {
           const cachedProfile = char.creatorId ? getCachedProfile(char.creatorId) : null;
           if (cachedProfile && typeof cachedProfile === 'object') {
             char.creatorName = cachedProfile.displayName || 'Anonymous';
           } else if (!char.creatorName && char.creatorId) {
-            creatorIds.add(char.creatorId);
+            missingCreatorIds.add(char.creatorId);
           }
         });
 
-        if (creatorIds.size > 0) {
-          const creatorIdsArray = Array.from(creatorIds);
+        if (missingCreatorIds.size > 0) {
+          const creatorIdsArray = Array.from(missingCreatorIds);
           const profiles: Record<string, string> = {};
+          const fullProfilesMap: Record<string, any> = {};
           
           for (let i = 0; i < creatorIdsArray.length; i += 30) {
             const chunk = creatorIdsArray.slice(i, i + 30);
@@ -1285,11 +1291,12 @@ export function Chat() {
             profilesSnap.forEach(pDoc => {
               const pData = pDoc.data();
               profiles[pDoc.id] = pData.displayName || 'Anonymous';
+              fullProfilesMap[pDoc.id] = { id: pDoc.id, ...pData };
             });
           }
 
           // Update cache
-          setCachedProfiles(profiles);
+          setCachedProfiles(fullProfilesMap);
 
           fetchedChars.forEach(char => {
             if (!char.creatorName && char.creatorId && profiles[char.creatorId]) {
@@ -1362,22 +1369,30 @@ export function Chat() {
             }
             navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
           } else {
-            // Try to find the latest chat for this character (including group chats)
-            const chatsRef = collection(dbChat, 'chats');
-            const q = query(
-              chatsRef, 
-              where('userId', '==', user.uid), 
-              where('characterIds', 'array-contains', characterId),
-              orderBy('updatedAt', 'desc'),
-              limit(1)
-            );
+            // Check local cache for latest chat id for this character
+            const cacheKey = `latest_chat_${characterId}_${user.uid}`;
+            const cachedChatId = localStorage.getItem(cacheKey);
             
-            const chatDocs = await getDocs(q);
-            if (!chatDocs.empty) {
-              currentChatId = chatDocs.docs[0].id;
+            if (cachedChatId) {
+              currentChatId = cachedChatId;
               navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
             } else {
-              // Create new chat if none exists
+              const chatsRef = collection(dbChat, 'chats');
+              const q = query(
+                chatsRef, 
+                where('userId', '==', user.uid), 
+                where('characterIds', 'array-contains', characterId),
+                orderBy('updatedAt', 'desc'),
+                limit(1)
+              );
+              
+              const chatDocs = await getDocs(q);
+              if (!chatDocs.empty) {
+                currentChatId = chatDocs.docs[0].id;
+                localStorage.setItem(cacheKey, currentChatId);
+                navigate({ pathname: `/chat/${characterId}/${currentChatId}`, search: location.search }, { replace: true });
+              } else {
+                // Create new chat if none exists
               const newChatRef = doc(collection(dbChat, 'chats'));
               currentChatId = newChatRef.id;
               
@@ -1440,10 +1455,11 @@ export function Chat() {
             }
           }
         }
+      }
         
-        setChatId(currentChatId);
+      setChatId(currentChatId);
 
-        // 4. Fetch memories (one-time)
+        // 4. Fetch memories (one-time, limited)
         const mems: Memory[] = [];
         if (isLocalMode || currentChatId.startsWith('local_chat_')) {
            const localMemories = JSON.parse(localStorage.getItem(`memories_${currentChatId}`) || '[]');
@@ -1451,7 +1467,7 @@ export function Chat() {
         } else {
           try {
             const memoriesRef = collection(dbChat, `chats/${currentChatId}/memories`);
-            const memQ = query(memoriesRef, orderBy('createdAt', 'desc'));
+            const memQ = query(memoriesRef, orderBy('createdAt', 'desc'), limit(10));
             const memSnapshot = await getDocs(memQ);
             memSnapshot.forEach((doc) => {
               mems.push({ id: doc.id, ...doc.data() } as Memory);
@@ -1462,7 +1478,7 @@ export function Chat() {
         }
         setMemories(mems);
 
-        // 5. Fetch chat history (one-time)
+        // 5. Fetch chat history (limited)
         const history: any[] = [];
         if (isLocalMode || currentChatId.startsWith('local_chat_')) {
           const localChatsString = localStorage.getItem(`local_chats_${user.uid}`);
@@ -1478,7 +1494,7 @@ export function Chat() {
               where('userId', '==', user.uid), 
               where('characterIds', 'array-contains', characterId),
               orderBy('updatedAt', 'desc'),
-              limit(20)
+              limit(8) // Reduced from 20 for even more read savings
             );
             const historySnapshot = await getDocs(hq);
             history.push(...historySnapshot.docs.map(doc => ({
@@ -1486,7 +1502,7 @@ export function Chat() {
               ...doc.data()
             })));
           } catch (e: any) {
-            console.error("Error fetching history:", e);
+             console.error("Error fetching history:", e);
           }
         }
         setChatHistory(history);
@@ -1524,7 +1540,7 @@ export function Chat() {
     }
 
     const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(30));
+    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(15)); // Further reduced from 20 to 15
     
     const unsubscribe = onSnapshot(mq, (snapshot) => {
       const msgs: Message[] = [];
@@ -1617,6 +1633,42 @@ export function Chat() {
     } catch (error) {
       console.error('Error syncing to Firestore:', error);
       setNotification({ message: 'Failed to sync chat.', type: 'error' });
+    }
+  };
+
+  const incrementInteractions = async (characters: Character[]) => {
+    if (isLocalMode || characters.length === 0) return;
+    
+    // Throttling: Only increment every 15 mins per chat session for performance
+    const targetId = urlChatId || characterId || 'new';
+    const lastSessionUpdate = sessionStorage.getItem(`last_interaction_update_${targetId}`);
+    const now = Date.now();
+    const fifteenMins = 5 * 60 * 1000; // Reduced to 5 mins for better responsiveness as requested
+
+    if (lastSessionUpdate && (now - parseInt(lastSessionUpdate)) < fifteenMins) {
+      return;
+    }
+
+    try {
+      // Use batch for incrementing if multiple characters
+      const batch = writeBatch(db);
+      let hasUpdates = false;
+
+      for (const char of characters) {
+        if (char.id.startsWith('local_')) continue;
+        const charRef = doc(db, 'characters', char.id);
+        batch.update(charRef, {
+          interactionsCount: increment(1)
+        });
+        hasUpdates = true;
+      }
+      
+      if (hasUpdates) {
+        await batch.commit();
+        sessionStorage.setItem(`last_interaction_update_${targetId}`, now.toString());
+      }
+    } catch (error) {
+      console.warn("Failed to increment interactions:", error);
     }
   };
 
@@ -1757,28 +1809,11 @@ export function Chat() {
       if (fullAiResponse) {
         await saveSplitMessages(chatId, fullAiResponse, targetCharId);
         
-        // Firestore sync (only if not local mode)
-        if (!isLocalMode && !chatId.startsWith('local_chat_')) {
-          try {
-            // Update interactionsCount for all characters in the chat
-            for (const char of characters) {
-              const newCount = (char.interactionsCount || 0) + 1;
-              await updateDoc(doc(db, 'characters', char.id), {
-                interactionsCount: newCount
-              });
-              
-              // Trigger badge check for the creator if the character is public
-              if (char.visibility === 'public' && char.creatorId && newCount % 10 === 0) {
-                checkAndAwardBadges(char.creatorId);
-              }
-            }
-          } catch (e: any) {
-            if (isQuotaError(e)) {
-              console.warn("Quota exceeded during interaction count update, switching to local mode");
-              setIsLocalMode(true);
-            }
-          }
+        // Update local state but avoid excessive Firestore writes
+        for (const char of characters) {
+          char.interactionsCount = (char.interactionsCount || 0) + 1;
         }
+        incrementInteractions(characters);
       }
     } catch (error: any) {
       console.error('Error sending message:', error);

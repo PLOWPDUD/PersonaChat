@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, getDocs, where, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCachedData, updateGlobalCache } from '../lib/cache';
 import { Star, MessageSquare, Bot, Loader2, BarChart2, Users, ArrowRight, Layout } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -75,25 +76,35 @@ export function CreatorDashboard() {
         // 3. Fetch recent reviews across all characters
         // Note: Firestore doesn't support collectionGroup queries easily across subcollections without setup
         // For now, we fetch reviews for each character and merge, then sort (limited to top 5 characters for performance)
-        const reviewPromises = fetchedChars.slice(0, 5).map(async (char) => {
-           const reviewsRef = collection(db, `characters/${char.id}/ratings`);
-           const rSnap = await getDocs(query(reviewsRef, orderBy('createdAt', 'desc'), limit(5)));
-           return rSnap.docs.map(rdoc => ({
-              id: rdoc.id,
-              characterId: char.id,
-              characterName: char.name,
-              ...rdoc.data()
-           } as UniversalReview));
-        });
-
-        const reviewResults = await Promise.all(reviewPromises);
-        const flattened = reviewResults.flat().sort((a, b) => {
-           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date();
-           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date();
-           return dateB - dateA;
-        });
-
-        setRecentReviews(flattened.slice(0, 10));
+        
+        // Check cache first for reviews
+        const cachedReviews = getCachedData('creator_recent_reviews');
+        if (cachedReviews && cachedReviews.length > 0) {
+          setRecentReviews(cachedReviews);
+        } else {
+          const reviewPromises = fetchedChars.slice(0, 5).map(async (char) => {
+             const reviewsRef = collection(db, `characters/${char.id}/ratings`);
+             // Further reduced limit for dashboard preview to save reads
+             const rSnap = await getDocs(query(reviewsRef, orderBy('createdAt', 'desc'), limit(2)));
+             return rSnap.docs.map(rdoc => ({
+                id: rdoc.id,
+                characterId: char.id,
+                characterName: char.name,
+                ...rdoc.data()
+             } as UniversalReview));
+          });
+  
+          const reviewResults = await Promise.all(reviewPromises);
+          const flattened = reviewResults.flat().sort((a, b) => {
+             const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date();
+             const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date();
+             return dateB - dateA;
+          });
+          
+          const finalReviews = flattened.slice(0, 10);
+          setRecentReviews(finalReviews);
+          updateGlobalCache('creator_recent_reviews', finalReviews);
+        }
 
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, 'creator_dashboard');
