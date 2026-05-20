@@ -673,39 +673,66 @@ export function Chat() {
     if (!reactorId && !user) return;
     const targetUserId = reactorId || user!.uid;
     
-    const message = messages.find(m => m.id === messageId);
-    if (!message) return;
-
-    const currentReactions = message.reactions || {};
-    const users = currentReactions[emoji] || [];
+    let currentReactions: Record<string, string[]> = {};
     
-    let newUsers;
-    if (users.includes(targetUserId)) {
-      newUsers = users.filter((uid: string) => uid !== targetUserId);
+    if (isLocalMode || chatId.startsWith('local_chat_')) {
+      const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+      const message = localMsgs.find((m: any) => m.id === messageId);
+      if (!message) return;
+      currentReactions = message.reactions || {};
+      
+      const users = currentReactions[emoji] || [];
+      let newUsers;
+      if (users.includes(targetUserId)) {
+        newUsers = users.filter((uid: string) => uid !== targetUserId);
+      } else {
+        newUsers = [...users, targetUserId];
+      }
+      
+      const newReactions = { ...currentReactions };
+      if (newUsers.length === 0) {
+        delete newReactions[emoji];
+      } else {
+        newReactions[emoji] = newUsers;
+      }
+      
+      const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, reactions: newReactions } : m);
+      localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
+      setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
     } else {
-      newUsers = [...users, targetUserId];
-    }
-
-    const newReactions = { ...currentReactions };
-    if (newUsers.length === 0) {
-      delete newReactions[emoji];
-    } else {
-      newReactions[emoji] = newUsers;
+      try {
+        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
+        const docSnap = await getDoc(messageRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          currentReactions = data.reactions || {};
+          
+          const users = currentReactions[emoji] || [];
+          let newUsers;
+          if (users.includes(targetUserId)) {
+            newUsers = users.filter((uid: string) => uid !== targetUserId);
+          } else {
+            newUsers = [...users, targetUserId];
+          }
+          
+          const newReactions = { ...currentReactions };
+          if (newUsers.length === 0) {
+            delete newReactions[emoji];
+          } else {
+            newReactions[emoji] = newUsers;
+          }
+          
+          await updateDoc(messageRef, { reactions: newReactions });
+        }
+      } catch (error) {
+        console.error('Error toggling reaction in Firestore:', error);
+      }
     }
 
     try {
-      if (isLocalMode || chatId.startsWith('local_chat_')) {
-        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-        const updatedMsgs = localMsgs.map((m: any) => m.id === messageId ? { ...m, reactions: newReactions } : m);
-        localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
-        setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
-      } else {
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        await updateDoc(messageRef, { reactions: newReactions });
-      }
       playSound('click');
     } catch (error) {
-      console.error('Error toggling reaction:', error);
+      console.error('Error playing sound:', error);
     }
   };
 
