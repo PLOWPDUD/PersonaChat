@@ -21,12 +21,18 @@ export function Stats() {
     const statsRef = doc(db, 'siteStats', 'global');
     
     const fetchStats = async () => {
+      // Load cached stats first to avoid zero state
+      const cached = localStorage.getItem('cached_site_stats');
+      if (cached) {
+        setStats(JSON.parse(cached));
+      }
+
       try {
         const docSnap = await getDoc(statsRef);
         if (docSnap.exists()) {
-          setStats(docSnap.data() as { visitorCount: number; userCount: number });
-        } else {
-          setStats({ visitorCount: 0, userCount: 0 });
+          const newStats = docSnap.data() as { visitorCount: number; userCount: number };
+          setStats(newStats);
+          localStorage.setItem('cached_site_stats', JSON.stringify(newStats));
         }
         setError(null);
       } catch (error: any) {

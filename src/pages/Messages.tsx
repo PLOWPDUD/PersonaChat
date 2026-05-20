@@ -97,7 +97,7 @@ export default function Messages() {
       collection(dbPrivate, 'private_chats'),
       where('participants', 'array-contains', user.uid),
       orderBy('updatedAt', 'desc'),
-      limit(15) // Reduced from 30
+      limit(8) // Reduced further to 8
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -645,7 +645,7 @@ export default function Messages() {
     const q = query(
       collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
       orderBy('createdAt', 'desc'),
-      limit(20) // Further reduced to save quota
+      limit(10) // Further reduced to save quota
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {

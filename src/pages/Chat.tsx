@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { getCachedProfile, setCachedProfiles } from '../lib/cache';
+import { getCachedProfile, setCachedProfiles, incrementCachedCharacterInteraction } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
 import { generateCharacterResponse, generateCharacterResponseStream } from '../lib/gemini';
 import { checkAndAwardBadges } from '../services/badgeService';
@@ -1540,7 +1540,7 @@ export function Chat() {
     }
 
     const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(15)); // Further reduced from 20 to 15
+    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(10)); // Further reduced
     
     const unsubscribe = onSnapshot(mq, (snapshot) => {
       const msgs: Message[] = [];
@@ -1637,7 +1637,17 @@ export function Chat() {
   };
 
   const incrementInteractions = async (characters: Character[]) => {
-    if (isLocalMode || characters.length === 0) return;
+    if (characters.length === 0) return;
+
+    // ALWAY update local global cache so stats visibly update for users
+    for (const char of characters) {
+      if (!char.id.startsWith('local_')) {
+        incrementCachedCharacterInteraction(char.id);
+      }
+    }
+    
+    // Stop here if we're in local mode (quota exceeded)
+    if (isLocalMode) return;
     
     // Throttling: Only increment every 15 mins per chat session for performance
     const targetId = urlChatId || characterId || 'new';

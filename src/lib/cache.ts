@@ -154,6 +154,35 @@ export const updateGlobalCache = (key: string, data: any[]) => {
   saveDataCache();
 };
 
+export const incrementCachedCharacterInteraction = (characterId: string) => {
+  // Update characters in global data cache
+  Object.keys(dataCache).forEach(key => {
+    if (dataCache[key] && dataCache[key].data) {
+      const charArray = dataCache[key].data;
+      const index = charArray.findIndex((c: any) => c.id === characterId);
+      if (index !== -1) {
+        charArray[index].interactionsCount = (charArray[index].interactionsCount || 0) + 1;
+      }
+    }
+  });
+  saveDataCache();
+  
+  // also update the standalone cached_public_characters item if it exists
+  try {
+    const cachedPublic = localStorage.getItem('cached_public_characters');
+    if (cachedPublic) {
+      const parsed = JSON.parse(cachedPublic);
+      const index = parsed.findIndex((c: any) => c.id === characterId);
+      if (index !== -1) {
+        parsed[index].interactionsCount = (parsed[index].interactionsCount || 0) + 1;
+        localStorage.setItem('cached_public_characters', JSON.stringify(parsed));
+      }
+    }
+  } catch (e) {
+    // ignore parsing errors
+  }
+};
+
 export const clearDataCache = () => {
   Object.keys(dataCache).forEach(key => {
     dataCache[key] = { data: [], timestamp: 0 };

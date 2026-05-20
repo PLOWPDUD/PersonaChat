@@ -227,9 +227,9 @@ export default function PersonaCommunity() {
       if (cached && cached.length > 0) {
         setPosts(cached);
         setLoading(false);
-        // If cache is fresh (< 5 mins), don't even poll
+        // If cache is fresh (< 30 mins), don't even poll to save reads
         const cacheEntry = (dataCache as any)['community_posts'];
-        if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
+        if (cacheEntry && Date.now() - cacheEntry.timestamp < 30 * 60 * 1000) {
           return;
         }
       }
@@ -299,6 +299,10 @@ export default function PersonaCommunity() {
       const cachedTrending = getCachedData('trending_posts');
       if (cachedTrending && cachedTrending.length > 0) {
         setTrendingPosts(cachedTrending);
+        const cacheEntry = (dataCache as any)['trending_posts'];
+        if (cacheEntry && Date.now() - cacheEntry.timestamp < 30 * 60 * 1000) {
+          return;
+        }
       }
 
       try {

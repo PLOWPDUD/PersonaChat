@@ -62,7 +62,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           collection(db, 'notifications'),
           where('userId', '==', user.uid),
           orderBy('createdAt', 'desc'),
-          limit(15) // Reduced from 30
+          limit(8) // Reduced further
         );
         const snapshot = await getDocs(q);
         const userNotifs = snapshot.docs.map(doc => ({
