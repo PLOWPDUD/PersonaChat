@@ -666,8 +666,12 @@ export function Chat() {
     setChatToDelete(targetChatId);
   };
 
-  const handleToggleReaction = async (messageId: string, emoji: string) => {
-    if (!chatId || !user) return;
+  const handleToggleReaction = async (messageId: string, emoji: string, reactorId?: string) => {
+    if (!chatId) return;
+    
+    // We only require user context if we're reacting as the user
+    if (!reactorId && !user) return;
+    const targetUserId = reactorId || user!.uid;
     
     const message = messages.find(m => m.id === messageId);
     if (!message) return;
@@ -676,10 +680,10 @@ export function Chat() {
     const users = currentReactions[emoji] || [];
     
     let newUsers;
-    if (users.includes(user.uid)) {
-      newUsers = users.filter(uid => uid !== user.uid);
+    if (users.includes(targetUserId)) {
+      newUsers = users.filter((uid: string) => uid !== targetUserId);
     } else {
-      newUsers = [...users, user.uid];
+      newUsers = [...users, targetUserId];
     }
 
     const newReactions = { ...currentReactions };
@@ -703,6 +707,59 @@ export function Chat() {
     } catch (error) {
       console.error('Error toggling reaction:', error);
     }
+  };
+
+  const processAIStream = async (
+    stream: AsyncGenerator<string, void, unknown>,
+    initialTargetCharId: string | null,
+    targetUserMessageId?: string
+  ) => {
+    let fullAiResponse = '';
+    let reactedEmoji: string | null = null;
+    let detectedCharId: string | null = initialTargetCharId;
+
+    for await (const chunk of stream) {
+      fullAiResponse += chunk;
+      
+      let displayText = fullAiResponse;
+      const reactMatch = fullAiResponse.match(/<react>(.*?)<\/react>/);
+      if (reactMatch) {
+         reactedEmoji = reactMatch[1].trim();
+         displayText = fullAiResponse.replace(/<react>.*?<\/react>/g, '').trim();
+      }
+      
+      setStreamingText(displayText);
+      
+      if (!detectedCharId) {
+        const firstLine = displayText.split('\n')[0];
+        const colonIndex = firstLine.indexOf(':');
+        if (colonIndex !== -1 && colonIndex < 30) {
+          const name = firstLine.substring(0, colonIndex).trim();
+          const char = characters.find(c => 
+            c.name.toLowerCase() === name.toLowerCase() || 
+            c.name.split(' ')[0].toLowerCase() === name.toLowerCase()
+          );
+          if (char) {
+            detectedCharId = char.id;
+            setStreamingCharId(char.id);
+          }
+        }
+      } else {
+        setStreamingCharId(detectedCharId);
+      }
+    }
+    
+    setStreamingCharId(null);
+    const finalCleanText = fullAiResponse.replace(/<react>.*?<\/react>/g, '').trim();
+
+    if (reactedEmoji && targetUserMessageId) {
+       const charIdToReact = detectedCharId || (characters.length > 0 ? characters[0].id : null);
+       if (charIdToReact) {
+         handleToggleReaction(targetUserMessageId, reactedEmoji, charIdToReact).catch(() => {});
+       }
+    }
+    
+    return finalCleanText;
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
@@ -793,10 +850,7 @@ export function Chat() {
           getCurrentPersona()
         );
 
-        for await (const chunk of stream) {
-          fullAiResponse += chunk;
-          setStreamingText(fullAiResponse);
-        }
+        fullAiResponse = await processAIStream(stream, targetCharId, originalMessage.id);
         
         // Save new AI messages
         if (fullAiResponse) {
@@ -866,10 +920,7 @@ export function Chat() {
           getCurrentPersona()
         );
 
-        for await (const chunk of stream) {
-          fullAiResponse += chunk;
-          setStreamingText(fullAiResponse);
-        }
+        fullAiResponse = await processAIStream(stream, null, lastUserMsg?.id);
 
         if (isLocalMode || chatId.startsWith('local_chat_')) {
           const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
@@ -906,10 +957,7 @@ export function Chat() {
           selectedModel
         );
 
-        for await (const chunk of stream) {
-          fullAiResponse += chunk;
-          setStreamingText(fullAiResponse);
-        }
+        fullAiResponse = await processAIStream(stream, null);
 
         if (isLocalMode || chatId.startsWith('local_chat_')) {
           const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
@@ -1017,26 +1065,7 @@ export function Chat() {
         getCurrentPersona()
       );
 
-      for await (const chunk of stream) {
-        fullAiResponse += chunk;
-        setStreamingText(fullAiResponse);
-        
-        // Try to detect character ID for streaming avatar
-        if (!targetCharId) {
-          const firstLine = fullAiResponse.split('\n')[0];
-          const colonIndex = firstLine.indexOf(':');
-          if (colonIndex !== -1 && colonIndex < 30) {
-            const name = firstLine.substring(0, colonIndex).trim();
-            const char = characters.find(c => 
-              c.name.toLowerCase() === name.toLowerCase() || 
-              c.name.split(' ')[0].toLowerCase() === name.toLowerCase()
-            );
-            if (char) setStreamingCharId(char.id);
-          }
-        } else {
-          setStreamingCharId(targetCharId);
-        }
-      }
+      fullAiResponse = await processAIStream(stream, targetCharId);
 
       if (fullAiResponse) {
         await saveSplitMessages(chatId, fullAiResponse, targetCharId);
@@ -1794,26 +1823,7 @@ export function Chat() {
         getCurrentPersona()
       );
 
-      for await (const chunk of stream) {
-        fullAiResponse += chunk;
-        setStreamingText(fullAiResponse);
-        
-        // Try to detect character ID for streaming avatar
-        if (!targetCharId) {
-          const firstLine = fullAiResponse.split('\n')[0];
-          const colonIndex = firstLine.indexOf(':');
-          if (colonIndex !== -1 && colonIndex < 30) {
-            const name = firstLine.substring(0, colonIndex).trim();
-            const char = characters.find(c => 
-              c.name.toLowerCase() === name.toLowerCase() || 
-              c.name.split(' ')[0].toLowerCase() === name.toLowerCase()
-            );
-            if (char) setStreamingCharId(char.id);
-          }
-        } else {
-          setStreamingCharId(targetCharId);
-        }
-      }
+      fullAiResponse = await processAIStream(stream, targetCharId, newUserMessage.id);
 
       // 3. Save AI message
       if (fullAiResponse) {
