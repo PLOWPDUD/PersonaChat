@@ -18,6 +18,7 @@ export interface Profile {
 export interface Character {
   id: string;
   name: string;
+  bio?: string;
   avatarUrl: string;
   description: string;
   creatorId: string;

@@ -24,6 +24,7 @@ export function CreateCharacter() {
   
   const [formData, setFormData] = useState({
     name: '',
+    bio: '',
     avatarUrl: '',
     greeting: '',
     description: '',
@@ -43,6 +44,7 @@ export function CreateCharacter() {
         if (localChar) {
           setFormData({
             name: localChar.name || '',
+            bio: localChar.bio || '',
             avatarUrl: localChar.avatarUrl || '',
             greeting: localChar.greeting || '',
             description: localChar.description || '',
@@ -70,6 +72,7 @@ export function CreateCharacter() {
           
           setFormData({
             name: data.name || '',
+            bio: data.bio || '',
             avatarUrl: data.avatarUrl || '',
             greeting: data.greeting || '',
             description: data.description || '',
@@ -185,6 +188,7 @@ export function CreateCharacter() {
     setFormData(prev => ({
       ...prev,
       name: data.name,
+      bio: data.bio || '',
       greeting: data.greeting,
       description: data.description,
       personality: data.personality,
@@ -439,6 +443,23 @@ export function CreateCharacter() {
               value={formData.name}
               onChange={handleChange}
               placeholder="e.g. Albert Einstein, Fantasy Guide, etc."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="bio" className="block text-sm font-medium text-zinc-300 mb-1.5 flex items-center justify-between">
+              <span>Bio (Optional)</span>
+              <span className="text-xs text-zinc-500">{formData.bio?.length || 0}/150</span>
+            </label>
+            <input
+              type="text"
+              id="bio"
+              name="bio"
+              maxLength={150}
+              value={formData.bio || ''}
+              onChange={handleChange}
+              placeholder="A short, catchy timeline or introduction (e.g. Brilliant scientist with a dry sense of humor)."
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
             />
           </div>

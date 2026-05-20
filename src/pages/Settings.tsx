@@ -1,6 +1,9 @@
 import React from 'react';
 import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/SettingsContext';
-import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor, MessageSquare } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../lib/firebase';
+import { EmailAuthProvider, linkWithCredential, updatePassword, reauthenticateWithCredential } from 'firebase/auth';
+import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor, MessageSquare, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { getNotificationSupport, requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 import { useTranslation } from 'react-i18next';
 
@@ -47,6 +50,18 @@ export function Settings() {
   const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
   const [isInstalled, setIsInstalled] = React.useState(false);
 
+  // Security password state
+  const { user } = useAuth();
+  const [securityPassword, setSecurityPassword] = React.useState('');
+  const [confirmSecurityPassword, setConfirmSecurityPassword] = React.useState('');
+  const [showSecurityPassword, setShowSecurityPassword] = React.useState(false);
+  const [currentSecurityPassword, setCurrentSecurityPassword] = React.useState('');
+  const [securityError, setSecurityError] = React.useState('');
+  const [securitySuccess, setSecuritySuccess] = React.useState('');
+  const [securityLoading, setSecurityLoading] = React.useState(false);
+
+  const hasPasswordProvider = user?.providerData.some(p => p.providerId === 'password') || false;
+
   React.useEffect(() => {
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();
@@ -91,6 +106,86 @@ export function Settings() {
 
   const changeLanguage = (code: string) => {
     i18n.changeLanguage(code);
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!securityPassword || !confirmSecurityPassword) {
+      setSecurityError('Please fill in all fields.');
+      return;
+    }
+    if (securityPassword.length < 6) {
+      setSecurityError('Password must be at least 6 characters.');
+      return;
+    }
+    if (securityPassword !== confirmSecurityPassword) {
+      setSecurityError('Passwords do not match.');
+      return;
+    }
+    try {
+      setSecurityLoading(true);
+      setSecurityError('');
+      setSecuritySuccess('');
+
+      const credential = EmailAuthProvider.credential(user!.email!, securityPassword);
+      await linkWithCredential(user!, credential);
+
+      setSecuritySuccess('Password successfully set! You can now sign in using your email or Google.');
+      setSecurityPassword('');
+      setConfirmSecurityPassword('');
+    } catch (err: any) {
+      console.error('Error linking password:', err);
+      let errMsg = err.message || 'Failed to set password.';
+      if (err.code === 'auth/credential-already-in-use') {
+        errMsg = 'This email is already associated with password login.';
+      } else if (err.code === 'auth/requires-recent-login') {
+        errMsg = 'Security check: Please log out and back in to set a password.';
+      }
+      setSecurityError(errMsg);
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentSecurityPassword || !securityPassword || !confirmSecurityPassword) {
+      setSecurityError('Please fill in all fields.');
+      return;
+    }
+    if (securityPassword.length < 6) {
+      setSecurityError('New password must be at least 6 characters.');
+      return;
+    }
+    if (securityPassword !== confirmSecurityPassword) {
+      setSecurityError('New passwords do not match.');
+      return;
+    }
+    try {
+      setSecurityLoading(true);
+      setSecurityError('');
+      setSecuritySuccess('');
+
+      const credential = EmailAuthProvider.credential(user!.email!, currentSecurityPassword);
+      await reauthenticateWithCredential(user!, credential);
+      await updatePassword(user!, securityPassword);
+
+      setSecuritySuccess('Password successfully updated!');
+      setCurrentSecurityPassword('');
+      setSecurityPassword('');
+      setConfirmSecurityPassword('');
+    } catch (err: any) {
+      console.error('Error updating password:', err);
+      let errMsg = err.message || 'Failed to update password.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        errMsg = 'The current password you entered is incorrect.';
+      } else if (err.code === 'auth/requires-recent-login') {
+        errMsg = 'Security check: Please log out and back in to change your password.';
+      }
+      setSecurityError(errMsg);
+    } finally {
+      setSecurityLoading(false);
+    }
   };
 
   return (
@@ -458,6 +553,174 @@ export function Settings() {
             </p>
           </div>
         </div>
+      </section>
+
+      {/* Security & Password Section */}
+      <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 space-y-4 glass-card shadow-md">
+        <div className="flex items-center gap-3 text-white font-semibold">
+          <div className="w-8 h-8 rounded-lg bg-theme-primary/10 flex items-center justify-center text-theme-primary">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          Account Security & Password
+        </div>
+
+        <p className="text-sm text-zinc-400">
+          Manage your password and sign-in credentials. Setting a password allows you to log in with your email address directly, in addition to Google authentication.
+        </p>
+
+        {user?.isAnonymous ? (
+          <div className="p-4 rounded-xl bg-zinc-950/40 border border-zinc-800 text-amber-500 text-xs flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+            <span>Password management is not available for Guest accounts. Please log out and sign up to preserve your content.</span>
+          </div>
+        ) : (
+          <div className="space-y-4 pt-1">
+            <div className="flex flex-wrap items-center gap-4 bg-zinc-950/40 p-4 border border-zinc-800 rounded-2xl">
+              <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Connected Providers:</div>
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${user?.providerData.some(p => p.providerId === 'google.com') ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/10 font-medium' : 'bg-zinc-800 text-zinc-500'}`}>
+                  Google Account
+                </span>
+                <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${hasPasswordProvider ? 'bg-green-500/10 text-green-400 border border-green-500/10 font-medium' : 'bg-amber-500/10 text-amber-400 border border-amber-500/10 font-medium'}`}>
+                  Password {hasPasswordProvider ? 'Active' : 'Not Set'}
+                </span>
+              </div>
+            </div>
+
+            {securitySuccess && (
+              <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-sm">
+                {securitySuccess}
+              </div>
+            )}
+
+            {securityError && (
+              <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm leading-relaxed">
+                {securityError}
+              </div>
+            )}
+
+            {!hasPasswordProvider ? (
+              // Case: Set / Create Password
+              <form onSubmit={handleSetPassword} className="space-y-4 p-4 border border-zinc-805 rounded-2xl">
+                <h3 className="text-white font-bold text-sm">Create a Security Password</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-zinc-400 font-semibold" htmlFor="set-new-pass">New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showSecurityPassword ? 'text' : 'password'}
+                        id="set-new-pass"
+                        placeholder="At least 6 characters"
+                        disabled={securityLoading}
+                        value={securityPassword}
+                        onChange={(e) => setSecurityPassword(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecurityPassword(!showSecurityPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                      >
+                        {showSecurityPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-zinc-400 font-semibold" htmlFor="set-confirm-pass">Confirm Password</label>
+                    <input
+                      type={showSecurityPassword ? 'text' : 'password'}
+                      id="set-confirm-pass"
+                      placeholder="Repeat password"
+                      disabled={securityLoading}
+                      value={confirmSecurityPassword}
+                      onChange={(e) => setConfirmSecurityPassword(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-start">
+                  <button
+                    type="submit"
+                    disabled={securityLoading}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 hover:shadow-lg disabled:opacity-55 text-white text-sm font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Lock className="w-4 h-4" />
+                    {securityLoading ? 'Setting Password...' : 'Set Security Password'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // Case: Update / Change Password
+              <form onSubmit={handleUpdatePassword} className="space-y-4 p-4 border border-zinc-805 rounded-2xl">
+                <h3 className="text-white font-bold text-sm">Update Password</h3>
+                <div className="space-y-4">
+                  <div className="space-y-1.5 max-w-md">
+                    <label className="text-xs text-zinc-400 font-semibold" htmlFor="update-curr-pass">Current Password</label>
+                    <input
+                      type="password"
+                      id="update-curr-pass"
+                      placeholder="••••••••"
+                      disabled={securityLoading}
+                      value={currentSecurityPassword}
+                      onChange={(e) => setCurrentSecurityPassword(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-zinc-400 font-semibold" htmlFor="update-new-pass">New Password</label>
+                      <div className="relative">
+                        <input
+                          type={showSecurityPassword ? 'text' : 'password'}
+                          id="update-new-pass"
+                          placeholder="At least 6 characters"
+                          disabled={securityLoading}
+                          value={securityPassword}
+                          onChange={(e) => setSecurityPassword(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSecurityPassword(!showSecurityPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {showSecurityPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-zinc-400 font-semibold" htmlFor="update-confirm-pass">Confirm New Password</label>
+                      <input
+                        type={showSecurityPassword ? 'text' : 'password'}
+                        id="update-confirm-pass"
+                        placeholder="Repeat password"
+                        disabled={securityLoading}
+                        value={confirmSecurityPassword}
+                        onChange={(e) => setConfirmSecurityPassword(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-start">
+                  <button
+                    type="submit"
+                    disabled={securityLoading}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 hover:shadow-lg disabled:opacity-55 text-white text-sm font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Lock className="w-4 h-4" />
+                    {securityLoading ? 'Updating Password...' : 'Update Password'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Preview Section */}

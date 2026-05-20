@@ -17,6 +17,7 @@ import { playSound } from '../lib/sounds';
 interface Character {
   id: string;
   name: string;
+  bio?: string;
   avatarUrl: string;
   greeting: string;
   description: string;
@@ -2965,7 +2966,7 @@ export function Chat() {
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{char.name}</p>
-                          <p className="text-xs text-zinc-500 line-clamp-1">{char.description}</p>
+                          <p className="text-xs text-zinc-500 line-clamp-1">{char.bio || char.description}</p>
                         </div>
                         <Plus className="w-5 h-5 text-zinc-500 group-hover:text-indigo-400" />
                       </button>
@@ -3000,7 +3001,7 @@ export function Chat() {
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{char.name}</p>
-                          <p className="text-xs text-zinc-500 line-clamp-1">{char.description}</p>
+                          <p className="text-xs text-zinc-500 line-clamp-1">{char.bio || char.description}</p>
                         </div>
                         <Plus className="w-5 h-5 text-zinc-500 group-hover:text-indigo-400" />
                       </button>

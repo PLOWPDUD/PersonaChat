@@ -47,6 +47,7 @@
       "type": "object",
       "properties": {
         "name": { "type": "string", "description": "The character's name." },
+        "bio": { "type": "string", "description": "A short, engaging introduction of length up to 1000 characters." },
         "name_lowercase": { "type": "string", "description": "The character's name in lowercase for searching." },
         "avatarUrl": { "type": "string", "description": "The URL to the character's avatar image." },
         "greeting": { "type": "string", "description": "The character's initial greeting message." },

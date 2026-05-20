@@ -413,7 +413,7 @@ export function Search() {
                                 typeof char.creatorName === 'object' && char.creatorName !== null ? (char.creatorName as any).displayName : (char.creatorName || 'Unknown')
                               )}
                             </p>
-                            <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
+                            <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.bio || char.description}</p>
                           </div>
                           {!isGroupMode && <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />}
                         </div>

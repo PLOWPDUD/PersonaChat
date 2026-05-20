@@ -5,6 +5,7 @@ import { BrandLogo } from './BrandLogo';
 import { Menu, X } from 'lucide-react';
 import { NotificationCenter } from './NotificationCenter';
 import { FeedbackPanel } from './FeedbackPanel';
+import { GooglePasswordPrompt } from './GooglePasswordPrompt';
 import { useTranslation } from 'react-i18next';
 
 export function Layout() {
@@ -65,6 +66,8 @@ export function Layout() {
         isOpen={isFeedbackOpen} 
         onClose={() => setIsFeedbackOpen(false)} 
       />
+
+      <GooglePasswordPrompt />
     </div>
   );
 }

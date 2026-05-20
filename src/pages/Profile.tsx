@@ -649,7 +649,7 @@ export function Profile() {
                       </span>
                     )}
                   </h3>
-                  <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.description}</p>
+                  <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{char.bio || char.description}</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-indigo-500 transition-colors" />
               </button>

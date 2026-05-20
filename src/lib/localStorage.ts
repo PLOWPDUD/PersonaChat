@@ -2,6 +2,7 @@
 export interface LocalCharacter {
   id: string;
   name: string;
+  bio?: string;
   avatarUrl: string;
   greeting: string;
   description: string;

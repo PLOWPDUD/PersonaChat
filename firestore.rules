@@ -37,9 +37,10 @@ service cloud.firestore {
     }
 
     function isValidCharacter(data) {
-      return hasOnlyAllowedFields(['name', 'description', 'personality', 'scenario', 'greeting', 'avatarUrl', 'creatorId', 'creatorName', 'visibility', 'tags', 'category', 'name_lowercase', 'createdAt', 'updatedAt', 'averageRating', 'ratingCount', 'totalRatingScore', 'chatCount', 'starCount', 'likesCount', 'interactionsCount']) &&
+      return hasOnlyAllowedFields(['name', 'bio', 'description', 'personality', 'scenario', 'greeting', 'avatarUrl', 'creatorId', 'creatorName', 'visibility', 'tags', 'category', 'name_lowercase', 'createdAt', 'updatedAt', 'averageRating', 'ratingCount', 'totalRatingScore', 'chatCount', 'starCount', 'likesCount', 'interactionsCount']) &&
              isValidString(data.name, 1, 100) &&
              isValidString(data.description, 1, 5000) &&
+             (!('bio' in data) || data.bio == null || isValidString(data.bio, 0, 1000)) &&
              (!('personality' in data) || isValidString(data.personality, 0, 5000)) &&
              (!('scenario' in data) || isValidString(data.scenario, 0, 5000)) &&
              (!('greeting' in data) || isValidString(data.greeting, 0, 2000)) &&
