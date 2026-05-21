@@ -22,8 +22,48 @@ export function Login() {
   const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  if (user) {
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('trigger_google') === 'true') {
+      localStorage.setItem('auth_from_app', 'true');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      handleGoogleSignIn();
+    }
+  }, []);
+
+  const fromApp = localStorage.getItem('auth_from_app') === 'true';
+
+  if (user && !fromApp) {
     return <Navigate to="/" replace />;
+  }
+
+  if (user && fromApp) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        {/* Background decorations */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+        
+        <div className="z-10 w-full max-w-sm bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-fade-in">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent"></div>
+          <h2 className="text-xl font-bold text-white">Signing In...</h2>
+          <p className="text-zinc-400 text-sm">Transferring session to your PersonaChat mobile app. If you are not redirected automatically, click the button below.</p>
+          <button 
+            onClick={async () => {
+              try {
+                const idToken = await user.getIdToken();
+                window.location.href = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 px-6 rounded-xl transition-all cursor-pointer shadow-lg shadow-indigo-500/15"
+          >
+            Open PersonaChat App
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const handleGoogleSignIn = async () => {
@@ -31,7 +71,9 @@ export function Login() {
       setError('');
       setIsLoading(true);
       await signInWithGoogle();
-      navigate('/');
+      if (localStorage.getItem('auth_from_app') !== 'true') {
+        navigate('/');
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google');
       setIsLoading(false);

@@ -96,6 +96,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+export const isInsideMedianApp = (): boolean => {
+  if (typeof window === 'undefined' || !window.navigator) return false;
+  const ua = window.navigator.userAgent || window.navigator.vendor || '';
+  return /gonative|median/i.test(ua.toLowerCase());
+};
+
 export const isMobileOrWebView = (): boolean => {
   if (typeof window === 'undefined' || !window.navigator) return false;
   const ua = window.navigator.userAgent || window.navigator.vendor || '';
@@ -107,8 +113,16 @@ export const isMobileOrWebView = (): boolean => {
 
 export const signInWithGoogle = async () => {
   try {
+    if (isInsideMedianApp()) {
+      console.log('Median / GoNative App WebView detected. Opening Google login in external system browser.');
+      const googleLoginUrl = `${window.location.origin}/login?trigger_google=true`;
+      const nativeScheme = /median/i.test(window.navigator.userAgent) ? 'median' : 'gonative';
+      window.location.href = `${nativeScheme}://openExternalBrowser?url=${encodeURIComponent(googleLoginUrl)}`;
+      return null;
+    }
+
     if (isMobileOrWebView()) {
-      console.log('Mobile or Webview detected. Using signInWithRedirect.');
+      console.log('Mobile browser detected. Using signInWithRedirect.');
       await signInWithRedirect(auth, googleProvider);
       return null;
     }

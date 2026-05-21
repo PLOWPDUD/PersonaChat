@@ -12,6 +12,7 @@ import { Layout } from './components/Layout';
 import { LoadingScreen } from './components/LoadingScreen';
 import { Login } from './pages/Login';
 import { BannedScreen } from './pages/BannedScreen';
+import { AuthCallback } from './pages/AuthCallback';
 import { Home } from './pages/Home';
 import { CreateCharacter } from './pages/CreateCharacter';
 import { Personas } from './pages/Personas';
@@ -75,6 +76,7 @@ export default function App() {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/banned" element={<BannedScreen />} />
+                <Route path="/auth-callback" element={<AuthCallback />} />
                 
                 <Route path="/" element={
                   <ProtectedRoute>

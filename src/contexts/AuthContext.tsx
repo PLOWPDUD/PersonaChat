@@ -127,9 +127,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     getRedirectResult(auth)
-      .then((result) => {
+      .then(async (result) => {
         if (result) {
           console.log('Redirect sign-in completed successfully for:', result?.user?.email);
+          const fromApp = localStorage.getItem('auth_from_app');
+          if (fromApp === 'true') {
+            localStorage.removeItem('auth_from_app');
+            try {
+              const idToken = await result.user.getIdToken();
+              const targetUrl = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
+              console.log('Initiating deep link redirect back to PersonaChat app with token');
+              window.location.href = targetUrl;
+            } catch (err) {
+              console.error('Error getting ID token for app redirect:', err);
+            }
+          }
         }
       })
       .catch((error) => {
