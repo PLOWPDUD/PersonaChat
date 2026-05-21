@@ -182,6 +182,10 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    match /sessionTransfers/{transferId} {
+      allow read, write: if true;
+    }
+
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
       allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && 

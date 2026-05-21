@@ -22,10 +22,18 @@ export function Login() {
   const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  const [medianTransferId, setMedianTransferId] = useState<string | null>(
+    () => localStorage.getItem('median_auth_transfer_id')
+  );
+
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('trigger_google') === 'true') {
       localStorage.setItem('auth_from_app', 'true');
+      const transferId = params.get('transfer_id');
+      if (transferId) {
+        localStorage.setItem('auth_transfer_id', transferId);
+      }
       window.history.replaceState({}, document.title, window.location.pathname);
       handleGoogleSignIn();
     }
@@ -33,8 +41,47 @@ export function Login() {
 
   const fromApp = localStorage.getItem('auth_from_app') === 'true';
 
+  // Listen for changes to the median_auth_transfer_id storage if cancelled or modified
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      const current = localStorage.getItem('median_auth_transfer_id');
+      if (current !== medianTransferId) {
+        setMedianTransferId(current);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [medianTransferId]);
+
   if (user && !fromApp) {
     return <Navigate to="/" replace />;
+  }
+
+  // If inside the mobile view and currently waiting for system browser auth callback
+  if (medianTransferId) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+        
+        <div className="z-10 w-full max-w-sm bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-fade-in animate-once">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent"></div>
+          <h2 className="text-xl font-bold text-white">Google Sign-In</h2>
+          <p className="text-zinc-400 text-sm">
+            We opened Google Sign-In in your system browser (Safari/Chrome). 
+            Please sign in there. Once authenticated, this app will log you in automatically.
+          </p>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('median_auth_transfer_id');
+              setMedianTransferId(null);
+            }}
+            className="w-full bg-zinc-800 hover:bg-zinc-750 text-white font-semibold py-3 px-6 rounded-xl transition-all cursor-pointer border border-zinc-700 hover:border-zinc-600"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (user && fromApp) {

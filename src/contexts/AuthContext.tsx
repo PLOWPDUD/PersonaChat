@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { User, onAuthStateChanged, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
-import { auth, db, isQuotaError } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { User, onAuthStateChanged, getRedirectResult, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { auth, db, isQuotaError, isInsideMedianApp } from '../lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { checkAndAwardBadges } from '../services/badgeService';
 import { setCachedProfile } from '../lib/cache';
@@ -136,6 +136,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
               const googleCred = GoogleAuthProvider.credentialFromResult(result);
               let targetUrl = '';
+              const transferId = localStorage.getItem('auth_transfer_id');
+              
+              let idTokenVal: string | null = googleCred ? googleCred.idToken || null : null;
+              let accessTokenVal: string | null = googleCred ? googleCred.accessToken || null : null;
+              
+              if (!idTokenVal) {
+                try {
+                  idTokenVal = await result.user.getIdToken();
+                } catch (tokError) {
+                  console.error('Error getting user ID Token:', tokError);
+                }
+              }
+              
+              // Securely write to firestore transfer collection so the app WebView receives the authenticated state
+              if (transferId) {
+                try {
+                  const docRef = doc(db, 'sessionTransfers', transferId);
+                  await setDoc(docRef, {
+                    idToken: idTokenVal,
+                    accessToken: accessTokenVal,
+                    uid: result.user.uid,
+                    status: 'authenticated',
+                    createdAt: new Date().toISOString()
+                  });
+                  console.log('Successfully wrote session transfer to firestore:', transferId);
+                  localStorage.removeItem('auth_transfer_id');
+                } catch (fsErr) {
+                  console.error('Failed to write transfer credentials to Firestore:', fsErr);
+                }
+              }
+              
               if (googleCred && (googleCred.idToken || googleCred.accessToken)) {
                 const credsObj = {
                   idToken: googleCred.idToken || null,
@@ -161,6 +192,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Error handling redirect sign-in result:', error);
       });
   }, []);
+
+  // Listen for session transfers if currently inside the Median.co App WebView
+  useEffect(() => {
+    if (!isInsideMedianApp() || user) return;
+    
+    // Check if we have a transferId of a pending auth in localStorage
+    const transferId = localStorage.getItem('median_auth_transfer_id');
+    if (!transferId) return;
+    
+    console.log('Listening to session transfer on Firestore for ID:', transferId);
+    
+    const docRef = doc(db, 'sessionTransfers', transferId);
+    const unsubscribe = onSnapshot(docRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.status === 'authenticated' && data.idToken) {
+          console.log('Found authenticated transfer credentials! Logging in...');
+          try {
+            const credential = GoogleAuthProvider.credential(data.idToken, data.accessToken || undefined);
+            await signInWithCredential(auth, credential);
+            console.log('Successfully logged in app WebView via session transfer!');
+            localStorage.removeItem('median_auth_transfer_id');
+          } catch (err) {
+            console.error('Error signing in with transferred credentials:', err);
+          }
+        }
+      }
+    }, (error) => {
+      console.error('Error in session transfer listener:', error);
+    });
+    
+    return () => unsubscribe();
+  }, [user]);
 
   useEffect(() => {
     const trackVisitor = async () => {

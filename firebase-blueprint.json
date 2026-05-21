@@ -277,6 +277,19 @@
       },
       "required": ["followerId", "followingId", "createdAt"]
     },
+    "SessionTransfer": {
+      "title": "Session Transfer",
+      "description": "Enables secure authentication credentials transfer between system browsers and mobile app WebViews.",
+      "type": "object",
+      "properties": {
+        "idToken": { "type": "string", "description": "The Google OAuth ID Token of the user." },
+        "accessToken": { "type": "string", "description": "The Google OAuth Access Token of the user." },
+        "uid": { "type": "string", "description": "The authenticated user UID." },
+        "status": { "type": "string", "enum": ["authenticated", "pending"], "description": "The current status of the transfer session." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when session transfer started." }
+      },
+      "required": ["status", "createdAt"]
+    },
     "BugReport": {
       "title": "Bug/Feedback Report",
       "description": "Feedback or bug report from a user.",
@@ -315,6 +328,7 @@
     "/private_chats/{chatId}/messages/{messageId}": { "schema": "PrivateMessage", "description": "Private messages." },
     "/achievements/{achievementId}": { "schema": "Achievement", "description": "Available achievements." },
     "/users/{userId}/achievements/{achievementId}": { "schema": "object", "description": "Earned achievements." },
-    "/followers/{followId}": { "schema": "Follower", "description": "Follower relationships." }
+    "/followers/{followId}": { "schema": "Follower", "description": "Follower relationships." },
+    "/sessionTransfers/{transferId}": { "schema": "SessionTransfer", "description": "Enables transfers of credentials from browser to WebViews." }
   }
 }

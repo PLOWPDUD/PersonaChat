@@ -115,7 +115,9 @@ export const signInWithGoogle = async () => {
   try {
     if (isInsideMedianApp()) {
       console.log('Median / GoNative App WebView detected. Opening Google login in external system browser.');
-      const googleLoginUrl = `${window.location.origin}/login?trigger_google=true`;
+      const transferId = 'tx_' + Math.floor(Math.random() * 1000000) + '_' + Date.now();
+      localStorage.setItem('median_auth_transfer_id', transferId);
+      const googleLoginUrl = `${window.location.origin}/login?trigger_google=true&transfer_id=${transferId}`;
       const nativeScheme = /median/i.test(window.navigator.userAgent) ? 'median' : 'gonative';
       window.location.href = `${nativeScheme}://openExternalBrowser?url=${encodeURIComponent(googleLoginUrl)}`;
       return null;
