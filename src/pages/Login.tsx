@@ -51,8 +51,15 @@ export function Login() {
           <button 
             onClick={async () => {
               try {
-                const idToken = await user.getIdToken();
-                window.location.href = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
+                const tempCreds = sessionStorage.getItem('temp_app_creds');
+                let targetUrl = '';
+                if (tempCreds) {
+                  targetUrl = `personachat://auth-callback?creds=${encodeURIComponent(tempCreds)}`;
+                } else {
+                  const idToken = await user.getIdToken();
+                  targetUrl = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
+                }
+                window.location.href = targetUrl;
               } catch (e) {
                 console.error(e);
               }

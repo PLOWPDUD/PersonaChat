@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { User, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
+import { User, onAuthStateChanged, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -134,12 +134,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (fromApp === 'true') {
             localStorage.removeItem('auth_from_app');
             try {
-              const idToken = await result.user.getIdToken();
-              const targetUrl = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
-              console.log('Initiating deep link redirect back to PersonaChat app with token');
+              const googleCred = GoogleAuthProvider.credentialFromResult(result);
+              let targetUrl = '';
+              if (googleCred && (googleCred.idToken || googleCred.accessToken)) {
+                const credsObj = {
+                  idToken: googleCred.idToken || null,
+                  accessToken: googleCred.accessToken || null,
+                };
+                const serialized = JSON.stringify(credsObj);
+                sessionStorage.setItem('temp_app_creds', serialized);
+                targetUrl = `personachat://auth-callback?creds=${encodeURIComponent(serialized)}`;
+                console.log('Initiating deep link redirect back to PersonaChat app with Google credentials');
+              } else {
+                const idToken = await result.user.getIdToken();
+                targetUrl = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
+                console.log('Initiating deep link redirect back to PersonaChat app with fallback Firebase ID token');
+              }
               window.location.href = targetUrl;
             } catch (err) {
-              console.error('Error getting ID token for app redirect:', err);
+              console.error('Error preparing app redirect url:', err);
             }
           }
         }

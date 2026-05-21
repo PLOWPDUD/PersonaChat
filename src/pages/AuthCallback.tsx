@@ -10,16 +10,25 @@ export function AuthCallback() {
 
   useEffect(() => {
     const handleAuth = async () => {
+      const credsParam = searchParams.get('creds');
       const token = searchParams.get('token');
-      if (!token) {
-        setError('No authentication token provided');
+
+      if (!credsParam && !token) {
+        setError('No authentication credentials provided');
         setTimeout(() => navigate('/login'), 3000);
         return;
       }
 
       try {
         console.log('Completing custom credential sign-in on WebView...');
-        const credential = GoogleAuthProvider.credential(token);
+        let credential;
+        if (credsParam) {
+          const parsedCreds = JSON.parse(decodeURIComponent(credsParam));
+          credential = GoogleAuthProvider.credential(parsedCreds.idToken, parsedCreds.accessToken);
+        } else {
+          // Fallback legacy behavior if no creds but a token was passed
+          credential = GoogleAuthProvider.credential(token);
+        }
         await signInWithCredential(auth, credential);
         console.log('WebView signed in successfully!');
         navigate('/', { replace: true });
