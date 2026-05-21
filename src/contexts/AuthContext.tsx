@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { User, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -124,6 +124,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error signing out:', error);
     }
   };
+
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result) {
+          console.log('Redirect sign-in completed successfully for:', result?.user?.email);
+        }
+      })
+      .catch((error) => {
+        console.error('Error handling redirect sign-in result:', error);
+      });
+  }, []);
 
   useEffect(() => {
     const trackVisitor = async () => {
@@ -284,11 +296,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         } catch (error: any) {
           if (isQuotaError(error)) {
+            setQuotaExceeded(true);
+            
+            // Set sync fallback time so we don't spam requests when quota is exceeded
+            localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
+            
+            // If we don't have a profile yet, build a local fallback profile from currentUser
             if (!profile) {
-              setQuotaExceeded(true);
+              const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
+              const fallBackName = currentUser.isAnonymous 
+                ? `Guest ${currentUser.uid.slice(0, 5)}` 
+                : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
+
+              const fallbackProfile = {
+                uid: currentUser.uid,
+                displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
+                photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
+                email: currentUser.email || googleProviderData?.email || '',
+                role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
+                hasSeenRules: true,
+                isLocalFallback: true,
+                blockedUsers: [],
+                updatedAt: new Date()
+              };
+
+              setProfile(fallbackProfile);
+              localStorage.setItem('cached_profile', JSON.stringify(fallbackProfile));
+              
+              setRoles({
+                isOwner: currentUser.email === 'videosonli5@gmail.com',
+                isModerator: currentUser.email === 'videosonli5@gmail.com'
+              });
             }
+            console.warn('Firestore Quota Exceeded during profile sync, fell back to cached/local profile.');
+          } else {
+            console.error('Error syncing profile:', error);
           }
-          console.error('Error syncing profile:', error);
         } finally {
           isSyncing.current = false;
         }

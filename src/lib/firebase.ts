@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously as firebaseSignInAnonymously } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, signInAnonymously as firebaseSignInAnonymously } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -96,10 +96,39 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+export const isMobileOrWebView = (): boolean => {
+  if (typeof window === 'undefined' || !window.navigator) return false;
+  const ua = window.navigator.userAgent || window.navigator.vendor || '';
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const isWebView = /gonative|median|webview|wv|ip(hone|od|ad).*applewebkit|android.*webkit/i.test(ua.toLowerCase());
+  const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+  return isMobile || isWebView || !!isStandalone;
+};
+
 export const signInWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    if (isMobileOrWebView()) {
+      console.log('Mobile or Webview detected. Using signInWithRedirect.');
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    } catch (popupError: any) {
+      const closedOrBlocked = 
+        popupError?.code === 'auth/popup-blocked' || 
+        popupError?.code === 'auth/popup-closed-by-user' ||
+        popupError?.code === 'auth/cancelled-popup-request';
+        
+      if (closedOrBlocked) {
+        console.warn('Google Sign-In popup blocked or closed. Falling back to signInWithRedirect.');
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      }
+      throw popupError;
+    }
   } catch (error) {
     console.error('Error signing in with Google:', error);
     throw error;
