@@ -384,9 +384,14 @@ export default function Messages() {
       if (activeChat.characterIds && activeChat.characterIds.length > 0) {
         for (const botId of activeChat.characterIds) {
           const bot = availableBots.find(b => b.id === botId);
-          if (bot && content.toLowerCase().includes(`@${bot.name.toLowerCase()}`)) {
-            // Trigger bot response
-            handleBotResponse(bot, content);
+          if (bot) {
+            const hasMention = content.toLowerCase().includes(`@${bot.name.toLowerCase()}`) ||
+                               content.toLowerCase().includes(bot.name.toLowerCase()) ||
+                               content.toLowerCase().includes(bot.name.split(' ')[0].toLowerCase());
+            if (hasMention) {
+              // Trigger bot response
+              handleBotResponse(bot, content);
+            }
           }
         }
       }
@@ -490,12 +495,16 @@ export default function Messages() {
     }
   };
 
-  const handleBotResponse = async (bot: any, userMessage: string) => {
+  const handleBotResponse = async (bot: any, userMessage: string, depth = 0) => {
     if (!activeChat) return;
+    const chatId = activeChat.id;
 
     try {
-      // Get recent context
-      const recentMessages = messages.slice(-10).map(m => `${m.senderId === user?.uid ? 'User' : 'Other'}: ${m.content}`).join('\n');
+      // Get recent context using sender names
+      const recentMessages = messages
+        .slice(-10)
+        .map(m => `${m.senderName || 'Unknown'}: ${m.content}`)
+        .join('\n');
       
       const prompt = `
         You are ${bot.name}. 
@@ -504,9 +513,9 @@ export default function Messages() {
         Current conversation context:
         ${recentMessages}
         
-        The user just said: "${userMessage}"
+        Last message: "${userMessage}"
         
-        Respond as ${bot.name} to the mention. Keep it concise and in character.
+        Respond as ${bot.name} in character to the last message / mention. Keep your response extremely concise, engaging, and in character. Do not mention yourself, but you are free to address other users or bots in the context.
       `;
 
       const result = await ai.models.generateContent({
@@ -515,7 +524,10 @@ export default function Messages() {
       });
       const responseText = result.text;
 
-      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), {
+      // Ensure that the conversation is still active when we write
+      if (activeChat.id !== chatId) return;
+
+      await addDoc(collection(dbPrivate, `private_chats/${chatId}/messages`), {
         senderId: bot.id,
         senderName: bot.name,
         senderPhotoURL: bot.avatarUrl || '',
@@ -524,11 +536,32 @@ export default function Messages() {
         createdAt: serverTimestamp()
       });
 
-      await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
+      await updateDoc(doc(dbPrivate, 'private_chats', chatId), {
         lastMessage: responseText,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // Bot-to-bot mention logic: trigger other bots if mentioned in the response
+      if (depth < 3 && activeChat.characterIds && activeChat.characterIds.length > 0) {
+        for (const otherBotId of activeChat.characterIds) {
+          if (otherBotId === bot.id) continue;
+          const otherBot = availableBots.find(b => b.id === otherBotId);
+          if (otherBot) {
+            const hasMention = responseText.toLowerCase().includes(`@${otherBot.name.toLowerCase()}`) ||
+                               responseText.toLowerCase().includes(otherBot.name.toLowerCase()) ||
+                               responseText.toLowerCase().includes(otherBot.name.split(' ')[0].toLowerCase());
+            if (hasMention) {
+              // Trigger other bot response with delay (1.5 seconds) for realistic pacing
+              setTimeout(() => {
+                if (activeChat.id === chatId) {
+                  handleBotResponse(otherBot, responseText, depth + 1);
+                }
+              }, 1500);
+            }
+          }
+        }
+      }
 
     } catch (err) {
       console.error('Error getting bot response:', err);

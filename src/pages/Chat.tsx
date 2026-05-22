@@ -883,6 +883,24 @@ export function Chat() {
         // Save new AI messages
         if (fullAiResponse) {
           await saveSplitMessages(chatId, fullAiResponse, targetCharId);
+
+          // Find the last character who actually responded in this block
+          let lastSpeakerCharId = targetCharId;
+          const lines = fullAiResponse.split('\n');
+          for (const line of [...lines].reverse()) {
+            const colonIndex = line.indexOf(':');
+            if (colonIndex !== -1 && colonIndex < 50) {
+              const name = line.substring(0, colonIndex).trim();
+              const matchingChar = characters.find(c => c.name.toLowerCase() === name.toLowerCase() || c.name.split(' ')[0].toLowerCase() === name.toLowerCase());
+              if (matchingChar) {
+                lastSpeakerCharId = matchingChar.id;
+                break;
+              }
+            }
+          }
+
+          // Check for mentions in the bot's response and trigger next response sequentially
+          await checkAndTriggerBotMentions(fullAiResponse, lastSpeakerCharId, 0);
         }
 
         // Update chat timestamp
@@ -1097,6 +1115,24 @@ export function Chat() {
 
       if (fullAiResponse) {
         await saveSplitMessages(chatId, fullAiResponse, targetCharId);
+
+        // Find the last character who actually responded in this block
+        let lastSpeakerCharId = targetCharId;
+        const lines = fullAiResponse.split('\n');
+        for (const line of [...lines].reverse()) {
+          const colonIndex = line.indexOf(':');
+          if (colonIndex !== -1 && colonIndex < 50) {
+            const name = line.substring(0, colonIndex).trim();
+            const matchingChar = characters.find(c => c.name.toLowerCase() === name.toLowerCase() || c.name.split(' ')[0].toLowerCase() === name.toLowerCase());
+            if (matchingChar) {
+              lastSpeakerCharId = matchingChar.id;
+              break;
+            }
+          }
+        }
+
+        // Check for mentions in the bot's response and trigger next response sequentially
+        await checkAndTriggerBotMentions(fullAiResponse, lastSpeakerCharId, 0);
       }
 
       if (!isLocalMode && !chatId.startsWith('local_chat_')) {
@@ -1739,6 +1775,85 @@ export function Chat() {
     }
   };
 
+  async function checkAndTriggerBotMentions(aiResponseText: string, senderCharId: string | null, depth = 0) {
+    if (depth >= 3 || characters.length <= 1 || !chatId) return;
+    
+    // Find if any other character in the group chat is mentioned
+    for (const char of characters) {
+      if (char.id === senderCharId) continue;
+      
+      const hasMention = aiResponseText.toLowerCase().includes(`@${char.name.toLowerCase()}`) ||
+                         aiResponseText.toLowerCase().includes(char.name.toLowerCase()) ||
+                         aiResponseText.toLowerCase().includes(char.name.split(' ')[0].toLowerCase());
+                         
+      if (hasMention) {
+        console.log(`Character ${char.name} was mentioned! Triggering response (depth: ${depth})...`);
+        
+        // 1.5 seconds delay for realistic pacing
+        setTimeout(() => {
+          triggerAutoBotResponse(char, depth);
+        }, 1500);
+        
+        break; // Only trigger one mentioned bot at a time to prevent absolute chaos
+      }
+    }
+  }
+
+  async function triggerAutoBotResponse(targetChar: Character, depth = 0) {
+    if (!chatId || isTyping || isRegenerating) return;
+    
+    setIsTyping(true);
+    
+    try {
+      // Get latest history from localStorage to incorporate the absolute latest messages
+      const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+      
+      const historyForGemini = localMessages.map((m: any) => ({
+        role: m.role,
+        content: m.content,
+        imageUrl: m.imageUrl,
+        characterId: m.characterId
+      }));
+      
+      const memoryList = memories.map(m => m.content);
+      
+      const botResponsePrompt = `(STRICT: You are currently responding as ${targetChar.name}. You were mentioned or addressed in the conversation. Respond directly to the mention or continuation. Other characters MUST remain silent.)`;
+      
+      let fullAiResponse = '';
+      setStreamingText('');
+      
+      const stream = generateCharacterResponseStream(
+        characters,
+        historyForGemini,
+        botResponsePrompt,
+        undefined,
+        memoryList,
+        selectedModel,
+        getCurrentPersona()
+      );
+      
+      fullAiResponse = await processAIStream(stream, targetChar.id);
+      
+      if (fullAiResponse) {
+        await saveSplitMessages(chatId, fullAiResponse, targetChar.id);
+        
+        // Increment interactions
+        for (const char of characters) {
+          char.interactionsCount = (char.interactionsCount || 0) + 1;
+        }
+        incrementInteractions(characters);
+        
+        await checkAndTriggerBotMentions(fullAiResponse, targetChar.id, depth + 1);
+      }
+    } catch (e) {
+      console.error('Error triggering auto bot response:', e);
+    } finally {
+      setIsTyping(false);
+      setStreamingText('');
+      setStreamingCharId(null);
+    }
+  }
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
@@ -1862,6 +1977,24 @@ export function Chat() {
           char.interactionsCount = (char.interactionsCount || 0) + 1;
         }
         incrementInteractions(characters);
+
+        // Find the last character who actually responded in this block
+        let lastSpeakerCharId = targetCharId;
+        const lines = fullAiResponse.split('\n');
+        for (const line of [...lines].reverse()) {
+          const colonIndex = line.indexOf(':');
+          if (colonIndex !== -1 && colonIndex < 50) {
+            const name = line.substring(0, colonIndex).trim();
+            const matchingChar = characters.find(c => c.name.toLowerCase() === name.toLowerCase() || c.name.split(' ')[0].toLowerCase() === name.toLowerCase());
+            if (matchingChar) {
+              lastSpeakerCharId = matchingChar.id;
+              break;
+            }
+          }
+        }
+
+        // Check for mentions in the bot's response and trigger next response sequentially
+        await checkAndTriggerBotMentions(fullAiResponse, lastSpeakerCharId, 0);
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
