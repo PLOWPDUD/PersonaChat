@@ -9,7 +9,10 @@ export async function* generateCharacterResponseStream(
   userImageUrl?: string,
   memories: string[] = [],
   model: string = 'gemini-3-flash-preview',
-  userPersona?: string
+  userPersona?: string,
+  customAiInstructions?: string,
+  aiInstructionsEnabled?: boolean,
+  aiInstructionsMode?: 'append' | 'prepend' | 'override'
 ) {
   try {
     const memoryContext = memories?.length > 0 
@@ -27,15 +30,16 @@ DESCRIPTION: ${char.description}
 ${char.personality ? `PERSONALITY: ${char.personality}` : ''}
 `).join('\n');
 
-    const systemInstruction = `### AI MULTI-CHARACTER ROLEPLAY PROTOCOL ###
+    let systemInstruction = `### AI MULTI-CHARACTER ROLEPLAY PROTOCOL ###
 You are a master roleplay engine. You are responsible for playing ALL characters listed below simultaneously.
 
 ${charactersContext}
 
 ${memoryContext}
 ${userPersonaContext}
+`;
 
-### CORE DIRECTIVES ###
+    const defaultDirectives = `### CORE DIRECTIVES ###
 1. IMMERSION: Stay in character 100% of the time. Never acknowledge you are an AI.
 2. STYLE MATCHING: You MUST closely mirror the linguistic style, tone, capitalization, and punctuation of each character's GREETING.
 3. FORMATTING: 
@@ -66,6 +70,18 @@ Format your response as a single block with newlines (if multiple characters spe
 Name1: Message
 Name2: Message
 (Or just the message if only one character speaks)`;
+
+    if (customAiInstructions && aiInstructionsEnabled) {
+      if (aiInstructionsMode === 'override') {
+        systemInstruction += `\n### OVERRIDDEN CUSTOM AI DIRECTIVES ###\n${customAiInstructions}\n`;
+      } else if (aiInstructionsMode === 'prepend') {
+        systemInstruction += `\n### CUSTOM AI DIRECTIVES (HIGH PRIORITY) ###\n${customAiInstructions}\n\n${defaultDirectives}`;
+      } else { // 'append' by default
+        systemInstruction += `\n${defaultDirectives}\n\n### ADDITIONAL CUSTOM DIRECTIVES ###\n${customAiInstructions}`;
+      }
+    } else {
+      systemInstruction += `\n${defaultDirectives}`;
+    }
 
     const contents: any[] = [];
     const filteredHistory = chatHistory.filter((msg: any) => msg.content.trim() !== '' || msg.imageUrl);
@@ -161,10 +177,24 @@ export async function generateCharacterResponse(
   userImageUrl?: string,
   memories: string[] = [],
   model: string = 'gemini-3-flash-preview',
-  userPersona?: string
+  userPersona?: string,
+  customAiInstructions?: string,
+  aiInstructionsEnabled?: boolean,
+  aiInstructionsMode?: 'append' | 'prepend' | 'override'
 ) {
   let fullText = "";
-  const stream = generateCharacterResponseStream(characters, chatHistory, userMessage, userImageUrl, memories, model, userPersona);
+  const stream = generateCharacterResponseStream(
+    characters, 
+    chatHistory, 
+    userMessage, 
+    userImageUrl, 
+    memories, 
+    model, 
+    userPersona, 
+    customAiInstructions, 
+    aiInstructionsEnabled, 
+    aiInstructionsMode
+  );
   for await (const chunk of stream) {
     fullText += chunk;
   }

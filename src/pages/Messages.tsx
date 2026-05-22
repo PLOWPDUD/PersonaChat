@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -51,6 +52,7 @@ interface Message {
 
 export default function Messages() {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const { user, profile, isOwner, toggleBlockUser } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
@@ -506,6 +508,18 @@ export default function Messages() {
         .map(m => `${m.senderName || 'Unknown'}: ${m.content}`)
         .join('\n');
       
+      let instructionsText = `Respond as ${bot.name} in character to the last message / mention. Keep your response extremely concise, engaging, and in character. Do not mention yourself, but you are free to address other users or bots in the context.`;
+
+      if (settings.aiInstructionsEnabled && settings.customAiInstructions) {
+        if (settings.aiInstructionsMode === 'override') {
+          instructionsText = settings.customAiInstructions;
+        } else if (settings.aiInstructionsMode === 'prepend') {
+          instructionsText = `${settings.customAiInstructions}\n\n${instructionsText}`;
+        } else {
+          instructionsText = `${instructionsText}\n\nCustom Instructions:\n${settings.customAiInstructions}`;
+        }
+      }
+
       const prompt = `
         You are ${bot.name}. 
         Personality: ${bot.personality}
@@ -515,7 +529,8 @@ export default function Messages() {
         
         Last message: "${userMessage}"
         
-        Respond as ${bot.name} in character to the last message / mention. Keep your response extremely concise, engaging, and in character. Do not mention yourself, but you are free to address other users or bots in the context.
+        Instructions:
+        ${instructionsText}
       `;
 
       const result = await ai.models.generateContent({

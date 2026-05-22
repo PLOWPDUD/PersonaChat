@@ -499,6 +499,103 @@ export function Settings() {
         </section>
       </div>
 
+      {/* Custom AI Instructions */}
+      <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 space-y-4 glass-card col-span-full">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-white font-semibold">
+            <div className="w-8 h-8 rounded-lg bg-theme-primary/10 flex items-center justify-center text-theme-primary">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">{t('settings.aiInstructions.title', 'Custom AI Instructions')}</h3>
+              <p className="text-xs text-zinc-400 font-normal">{t('settings.aiInstructions.subtitle', 'Tune how the AI behaves globally across all chats')}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => updateSettings({ aiInstructionsEnabled: !settings.aiInstructionsEnabled })}
+            className={`w-12 h-6 rounded-full transition-colors relative ${
+              settings.aiInstructionsEnabled ? 'bg-theme-primary' : 'bg-zinc-700'
+            }`}
+            aria-label="Toggle Custom AI Instructions"
+          >
+            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
+              settings.aiInstructionsEnabled ? 'left-7' : 'left-1'
+            }`} />
+          </button>
+        </div>
+
+        {settings.aiInstructionsEnabled && (
+          <div className="space-y-4 pt-2 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <button
+                onClick={() => updateSettings({ aiInstructionsMode: 'append' })}
+                className={`flex flex-col items-start gap-1 p-4 rounded-2xl border transition-all text-left ${
+                  settings.aiInstructionsMode === 'append'
+                    ? 'bg-zinc-800 border-theme-primary text-white'
+                    : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                <span className="font-bold text-sm">{t('settings.aiInstructions.modeAppend', 'Append to Rules')}</span>
+                <span className="text-xs text-zinc-500">{t('settings.aiInstructions.modeAppendDesc', 'Add your custom instructions after existing roleplay guidelines')}</span>
+              </button>
+
+              <button
+                onClick={() => updateSettings({ aiInstructionsMode: 'prepend' })}
+                className={`flex flex-col items-start gap-1 p-4 rounded-2xl border transition-all text-left ${
+                  settings.aiInstructionsMode === 'prepend'
+                    ? 'bg-zinc-800 border-theme-primary text-white'
+                    : 'bg-zinc-900/50 border-zinc-805 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                <span className="font-bold text-sm">{t('settings.aiInstructions.modePrepend', 'Prepend to Rules')}</span>
+                <span className="text-xs text-zinc-500">{t('settings.aiInstructions.modePrependDesc', 'Add your custom instructions before existing roleplay guidelines')}</span>
+              </button>
+
+              <button
+                onClick={() => updateSettings({ aiInstructionsMode: 'override' })}
+                className={`flex flex-col items-start gap-1 p-4 rounded-2xl border transition-all text-left ${
+                  settings.aiInstructionsMode === 'override'
+                    ? 'bg-zinc-800 border-theme-primary text-white'
+                    : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                <span className="font-bold text-sm flex items-center gap-1.5">
+                  {t('settings.aiInstructions.modeOverride', 'Override Rules')}
+                  <span className="text-[9px] bg-red-500/15 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded uppercase font-semibold">Strict</span>
+                </span>
+                <span className="text-xs text-zinc-500">{t('settings.aiInstructions.modeOverrideDesc', 'Completely replace standard AI directives with your custom prompt')}</span>
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-zinc-400" htmlFor="custom-ai-prompt">
+                  {t('settings.aiInstructions.promptLabel', 'Instruction Prompt')}
+                </label>
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  {settings.customAiInstructions?.length || 0} characters
+                </span>
+              </div>
+              <textarea
+                id="custom-ai-prompt"
+                value={settings.customAiInstructions}
+                onChange={(e) => updateSettings({ customAiInstructions: e.target.value })}
+                placeholder={
+                  settings.aiInstructionsMode === 'override'
+                    ? t('settings.aiInstructions.placeholderOverride', 'Enter complete system prompt. Keep in mind standard multi-character format (e.g., Name: Message) and strict character constraints...')
+                    : t('settings.aiInstructions.placeholderAppend', 'Add custom commands (e.g., "Always use casual speech", "Do not format reactions in italics", "All characters are secretly friends with each other")...')
+                }
+                rows={4}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-zinc-700 rounded-2xl p-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-theme-primary transition-all placeholder:text-zinc-600"
+              />
+              <p className="text-zinc-500 text-xs leading-relaxed">
+                {t('settings.aiInstructions.note', 'These system instructions are injected directly into the Gemini model parameters on every message submission.')}
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Download App (PWA) */}
       <section className="bg-gradient-to-br from-theme-primary/10 to-purple-600/10 border border-theme-primary/20 rounded-3xl p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

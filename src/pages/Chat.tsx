@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { getCachedProfile, setCachedProfiles, incrementCachedCharacterInteraction } from '../lib/cache';
 import { getLocalCharacterById, getLocalChatById, getLocalChatByCharacterId, saveLocalChat, LocalChat, LocalCharacter } from '../lib/localStorage';
 import { generateCharacterResponse, generateCharacterResponseStream } from '../lib/gemini';
@@ -52,6 +53,7 @@ interface Memory {
 
 export function Chat() {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user, profile, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
@@ -875,7 +877,10 @@ export function Chat() {
           originalMessage.imageUrl || undefined, 
           memoryList, 
           selectedModel, 
-          getCurrentPersona()
+          getCurrentPersona(),
+          settings.customAiInstructions,
+          settings.aiInstructionsEnabled,
+          settings.aiInstructionsMode
         );
 
         fullAiResponse = await processAIStream(stream, targetCharId, originalMessage.id);
@@ -963,7 +968,10 @@ export function Chat() {
           userImageUrl || undefined, 
           memoryList, 
           selectedModel, 
-          getCurrentPersona()
+          getCurrentPersona(),
+          settings.customAiInstructions,
+          settings.aiInstructionsEnabled,
+          settings.aiInstructionsMode
         );
 
         fullAiResponse = await processAIStream(stream, null, lastUserMsg?.id);
@@ -1000,7 +1008,11 @@ export function Chat() {
           prompt, 
           undefined, 
           memoryList, 
-          selectedModel
+          selectedModel,
+          undefined,
+          settings.customAiInstructions,
+          settings.aiInstructionsEnabled,
+          settings.aiInstructionsMode
         );
 
         fullAiResponse = await processAIStream(stream, null);
@@ -1108,7 +1120,10 @@ export function Chat() {
         undefined, 
         memoryList, 
         selectedModel, 
-        getCurrentPersona()
+        getCurrentPersona(),
+        settings.customAiInstructions,
+        settings.aiInstructionsEnabled,
+        settings.aiInstructionsMode
       );
 
       fullAiResponse = await processAIStream(stream, targetCharId);
@@ -1829,7 +1844,10 @@ export function Chat() {
         undefined,
         memoryList,
         selectedModel,
-        getCurrentPersona()
+        getCurrentPersona(),
+        settings.customAiInstructions,
+        settings.aiInstructionsEnabled,
+        settings.aiInstructionsMode
       );
       
       fullAiResponse = await processAIStream(stream, targetChar.id);
@@ -1963,7 +1981,10 @@ export function Chat() {
         userImageUrl || undefined, 
         memoryList, 
         selectedModel, 
-        getCurrentPersona()
+        getCurrentPersona(),
+        settings.customAiInstructions,
+        settings.aiInstructionsEnabled,
+        settings.aiInstructionsMode
       );
 
       fullAiResponse = await processAIStream(stream, targetCharId, newUserMessage.id);

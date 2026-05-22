@@ -11,6 +11,9 @@ interface Settings {
   enableAnimations: boolean;
   glassmorphism: boolean;
   logoStyle: 'new' | 'classic';
+  customAiInstructions: string;
+  aiInstructionsEnabled: boolean;
+  aiInstructionsMode: 'append' | 'prepend' | 'override';
 }
 
 interface SettingsContextType {
@@ -26,6 +29,9 @@ const defaultSettings: Settings = {
   enableAnimations: true,
   glassmorphism: true,
   logoStyle: 'new',
+  customAiInstructions: '',
+  aiInstructionsEnabled: false,
+  aiInstructionsMode: 'append',
 };
 
 const SettingsContext = createContext<SettingsContextType>({
