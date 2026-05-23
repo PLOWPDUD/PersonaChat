@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 export function Home() {
   const { t } = useTranslation();
-  const { user, profile, quotaExceeded: globalQuotaExceeded } = useAuth();
+  const { user, profile, quotaExceeded: globalQuotaExceeded, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -394,8 +394,9 @@ export function Home() {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchData();
-  }, [user, tab]);
+  }, [user, tab, authLoading]);
 
     const fetchRecentCharacters = async () => {
     if (!user) return;

@@ -3,8 +3,8 @@ import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/
 import { CHAT_THEMES } from '../lib/chatThemes';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../lib/firebase';
-import { EmailAuthProvider, linkWithCredential, updatePassword, reauthenticateWithCredential } from 'firebase/auth';
-import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor, MessageSquare, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { EmailAuthProvider, linkWithCredential, updatePassword, reauthenticateWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
+import { Palette, Type, Maximize, Sparkles, Layout as LayoutIcon, RefreshCcw, Check, Bell, ShieldAlert, BellOff, Globe, Download, Smartphone, Monitor, MessageSquare, Lock, Eye, EyeOff, ShieldCheck, Users, UserPlus, Trash2, ArrowLeftRight, Plus } from 'lucide-react';
 import { getNotificationSupport, requestNotificationPermission, showSystemNotification } from '../lib/notifications';
 import { useTranslation } from 'react-i18next';
 
@@ -60,6 +60,136 @@ export function Settings() {
   const [securityError, setSecurityError] = React.useState('');
   const [securitySuccess, setSecuritySuccess] = React.useState('');
   const [securityLoading, setSecurityLoading] = React.useState(false);
+
+  // Account Switcher / Alt Accounts State
+  interface AltAccount {
+    uid: string;
+    email: string;
+    displayName: string;
+    photoURL?: string;
+    password?: string;
+  }
+
+  const { profile } = useAuth();
+  const [altAccounts, setAltAccounts] = React.useState<AltAccount[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('alt_accounts') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [saveCurrentPassword, setSaveCurrentPassword] = React.useState('');
+  const [altEmail, setAltEmail] = React.useState('');
+  const [altPassword, setAltPassword] = React.useState('');
+  const [altError, setAltError] = React.useState('');
+  const [altSuccess, setAltSuccess] = React.useState('');
+  const [isAltLoading, setIsAltLoading] = React.useState(false);
+  const [switchingUid, setSwitchingUid] = React.useState('');
+
+  const handleSaveCurrentToSwitcher = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saveCurrentPassword) {
+      setAltError('Please enter your password to authorize saving this account.');
+      return;
+    }
+    if (!user || !user.email) return;
+
+    try {
+      setIsAltLoading(true);
+      setAltError('');
+      setAltSuccess('');
+
+      const updated = [...altAccounts.filter(acc => acc.uid !== user.uid)];
+      updated.push({
+        uid: user.uid,
+        email: user.email,
+        displayName: profile?.displayName || user.displayName || user.email.split('@')[0],
+        photoURL: profile?.photoURL || user.photoURL || '',
+        password: saveCurrentPassword
+      });
+
+      localStorage.setItem('alt_accounts', JSON.stringify(updated));
+      setAltAccounts(updated);
+      setSaveCurrentPassword('');
+      setAltSuccess('Current login saved to local account switcher list! You can now switch back to this account with one click.');
+    } catch (err: any) {
+      setAltError('Failed to save: ' + (err.message || err));
+    } finally {
+      setIsAltLoading(false);
+    }
+  };
+
+  const handleAddAltAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!altEmail || !altPassword) {
+      setAltError('Please fill in both email and password.');
+      return;
+    }
+    try {
+      setIsAltLoading(true);
+      setAltError('');
+      setAltSuccess('');
+
+      // Verify the credentials by performing a non-blocking sign in
+      const cred = await signInWithEmailAndPassword(auth, altEmail.trim(), altPassword);
+      const emailName = cred.user.email ? cred.user.email.split('@')[0] : 'Persona User';
+      const displayNameVal = cred.user.displayName || emailName;
+
+      // Save to alts array
+      const updated = [...altAccounts.filter(acc => acc.uid !== cred.user.uid)];
+      updated.push({
+        uid: cred.user.uid,
+        email: cred.user.email!,
+        displayName: displayNameVal,
+        photoURL: cred.user.photoURL || '',
+        password: altPassword
+      });
+
+      localStorage.setItem('alt_accounts', JSON.stringify(updated));
+      setAltAccounts(updated);
+
+      // Reset fields
+      setAltEmail('');
+      setAltPassword('');
+      setAltSuccess(`Successfully linked and logged in as ${displayNameVal}!`);
+    } catch (err: any) {
+      console.error(err);
+      let errMsg = err.message || 'Verification failed.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        errMsg = 'Invalid email or password for alternate account.';
+      }
+      setAltError(errMsg);
+    } finally {
+      setIsAltLoading(false);
+    }
+  };
+
+  const handleSwitchToAccount = async (acc: AltAccount) => {
+    if (!acc.password || !acc.email) {
+      setAltError('No saved credentials for this account. Please delete and re-add.');
+      return;
+    }
+    try {
+      setAltError('');
+      setAltSuccess('');
+      setSwitchingUid(acc.uid);
+
+      await signInWithEmailAndPassword(auth, acc.email, acc.password);
+      setAltSuccess(`Successfully switched active account to ${acc.displayName}!`);
+    } catch (err: any) {
+      console.error(err);
+      setAltError('Failed to switch: ' + (err.message || err));
+    } finally {
+      setSwitchingUid('');
+    }
+  };
+
+  const handleRemoveAltAccount = (uid: string) => {
+    const updated = altAccounts.filter(acc => acc.uid !== uid);
+    localStorage.setItem('alt_accounts', JSON.stringify(updated));
+    setAltAccounts(updated);
+    setAltSuccess('Account removed from local switcher.');
+  };
 
   const hasPasswordProvider = user?.providerData.some(p => p.providerId === 'password') || false;
 
@@ -904,6 +1034,204 @@ export function Settings() {
             )}
           </div>
         )}
+      </section>
+
+      {/* Account Switcher (Alt Accounts) Section */}
+      <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 md:p-8 space-y-6 glass-card shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-md">
+            <Users className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Account Switcher (Alt Accounts)</h2>
+            <p className="text-xs text-zinc-400">Save your credentials locally and switch instantly between your PersonaChat accounts with 1-click.</p>
+          </div>
+        </div>
+
+        {altSuccess && (
+          <div id="alt-success-alert" className="bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 p-4 rounded-xl text-sm flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{altSuccess}</span>
+          </div>
+        )}
+
+        {altError && (
+          <div id="alt-error-alert" className="bg-rose-500/10 border border-rose-500/25 text-rose-400 p-4 rounded-xl text-sm flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-rose-400" />
+            <span>{altError}</span>
+          </div>
+        )}
+
+        {/* Saved Accounts Switcher Grid */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider pl-1">Saved Swappable Accounts</h3>
+          
+          {altAccounts.length === 0 ? (
+            <div id="no-alts-placeholder" className="p-6 border border-dashed border-zinc-800 text-center rounded-2xl text-zinc-500 text-sm">
+              No alternate accounts linked yet. Save your current login or register existing accounts below to toggle them effortlessly!
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {altAccounts.map((acc) => {
+                const isActive = user?.uid === acc.uid;
+                const isSwappingThis = switchingUid === acc.uid;
+                return (
+                  <div 
+                    key={acc.uid} 
+                    id={`alt-card-${acc.uid}`}
+                    className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${
+                      isActive 
+                        ? 'bg-zinc-800/40 border-indigo-500/30 ring-1 ring-indigo-500/20 shadow-lg' 
+                        : 'bg-zinc-950/40 border-zinc-850 hover:bg-zinc-950/80 hover:border-zinc-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
+                        {acc.photoURL ? (
+                          <img src={acc.photoURL} alt={acc.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="text-white text-sm font-bold">{acc.displayName.slice(0, 2).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-white truncate flex items-center gap-2">
+                          {acc.displayName}
+                          {isActive && (
+                            <span className="px-1.5 py-0.5 text-[10px] uppercase font-extrabold tracking-widest bg-indigo-500/20 text-indigo-400 rounded-md border border-indigo-500/30">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-zinc-400 truncate">{acc.email}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {!isActive && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchToAccount(acc)}
+                          disabled={!!switchingUid}
+                          className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 hover:bg-zinc-850 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isSwappingThis ? (
+                            <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <ArrowLeftRight className="w-3.5 h-3.5 text-zinc-400" />
+                          )}
+                          Switch
+                        </button>
+                      )}
+                      
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAltAccount(acc.uid)}
+                        className="p-2 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/5 rounded-lg transition-colors cursor-pointer"
+                        title="Remove from Swapper"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Actions / Forms Panel */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800">
+          
+          {/* Form 1: Save Current Session */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">Save Active Login to Swapper</h3>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              If your current account uses password sign-in, save it below to secure 1-click switching back and forth.
+            </p>
+            {user && hasPasswordProvider && !altAccounts.some(acc => acc.uid === user.uid) ? (
+              <form onSubmit={handleSaveCurrentToSwitcher} className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-zinc-400 font-semibold" htmlFor="save-curr-pwd">Confirm Current Account Password</label>
+                  <input
+                    type="password"
+                    id="save-curr-pwd"
+                    value={saveCurrentPassword}
+                    onChange={(e) => setSaveCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                    disabled={isAltLoading}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-700"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isAltLoading}
+                  className="w-full py-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-white hover:bg-zinc-800/60 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  Save Active Session
+                </button>
+              </form>
+            ) : (
+              <div className="p-3 bg-zinc-950/60 border border-zinc-850 rounded-xl text-xs text-zinc-500 text-center">
+                {user && !hasPasswordProvider 
+                  ? "Social or guest accounts are protected by web secure boundaries and must be entered through external redirections."
+                  : "Active credentials already exist in the multi-switcher or this session is not a password account."}
+              </div>
+            )}
+          </div>
+
+          {/* Form 2: Link and Sign in with Alt */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-indigo-400" />
+              <h3 className="text-sm font-bold text-white">Add Existing Alt Account</h3>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Authenticate of any existing Email & Password account to automatically register it to the switcher.
+            </p>
+            <form onSubmit={handleAddAltAccount} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-zinc-400 font-semibold" htmlFor="alt-add-email">Email Address</label>
+                <input
+                  type="email"
+                  id="alt-add-email"
+                  value={altEmail}
+                  onChange={(e) => setAltEmail(e.target.value)}
+                  placeholder="alternate@email.com"
+                  disabled={isAltLoading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-700"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-zinc-400 font-semibold" htmlFor="alt-add-pass">Password</label>
+                <input
+                  type="password"
+                  id="alt-add-pass"
+                  value={altPassword}
+                  onChange={(e) => setAltPassword(e.target.value)}
+                  placeholder="••••••••"
+                  disabled={isAltLoading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-700"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isAltLoading}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-500/10 disabled:opacity-50"
+              >
+                {isAltLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
+                Link & Switch
+              </button>
+            </form>
+          </div>
+
+        </div>
       </section>
 
       {/* Preview Section */}

@@ -366,7 +366,8 @@ export default function Messages() {
       
       setMessages(prev => [newLocalMsg, ...prev]);
 
-      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), Object.assign({}, newLocalMsg, { id: undefined, createdAt: serverTimestamp() }));
+      const { id, ...msgData } = newLocalMsg;
+      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), { ...msgData, createdAt: serverTimestamp() });
 
       await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
         lastMessage: imageUrl ? 'Sent an image' : currentFile ? `Sent a file: ${currentFile.name}` : content,

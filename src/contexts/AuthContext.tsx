@@ -274,7 +274,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
         const now = Date.now();
-        const syncThreshold = 10 * 60 * 1000; 
+        const syncThreshold = currentUser.isAnonymous ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
         
         if (lastSync && (now - parseInt(lastSync)) < syncThreshold) {
           setLoading(false);

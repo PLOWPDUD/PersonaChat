@@ -381,7 +381,7 @@ export function Chat() {
           characterId: targetCharId,
           score: userRating,
           review: userReview.trim() || null,
-          createdAt: serverTimestamp()
+          createdAt: new Date().toISOString()
         });
         
         const newCount = (targetChar.ratingCount || 0) + 1;
@@ -423,7 +423,7 @@ export function Chat() {
         type: 'character',
         reason: reportReason.trim(),
         status: 'pending',
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
       setIsReportModalOpen(false);
       setReportReason('');
@@ -470,7 +470,7 @@ export function Chat() {
         characterAvatarUrl: primaryChar.avatarUrl,
         creatorName: primaryChar.creatorName || 'Unknown',
         creatorId: primaryChar.creatorId || null,
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`
       };
@@ -480,7 +480,7 @@ export function Chat() {
         role: 'model',
         characterId: primaryChar.id,
         content: primaryChar.greeting,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       };
 
       try {
@@ -1230,7 +1230,7 @@ export function Chat() {
         characterAvatarUrl: char.avatarUrl,
         creatorName: char.creatorName || 'Unknown',
         creatorId: char.creatorId || null,
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${char.name}`
       };
@@ -1240,7 +1240,7 @@ export function Chat() {
         role: 'model',
         characterId: char.id,
         content: char.greeting,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       };
 
       // STRATEGY 3: Store initial message in the parent document array in one write
@@ -1282,7 +1282,7 @@ export function Chat() {
         await addDoc(collection(dbChat, `chats/${chatId}/memories`), {
           chatId,
           content: newMemory.trim(),
-          createdAt: serverTimestamp()
+          createdAt: new Date().toISOString()
         });
       }
       setNewMemory('');
@@ -1533,7 +1533,7 @@ export function Chat() {
                 characterName: primaryChar.name,
                 characterAvatarUrl: primaryChar.avatarUrl,
                 creatorName: primaryChar.creatorName || 'Unknown',
-                createdAt: serverTimestamp(),
+                createdAt: new Date().toISOString(),
                 updatedAt: serverTimestamp(),
                 title: `Chat with ${primaryChar.name}`
               };
@@ -1543,7 +1543,7 @@ export function Chat() {
                 role: 'model',
                 characterId: primaryChar.id,
                 content: primaryChar.greeting,
-                createdAt: serverTimestamp()
+                createdAt: new Date().toISOString()
               };
 
               try {
