@@ -272,6 +272,7 @@ export default function Messages() {
     if (!user || isSubmitting) return;
 
     setIsSubmitting(true);
+    setSearchQuery('');
     try {
       // Check if chat already exists
       const q = query(
@@ -1433,18 +1434,30 @@ export default function Messages() {
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white">{t('messages.newDirectTitle')}</h2>
-                <button onClick={() => setIsCreateDirectOpen(false)} className="text-zinc-500 hover:text-white">
+                <button onClick={() => { setIsCreateDirectOpen(false); setSearchQuery(''); }} className="text-zinc-500 hover:text-white">
                   <X className="w-6 h-6" />
                 </button>
               </div>
 
               <div className="space-y-4">
                 <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 block">{t('messages.selectUser')}</label>
+                
+                <div className="relative">
+                  <Search className="absolute left-3 top-3.5 w-4 h-4 text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Search users..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                  />
+                </div>
+
                 <div className="max-h-60 overflow-y-auto space-y-2 no-scrollbar">
-                  {availableUsers.length === 0 ? (
+                  {availableUsers.filter(u => u.displayName.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                     <p className="text-center py-8 text-zinc-500 text-sm italic">{t('messages.noUsers')}</p>
                   ) : (
-                    availableUsers.map(u => (
+                    availableUsers.filter(u => u.displayName.toLowerCase().includes(searchQuery.toLowerCase())).map(u => (
                       <button
                         key={u.uid}
                         onClick={() => handleCreateDirect(u.uid)}
