@@ -53,13 +53,32 @@ export const BADGES: Badge[] = [
 
 export async function checkAndAwardBadges(userId: string) {
   try {
+    const lastCheckKey = `last_badge_check_${userId}`;
+    const lastCheck = localStorage.getItem(lastCheckKey);
+    const now = Date.now();
+    const oneHour = 60 * 60 * 1000;
+    
+    // Throttle checks to once every hour to protect Firestore usage limits
+    if (lastCheck && (now - parseInt(lastCheck)) < oneHour) {
+      return [];
+    }
+
     const profileRef = doc(db, 'profiles', userId);
     const profileSnap = await getDoc(profileRef);
     
-    if (!profileSnap.exists()) return;
+    if (!profileSnap.exists()) return [];
     
     const profileData = profileSnap.data();
     const currentBadges = profileData.badges || [];
+    
+    // If the user already unlocked all available badges, skip querying their characters collection entirely!
+    if (currentBadges.length >= BADGES.length) {
+      localStorage.setItem(lastCheckKey, now.toString());
+      return [];
+    }
+    
+    // Set check timestamp before doing query to protect against overlapping auth events
+    localStorage.setItem(lastCheckKey, now.toString());
     
     // Calculate total interactions across all public characters
     const charactersRef = collection(db, 'characters');

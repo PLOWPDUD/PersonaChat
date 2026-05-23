@@ -48,6 +48,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const isSyncing = useRef(false);
 
+  const profileRef = useRef<any | null>(profile);
+  const quotaExceededRef = useRef<boolean>(quotaExceeded);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  useEffect(() => {
+    quotaExceededRef.current = quotaExceeded;
+  }, [quotaExceeded]);
+
   // Use sessionStorage to cache roles for the session
   const [roles, setRoles] = useState<{ isOwner: boolean; isModerator: boolean }> (() => {
     const cached = sessionStorage.getItem('cached_roles');
@@ -257,7 +268,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setRoles({ isOwner: true, isModerator: true });
         }
 
-        if (profile && profile.uid === currentUser.uid) {
+        if (profileRef.current && profileRef.current.uid === currentUser.uid) {
           setLoading(false);
         }
 
@@ -270,7 +281,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        if (isSyncing.current || (quotaExceeded && !profile)) {
+        if (isSyncing.current || (quotaExceededRef.current && !profileRef.current)) {
           setLoading(false);
           return;
         }
@@ -391,7 +402,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
             
             // If we don't have a profile yet, build a local fallback profile from currentUser
-            if (!profile) {
+            if (!profileRef.current) {
               const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
               const fallBackName = currentUser.isAnonymous 
                 ? `Guest ${currentUser.uid.slice(0, 5)}` 
@@ -440,7 +451,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [profile]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ 

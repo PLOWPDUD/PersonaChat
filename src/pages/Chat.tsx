@@ -11,7 +11,7 @@ import { checkAndAwardBadges } from '../services/badgeService';
 import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile, ChevronDown, UserCheck, UserX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { playSound } from '../lib/sounds';
 
@@ -185,10 +185,24 @@ export function Chat() {
   const [userPersona, setUserPersona] = useState('');
   const [personas, setPersonas] = useState<{ id: string; name: string; description: string }[]>([]);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>('default');
+  const [isPersonaDropdownOpen, setIsPersonaDropdownOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const personaDropdownRef = useRef<HTMLDivElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
+        setIsPersonaDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || !profile) return;
@@ -1715,9 +1729,10 @@ export function Chat() {
   }, [chatId, isLocalMode]);
 
   const getCurrentPersona = () => {
+    if (selectedPersonaId === 'none') return '';
     if (selectedPersonaId === 'default') return userPersona;
     const persona = personas.find(p => p.id === selectedPersonaId);
-    return persona ? persona.description : userPersona;
+    return persona ? persona.description : '';
   };
 
   const syncToFirestore = async () => {
@@ -2321,19 +2336,120 @@ export function Chat() {
                title={t('chat.reviewsTitle')}
             >
                <MessageSquare className="w-5 h-5" />
-            </button>
+            </button>             {/* Custom Persona Dropdown */}
+            <div ref={personaDropdownRef} className="relative z-[60]">
+              <button
+                type="button"
+                onClick={() => setIsPersonaDropdownOpen(!isPersonaDropdownOpen)}
+                className={`flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer ${
+                  selectedPersonaId !== 'default' && selectedPersonaId !== 'none' ? 'border-indigo-500/50 text-white' : ''
+                }`}
+                title={t('settings.selectPersona', 'Select your persona')}
+              >
+                {selectedPersonaId === 'none' ? (
+                  <UserX className="w-3.5 h-3.5 sm:w-4 h-4 text-zinc-500" />
+                ) : selectedPersonaId === 'default' ? (
+                  <User className="w-3.5 h-3.5 sm:w-4 h-4 text-theme-primary" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5 sm:w-4 h-4 text-emerald-500" />
+                )}
+                <span className="max-w-[80px] sm:max-w-[120px] truncate font-medium">
+                  {selectedPersonaId === 'none' 
+                    ? t('settings.noPersona', 'No Persona') 
+                    : selectedPersonaId === 'default' 
+                      ? t('settings.defaultPersona', 'Default Persona') 
+                      : (personas.find(p => p.id === selectedPersonaId)?.name || t('settings.noPersona', 'No Persona'))
+                  }
+                </span>
+                <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${isPersonaDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
 
-            <select
-              value={selectedPersonaId}
-              onChange={(e) => setSelectedPersonaId(e.target.value)}
-              className="bg-zinc-800 text-zinc-300 text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[120px] sm:max-w-none"
-              title={t('settings.selectPersona', 'Select your persona')}
-            >
-              <option value="default">{t('settings.defaultPersona', 'Default Persona')}</option>
-              {personas.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+              {isPersonaDropdownOpen && (
+                <div className="absolute right-0 mt-1.5 w-64 rounded-xl bg-zinc-900 border border-zinc-800 shadow-2xl z-50 overflow-hidden divide-y divide-zinc-800/20 backdrop-blur-md">
+                  <div className="p-2 space-y-1">
+                    {/* Option: No Persona */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPersonaId('none');
+                        setIsPersonaDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-start gap-2.5 p-2 rounded-lg transition-all text-left group ${
+                        selectedPersonaId === 'none' ? 'bg-zinc-800/80 text-white' : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-white'
+                      }`}
+                    >
+                      <UserX className="w-4 h-4 mt-0.5 flex-shrink-0 text-zinc-500 group-hover:text-zinc-400" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs sm:text-sm font-medium flex items-center justify-between">
+                          <span>{t('settings.noPersona', 'No Persona')}</span>
+                          {selectedPersonaId === 'none' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                        </div>
+                        <p className="text-[10px] text-zinc-500 mt-0.5 leading-normal whitespace-normal">
+                          {t('settings.noPersonaDesc', 'Disable custom persona roleplay guidelines. AI responds raw.')}
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Option: Default Persona */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPersonaId('default');
+                        setIsPersonaDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-start gap-2.5 p-2 rounded-lg transition-all text-left group ${
+                        selectedPersonaId === 'default' ? 'bg-zinc-800/80 text-white' : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-white'
+                      }`}
+                    >
+                      <User className="w-4 h-4 mt-0.5 flex-shrink-0 text-theme-primary" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs sm:text-sm font-medium flex items-center justify-between">
+                          <span>{t('settings.defaultPersona', 'Default Persona')}</span>
+                          {selectedPersonaId === 'default' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                        </div>
+                        <p className="text-[10px] text-zinc-500 mt-0.5 leading-normal truncate max-w-[180px]">
+                          {userPersona || t('settings.noDefaultPersonaSet', 'No default persona profile setup.')}
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {personas.length > 0 ? (
+                    <div className="p-2 space-y-1 max-h-48 overflow-y-auto">
+                      <div className="text-[9px] font-bold text-zinc-500 py-1 px-1.5 uppercase tracking-wider">
+                        {t('settings.yourPersonas', 'Your Personas')}
+                      </div>
+                      {personas.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPersonaId(p.id);
+                            setIsPersonaDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-start gap-2.5 p-2 rounded-lg transition-all text-left group ${
+                            selectedPersonaId === p.id ? 'bg-zinc-800/80 text-white' : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-white'
+                          }`}
+                        >
+                          <UserCheck className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-500" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs sm:text-sm font-medium flex items-center justify-between">
+                              <span className="truncate">{p.name}</span>
+                              {selectedPersonaId === p.id && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                            </div>
+                            {p.description && (
+                              <p className="text-[10px] text-zinc-500 mt-0.5 leading-normal truncate font-normal">
+                                {p.description}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
 
             <select
               value={selectedModel}
