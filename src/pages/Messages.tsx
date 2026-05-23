@@ -4,7 +4,7 @@ import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
-import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip } from 'lucide-react';
+import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip, Palette, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { addNotification } from '../lib/gamification';
@@ -12,6 +12,7 @@ import { playSound } from '../lib/sounds';
 import { GoogleGenAI } from '@google/genai';
 import { moderateImage } from '../services/aiService';
 import { getCachedProfile, setCachedProfile } from '../lib/cache';
+import { getChatTheme, CHAT_THEMES } from '../lib/chatThemes';
 
 interface Chat {
   id: string;
@@ -52,7 +53,9 @@ interface Message {
 
 export default function Messages() {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
+  const msgThemeObj = getChatTheme(settings.messageTheme);
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const { user, profile, isOwner, toggleBlockUser } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
@@ -825,15 +828,76 @@ export default function Messages() {
                   {activeChat.type === 'group' ? activeChat.name : activeChat.otherUser?.displayName}
                 </h3>
               </div>
-              <button 
-                onClick={() => setIsInfoOpen(!isInfoOpen)}
-                className={`p-2 rounded-xl transition-all ${isInfoOpen ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-              >
-                <Info className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* DM Theme Selector Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)}
+                    className={`p-2 rounded-xl transition-all flex items-center gap-1.5 ${
+                      isThemeMenuOpen || settings.messageTheme !== 'default'
+                        ? 'text-theme-primary bg-theme-primary/15'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Change Message Theme"
+                  >
+                    <Palette className="w-5 h-5" />
+                    <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+                  </button>
+
+                  {isThemeMenuOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setIsThemeMenuOpen(false)} 
+                      />
+                      <div className="absolute right-0 mt-2 w-72 bg-zinc-950 border border-zinc-800 rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in-50 slide-in-from-top-2 duration-200">
+                        <div className="px-2 py-1.5 border-b border-zinc-900 mb-2">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select DM Theme</h4>
+                        </div>
+                        <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1 col-span-1">
+                          {CHAT_THEMES.map((theme) => {
+                            const isSelected = settings.messageTheme === theme.id;
+                            return (
+                              <button
+                                key={theme.id}
+                                onClick={() => {
+                                  updateSettings({ messageTheme: theme.id });
+                                  setIsThemeMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2.5 p-2 rounded-xl transition-all text-left cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-zinc-900 border border-zinc-800 text-white'
+                                    : 'hover:bg-zinc-900 text-zinc-400 hover:text-white border border-transparent'
+                                }`}
+                              >
+                                <span className="text-xl flex-shrink-0">{theme.emoji}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                                    {theme.name}
+                                  </p>
+                                </div>
+                                {isSelected && (
+                                  <Check className="w-3.5 h-3.5 text-theme-primary flex-shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <button 
+                  onClick={() => setIsInfoOpen(!isInfoOpen)}
+                  className={`p-2 rounded-xl transition-all ${isInfoOpen ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                >
+                  <Info className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+            <div className={`flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar transition-all duration-300 ${msgThemeObj.backdropClass}`}>
               {loadingMessages ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
@@ -908,10 +972,10 @@ export default function Messages() {
                           ) : (
                             <div className={`p-3 rounded-2xl text-sm shadow-sm ${
                               msg.senderId === user?.uid 
-                                ? 'bg-indigo-600 text-white rounded-tr-none' 
+                                ? msgThemeObj.userBubbleClass 
                                 : msg.isBot 
-                                  ? 'bg-purple-600/20 border border-purple-500/30 text-purple-200 rounded-tl-none'
-                                  : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
+                                  ? msgThemeObj.botBubbleClass
+                                  : msgThemeObj.charBubbleClass
                             }`}>
                               {/* Quoted Message */}
                               {msg.replyToId && (

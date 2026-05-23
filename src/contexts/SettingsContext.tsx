@@ -14,6 +14,8 @@ interface Settings {
   customAiInstructions: string;
   aiInstructionsEnabled: boolean;
   aiInstructionsMode: 'append' | 'prepend' | 'override';
+  chatTheme: string;
+  messageTheme: string;
 }
 
 interface SettingsContextType {
@@ -32,6 +34,8 @@ const defaultSettings: Settings = {
   customAiInstructions: '',
   aiInstructionsEnabled: false,
   aiInstructionsMode: 'append',
+  chatTheme: 'default',
+  messageTheme: 'default',
 };
 
 const SettingsContext = createContext<SettingsContextType>({
@@ -45,7 +49,7 @@ export const useSettings = () => useContext(SettingsContext);
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem('persona-chat-settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
+    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
   });
 
   useEffect(() => {

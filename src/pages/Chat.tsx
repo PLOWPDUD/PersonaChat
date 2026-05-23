@@ -11,9 +11,10 @@ import { checkAndAwardBadges } from '../services/badgeService';
 import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile, ChevronDown, UserCheck, UserX } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile, ChevronDown, UserCheck, UserX, Palette } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { playSound } from '../lib/sounds';
+import { getChatTheme, CHAT_THEMES } from '../lib/chatThemes';
 
 interface Character {
   id: string;
@@ -53,7 +54,9 @@ interface Memory {
 
 export function Chat() {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
+  const chatThemeObj = getChatTheme(settings.chatTheme);
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const { characterId, chatId: urlChatId } = useParams<{ characterId: string; chatId?: string }>();
   const { user, profile, isOwner, isModerator, quotaExceeded: globalQuotaExceeded } = useAuth();
   const navigate = useNavigate();
@@ -2478,6 +2481,70 @@ export function Chat() {
               <RefreshCw className="w-5 h-5" />
               <span className="hidden md:inline text-sm font-medium">{t('common.sync', 'Sync')}</span>
             </button>
+
+            {/* Theme Selector Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)}
+                className={`p-2 rounded-lg transition-all flex items-center gap-2 ${
+                  isThemeMenuOpen || settings.chatTheme !== 'default'
+                    ? 'text-theme-primary bg-theme-primary/15'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+                title="Change Chat Theme"
+              >
+                <Palette className="w-5 h-5" />
+                <span className="hidden lg:inline text-sm font-medium">Theme</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+              </button>
+
+              {isThemeMenuOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsThemeMenuOpen(false)} 
+                  />
+                  <div className="absolute right-0 mt-2 w-80 bg-zinc-950 border border-zinc-800 rounded-2xl p-3 shadow-2xl z-50 animate-in fade-in-50 slide-in-from-top-2 duration-200">
+                    <div className="px-2 py-1.5 border-b border-zinc-900 mb-2">
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Chat Backdrop</h4>
+                    </div>
+                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                      {CHAT_THEMES.map((theme) => {
+                        const isSelected = settings.chatTheme === theme.id;
+                        return (
+                          <button
+                            key={theme.id}
+                            onClick={() => {
+                              updateSettings({ chatTheme: theme.id });
+                              setIsThemeMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all text-left cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-900 border border-zinc-800 text-white'
+                                : 'hover:bg-zinc-900 text-zinc-400 hover:text-white border border-transparent'
+                            }`}
+                          >
+                            <span className="text-2xl flex-shrink-0">{theme.emoji}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                                {theme.name}
+                                {isSelected && (
+                                  <span className="w-1.5 h-1.5 bg-theme-primary rounded-full" />
+                                )}
+                              </p>
+                              <p className="text-[10px] text-zinc-500 truncate leading-normal">{theme.description}</p>
+                            </div>
+                            {isSelected && (
+                              <Check className="w-4 h-4 text-theme-primary flex-shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             
             <div className="hidden sm:block w-px h-6 bg-zinc-800 mx-1" />
 
@@ -2637,7 +2704,7 @@ export function Chat() {
         {activeTab === 'chat' ? (
           <>
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth">
+            <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth transition-all duration-300 ${chatThemeObj.backdropClass}`}>
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 const isEditing = editingMessageId === msg.id;
@@ -2707,8 +2774,8 @@ export function Chat() {
                         <div 
                           className={`relative rounded-2xl p-4 shadow-sm ${
                           isUser 
-                            ? 'bg-indigo-600 text-white rounded-tr-sm' 
-                            : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700/50'
+                            ? chatThemeObj.userBubbleClass 
+                            : chatThemeObj.charBubbleClass
                         }`}>
                           {/* Reply Quote */}
                           {msg.replyToId && (

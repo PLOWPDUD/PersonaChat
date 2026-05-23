@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSettings, ThemeColor, FontStyle, DisplayDensity } from '../contexts/SettingsContext';
+import { CHAT_THEMES } from '../lib/chatThemes';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../lib/firebase';
 import { EmailAuthProvider, linkWithCredential, updatePassword, reauthenticateWithCredential } from 'firebase/auth';
@@ -348,6 +349,91 @@ export function Settings() {
                 )}
               </button>
             ))}
+          </div>
+        </section>
+
+        {/* Chat & Messages Themes */}
+        <section className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 space-y-6 glass-card col-span-full">
+          <div className="flex items-center gap-3 text-white font-semibold">
+            <div className="w-8 h-8 rounded-lg bg-theme-primary/10 flex items-center justify-center text-theme-primary">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Chat & Messages Themes</h3>
+              <p className="text-xs text-zinc-400 font-normal">Select custom backdrops and speech bubble styling for your dialogue screens.</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Chat Theme Selection */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                <span className="text-sm font-semibold text-zinc-300">Public & Character Chat Theme</span>
+                <span className="text-[10px] bg-theme-primary/10 text-theme-primary px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Applied to Character Chats</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {CHAT_THEMES.map((theme) => {
+                  const isSelected = settings.chatTheme === theme.id;
+                  return (
+                    <button
+                      key={`chat-${theme.id}`}
+                      onClick={() => updateSettings({ chatTheme: theme.id })}
+                      className={`flex flex-col items-start text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-zinc-800 border-theme-primary ring-1 ring-theme-primary/30 text-white' 
+                          : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl">{theme.emoji}</span>
+                        <span className="font-bold text-sm text-white">{theme.name}</span>
+                      </div>
+                      <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed mt-1 flex-1">{theme.description}</p>
+                      {isSelected && (
+                        <span className="mt-2 text-[10px] bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Selected
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Direct Messages Theme Selection */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                <span className="text-sm font-semibold text-zinc-300">Direct Messages & Private Chat Theme</span>
+                <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Applied to Private DMs</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {CHAT_THEMES.map((theme) => {
+                  const isSelected = settings.messageTheme === theme.id;
+                  return (
+                    <button
+                      key={`msg-${theme.id}`}
+                      onClick={() => updateSettings({ messageTheme: theme.id })}
+                      className={`flex flex-col items-start text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-zinc-800 border-purple-500 ring-1 ring-purple-500/30 text-white' 
+                          : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl">{theme.emoji}</span>
+                        <span className="font-bold text-sm text-white">{theme.name}</span>
+                      </div>
+                      <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed mt-1 flex-1">{theme.description}</p>
+                      {isSelected && (
+                        <span className="mt-2 text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Selected
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </section>
 
