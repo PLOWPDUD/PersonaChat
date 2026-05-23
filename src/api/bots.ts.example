@@ -1,0 +1,50 @@
+// Strategy 4: Vercel Serverless Edge Caching for Public Endpoints
+// File location: /api/bots.ts (Next.js / Vercel API Route)
+
+import { NextApiRequest, NextApiResponse } from 'next';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// Initialize Firebase Admin (Only initialize once in Serverless environments)
+if (!getApps().length) {
+  // Ensure that FIREBASE_SERVICE_ACCOUNT is securely stored in your Vercel Environment Variables
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT as string);
+  initializeApp({
+    credential: cert(serviceAccount)
+  });
+}
+
+const db = getFirestore();
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    // -------------------------------------------------------------
+    // AGGRESSIVE CDNs EDGE CACHING (The zero-read magic)
+    // -------------------------------------------------------------
+    // s-maxage=3600 (Cache at Edge CDN for 1 hour)
+    // stale-while-revalidate=600 (Serve stale for 10 mins while fetching fresh block in background)
+    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=600');
+
+    // Make ONE query to Firebase from the Edge node. 
+    // Thousands of user visits over the next hour will cost ZERO extra reads.
+    const botsSnapshot = await db.collection('characters')
+      .where('isPublic', '==', true)
+      .orderBy('usersCount', 'desc')
+      .limit(50)
+      .get();
+
+    const bots = botsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return res.status(200).json(bots);
+  } catch (error) {
+    console.error('Error fetching bots in edge function:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}

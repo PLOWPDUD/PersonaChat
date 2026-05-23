@@ -1233,7 +1233,7 @@ export default function Messages() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSubmitting || isModerating}
-                  className="p-2 bg-zinc-800 text-zinc-400 rounded-xl hover:text-white hover:bg-zinc-700 transition-all disabled:opacity-50"
+                  className={`p-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-all disabled:opacity-50 ${msgThemeObj.accentTextClass}`}
                   title={t('messages.attach', 'Attach File')}
                 >
                   {isModerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
@@ -1242,7 +1242,7 @@ export default function Messages() {
                   type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                   className={`p-2 rounded-xl transition-all ${
-                    showEmojiPicker ? 'bg-indigo-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                    showEmojiPicker ? msgThemeObj.buttonClass : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
                   }`}
                   title={t('messages.emojis', 'Emojis')}
                 >
@@ -1254,12 +1254,12 @@ export default function Messages() {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder={t('messages.placeholder')}
-                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                className={`flex-1 rounded-xl px-4 py-2 text-sm text-white focus:outline-none transition-all ${msgThemeObj.inputClass}`}
               />
               <button
                 type="submit"
                 disabled={(!newMessage.trim() && !selectedImage) || isSubmitting || isModerating}
-                className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px]"
+                className={`p-2 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] ${msgThemeObj.buttonClass}`}
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>

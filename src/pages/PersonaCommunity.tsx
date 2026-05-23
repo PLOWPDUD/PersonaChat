@@ -347,15 +347,19 @@ export default function PersonaCommunity() {
         }
 
         // Fetch likes - Check if we have a global set of liked post IDs
-        // Optimization: In a real app, you might maintain a collection of community_likes under the user
         const cachedLikes = getCachedUserLikes();
         if (cachedLikes) {
           setUserLikes(cachedLikes);
         } else {
-          // If no cache, we might need to fetch. 
-          // For now, to avoid quota errors, let's only check if we really need to or use a limited set.
-          // In a production app, we'd have a user/uid/liked_posts collection.
-          setUserLikes(new Set());
+          try {
+            const likesSnap = await getDocs(collection(db, `users/${user.uid}/liked_posts`));
+            const likesSet = new Set(likesSnap.docs.map(doc => doc.id));
+            setUserLikes(likesSet);
+            setCachedUserLikes(likesSet);
+          } catch (err) {
+            console.error("Error fetching user likes:", err);
+            setUserLikes(new Set());
+          }
         }
       } catch (e) {
         if (isQuotaError(e)) setLocalQuotaExceeded(true);
@@ -572,9 +576,11 @@ export default function PersonaCommunity() {
     try {
       if (isLiked) {
         await deleteDoc(likeRef);
+        await deleteDoc(doc(db, `users/${user.uid}/liked_posts/${postId}`));
         await updateDoc(postRef, { likesCount: increment(-1) });
       } else {
         await setDoc(likeRef, { createdAt: serverTimestamp() });
+        await setDoc(doc(db, `users/${user.uid}/liked_posts/${postId}`), { createdAt: serverTimestamp() });
         await updateDoc(postRef, { likesCount: increment(1) });
         
         // Notify author and award XP

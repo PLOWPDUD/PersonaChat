@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc, writeBatch, increment } from 'firebase/firestore';
+import { collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc, deleteDoc, getDocs, where, limit, updateDoc, writeBatch, increment, arrayUnion } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -484,8 +484,13 @@ export function Chat() {
       };
 
       try {
-        await setDoc(newChatRef, chatData);
-        await addDoc(collection(dbChat, `chats/${newChatId}/messages`), initialMessage);
+        // STRATEGY 3: Store initial message in the parent document array in one write
+        const completeChatData = {
+          ...chatData,
+          messages: [{...initialMessage, id: crypto.randomUUID()}]
+        };
+        await setDoc(newChatRef, completeChatData);
+        // We do not write to the subcollection anymore!
       } catch (e: any) {
         if (e?.message?.includes('Quota limit exceeded') || e?.code === 'resource-exhausted') {
           console.warn("Quota exceeded during chat creation, using local mode");
@@ -522,18 +527,18 @@ export function Chat() {
     
     setIsClearing(true);
     try {
-      const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-      const snapshot = await getDocs(query(messagesRef));
-      
-      const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(deletePromises);
-
-      await addDoc(collection(dbChat, `chats/${chatId}/messages`), {
+      const initialMessage = {
         chatId,
         role: 'model',
         characterId: primaryChar.id,
         content: primaryChar.greeting,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString(),
+        id: crypto.randomUUID()
+      };
+
+      // STRATEGY 3: To clear history, we reset the messages array for exactly 1 write
+      await updateDoc(doc(dbChat, `chats/${chatId}`), {
+        messages: [initialMessage]
       });
     } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
@@ -585,7 +590,7 @@ export function Chat() {
     }
 
     const newMessages: Message[] = [];
-    const batch = writeBatch(dbChat);
+    const arrayUnionPayload: any[] = [];
 
     // Save messages in a batch for efficiency
     for (let i = 0; i < currentMessages.length; i++) {
@@ -601,20 +606,16 @@ export function Chat() {
         };
 
         newMessages.push(newMessage);
-
-        if (!isLocalMode && !chatId.startsWith('local_chat_')) {
-            const msgRef = doc(dbChat, `chats/${chatId}/messages`, newMessage.id);
-            batch.set(msgRef, {
-                ...newMessage,
-                createdAt: serverTimestamp()
-            });
-        }
+        arrayUnionPayload.push(newMessage);
     }
 
     if (!isLocalMode && !chatId.startsWith('local_chat_') && currentMessages.length > 0) {
         try {
-            await batch.commit();
-        } catch (e) {
+            // STRATEGY 3: Update parent document directly with payload array
+            await updateDoc(doc(dbChat, 'chats', chatId), {
+                messages: arrayUnion(...arrayUnionPayload)
+            });
+        } catch (e: any) {
             if (isQuotaError(e)) {
                 setIsLocalMode(true);
             } else {
@@ -1242,8 +1243,12 @@ export function Chat() {
         createdAt: serverTimestamp()
       };
 
-      await setDoc(newChatRef, chatData);
-      await addDoc(collection(dbChat, `chats/${newChatId}/messages`), initialMessage);
+      // STRATEGY 3: Store initial message in the parent document array in one write
+      const completeChatData = {
+        ...chatData,
+        messages: [{...initialMessage, id: crypto.randomUUID()}]
+      };
+      await setDoc(newChatRef, completeChatData);
       
       navigate(`/chat/${char.id}/${newChatId}`);
       setIsParticipantsModalOpen(false);
@@ -1542,8 +1547,11 @@ export function Chat() {
               };
 
               try {
-                await setDoc(newChatRef, chatData);
-                await addDoc(collection(dbChat, `chats/${currentChatId}/messages`), initialMessage);
+                const completeChatData = {
+                  ...chatData,
+                  messages: [{...initialMessage, id: crypto.randomUUID()}]
+                };
+                await setDoc(newChatRef, completeChatData);
               } catch (e: any) {
                 if (isQuotaError(e)) {
                   console.warn("Quota exceeded during chat creation, using local mode");
@@ -1664,71 +1672,93 @@ export function Chat() {
       return;
     }
 
-    const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-    const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(10)); // Further reduced
-    
-    const unsubscribe = onSnapshot(mq, (snapshot) => {
-      const msgs: Message[] = [];
-      const seenIds = new Set<string>();
-      snapshot.docs.forEach((doc) => {
-        if (seenIds.has(doc.id)) return;
-        seenIds.add(doc.id);
-        const data = doc.data();
-        if (data.createdAt || !doc.metadata.hasPendingWrites) {
-          msgs.push({ id: doc.id, ...data } as Message);
+    // STRATEGY 2: Eliminate onSnapshot for message history (Pagination-Based Fetches)
+    // STRATEGY 3: Message Compaction - Read from the parent document's `messages` array if available
+    const fetchSessionData = async () => {
+      try {
+        let msgs: Message[] = [];
+        
+        // 1. Check if the messages are compacted into the single parent document
+        const chatDocSnap = await getDoc(doc(dbChat, `chats/${chatId}`));
+        const chatData = chatDocSnap.data();
+        
+        if (chatDocSnap.exists() && chatData?.messages && Array.isArray(chatData.messages)) {
+          // MIGRATION / OPTIMIZED: The entire chat log costs exactly 1 read!
+          msgs = chatData.messages.map((m: any) => ({
+            ...m,
+            createdAt: m.createdAt?.toDate ? m.createdAt : { toDate: () => new Date(m.createdAt || Date.now()) }
+          })) as Message[];
         } else {
-          msgs.push({ id: doc.id, ...data, createdAt: { toDate: () => new Date() } } as Message);
+          // FALLBACK / TRANSITION: Read from the old subcollection, but use getDocs() (no listeners)
+          const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
+          const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(50));
+          const snapshot = await getDocs(mq);
+          
+          const seenIds = new Set<string>();
+          snapshot.docs.forEach((doc) => {
+            if (seenIds.has(doc.id)) return;
+            seenIds.add(doc.id);
+            const data = doc.data();
+            msgs.push({
+              id: doc.id, 
+              ...data,
+              createdAt: data.createdAt?.toDate ? data.createdAt : { toDate: () => new Date(data.createdAt || Date.now()) }
+            } as Message);
+          });
+          // Sort ascending!
+          msgs.sort((a, b) => {
+            const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+            const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+            return timeA - timeB;
+          });
         }
-      });
-
-      // Sort by creation time ascending for UI
-      msgs.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-        return timeA - timeB;
-      });
       
-      const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-      const merged = [...msgs];
-      const seenLocalIds = new Set(msgs.map(m => m.id));
-      
-      localMsgs.forEach((lm: any) => {
-        const isSynced = msgs.some(fm => 
-          fm.id === lm.id || 
-          (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
-        );
+        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+        const merged = [...msgs];
+        const seenLocalIds = new Set(msgs.map(m => m.id));
+        
+        localMsgs.forEach((lm: any) => {
+          const isSynced = msgs.some(fm => 
+            fm.id === lm.id || 
+            (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
+          );
 
-        if (!isSynced && !seenLocalIds.has(lm.id)) {
-          merged.push({
+          if (!isSynced && !seenLocalIds.has(lm.id)) {
+            merged.push({
+              ...lm,
+              createdAt: { toDate: () => new Date(lm.createdAt) }
+            });
+            seenLocalIds.add(lm.id);
+          }
+        });
+        
+        setMessages(merged.sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+          return dateA.getTime() - dateB.getTime();
+        }));
+        setLoading(false);
+      } catch (error: any) {
+        console.error("fetchSessionData error:", error);
+        if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+          setIsLocalMode(true);
+          const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
+          setMessages(localMsgs.map((lm: any) => ({
             ...lm,
             createdAt: { toDate: () => new Date(lm.createdAt) }
-          });
-          seenLocalIds.add(lm.id);
+          })));
+          setLoading(false);
+        } else {
+          handleFirestoreError(error, OperationType.LIST, `chats/${chatId}/messages`);
         }
-      });
-      
-      setMessages(merged.sort((a, b) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-        return dateA.getTime() - dateB.getTime();
-      }));
-      setLoading(false);
-    }, (error) => {
-      console.error("onSnapshot error:", error);
-      if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
-        setIsLocalMode(true);
-        const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-        setMessages(localMsgs.map((lm: any) => ({
-          ...lm,
-          createdAt: { toDate: () => new Date(lm.createdAt) }
-        })));
-        setLoading(false);
-      } else {
-        handleFirestoreError(error, OperationType.LIST, `chats/${chatId}/messages`);
       }
-    });
+    };
 
-    return () => unsubscribe();
+    fetchSessionData();
+
+    return () => {
+      // Nothing to unsubscribe anymore because we use one-time fetches (Strategy 2)
+    };
   }, [chatId, isLocalMode]);
 
   const getCurrentPersona = () => {
@@ -1745,12 +1775,19 @@ export function Chat() {
       // Get messages from localStorage
       const localMessages = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
       
-      // Save to Firestore
-      for (const msg of localMessages) {
-        await addDoc(collection(dbChat, `chats/${chatId}/messages`), {
-          ...msg,
-          createdAt: serverTimestamp()
-        });
+      // STRATEGY 3: Sync to array with a single write
+      if (localMessages.length > 0) {
+        // We use arrayUnion - however it requires exact values if merging, 
+        // usually we'd do a read then write. For simplicity here:
+        const chatDocSnap = await getDoc(doc(dbChat, `chats/${chatId}`));
+        const chatData = chatDocSnap.data();
+        if (chatData) {
+          const currentMsgs = chatData.messages || [];
+          const newMsgs = localMessages.map((m: any) => ({...m, createdAt: new Date()}));
+          await updateDoc(doc(dbChat, `chats/${chatId}`), {
+            messages: [...currentMsgs, ...newMsgs]
+          });
+        }
       }
       
       // Clear localStorage
@@ -1925,13 +1962,15 @@ export function Chat() {
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
-        await setDoc(doc(dbChat, `chats/${chatId}/messages`, newUserMessage.id), {
+        // STRATEGY 3: Append message to single document array in one write
+        const msgToAppend = {
           ...newUserMessage,
           replyToId: currentReplyTo?.id || null,
           replyToContent: currentReplyTo?.content || null,
-          createdAt: serverTimestamp()
-        });
+          createdAt: new Date().toISOString()
+        };
         await updateDoc(doc(dbChat, 'chats', chatId), {
+          messages: arrayUnion(msgToAppend),
           updatedAt: serverTimestamp()
         });
       } catch (e: any) {
@@ -2999,16 +3038,16 @@ export function Chat() {
                             <img 
                               src={char.avatarUrl} 
                               alt={char.name} 
-                              className={`w-7 h-7 rounded-full object-cover border-2 ${respondingCharacterId === char.id ? 'border-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]' : 'border-transparent'}`}
+                              className={`w-7 h-7 rounded-full object-cover border-2 transition-all ${respondingCharacterId === char.id ? chatThemeObj.activeCharacterBorder : 'border-transparent'}`}
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <div className={`w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center border-2 ${respondingCharacterId === char.id ? 'border-indigo-500' : 'border-transparent'}`}>
+                            <div className={`w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center border-2 transition-all ${respondingCharacterId === char.id ? chatThemeObj.activeCharacterBorder : 'border-transparent'}`}>
                               <Bot className="w-3.5 h-3.5 text-zinc-400" />
                             </div>
                           )}
                           {respondingCharacterId === char.id && (
-                            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-indigo-500 rounded-full border border-zinc-950 shadow-sm" />
+                            <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-950 shadow-sm ${chatThemeObj.id === 'default' ? 'bg-theme-primary' : 'bg-current'}`} style={{ color: chatThemeObj.id === 'default' ? 'var(--theme-primary)' : undefined }} />
                           )}
                         </button>
                       ))}
@@ -3019,7 +3058,7 @@ export function Chat() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isTyping}
-                    className="p-3 bg-zinc-900 border border-zinc-700 rounded-full text-zinc-400 hover:text-white transition-all disabled:opacity-50"
+                    className={`p-3 bg-zinc-900 border border-zinc-700 hover:border-zinc-550 rounded-full transition-all disabled:opacity-50 ${chatThemeObj.accentTextClass}`}
                     title={t('common.uploadImage', 'Upload Image')}
                   >
                     <ImageIcon className="w-5 h-5" />
@@ -3034,12 +3073,12 @@ export function Chat() {
                         : t('chat.messagePlaceholderGroup', { name: characters.length > 1 ? t('chat.group') : characters[0]?.name || t('chat.character') })
                       }
                       disabled={isTyping}
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                      className={`w-full rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 transition-all disabled:opacity-50 ${chatThemeObj.inputClass}`}
                     />
                     <button
                       type="submit"
                       disabled={(!input.trim() && !selectedImage) || isTyping}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600"
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all disabled:opacity-50 ${chatThemeObj.buttonClass}`}
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -3050,7 +3089,7 @@ export function Chat() {
                   type="button"
                   onClick={handleSkipResponse}
                   disabled={isTyping || isRegenerating}
-                  className="p-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-all disabled:opacity-50 border border-zinc-700"
+                  className={`p-3.5 bg-zinc-800 hover:bg-zinc-700 rounded-full transition-all disabled:opacity-50 border border-zinc-700 ${chatThemeObj.accentTextClass}`}
                   title={t('chat.skipRegenerate', 'Skip response / Regenerate')}
                 >
                   <RefreshCw className={`w-5 h-5 ${isRegenerating ? 'animate-spin' : ''}`} />

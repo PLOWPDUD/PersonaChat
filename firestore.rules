@@ -226,6 +226,10 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
+    match /users/{userId}/liked_posts/{postId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
     match /followers/{followId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.followerId == request.auth.uid;

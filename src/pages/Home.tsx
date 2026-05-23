@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, addDoc, serverTimestamp, limit, deleteDoc, updateDoc, startAfter, increment } from 'firebase/firestore';
 import { db, dbChat, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { addNotification } from '../lib/gamification';
@@ -109,7 +109,7 @@ export function Home() {
         const snapshot = await getDocs(q);
         snapshot.forEach(doc => deleteDoc(doc.ref));
         await updateDoc(doc(db, 'characters', charId), {
-          likesCount: Math.max(0, (characters.find(c => c.id === charId)?.likesCount || 0) - 1)
+          likesCount: increment(-1)
         });
       } catch (error) {
         console.error('Error removing favorite:', error);
@@ -125,7 +125,7 @@ export function Home() {
           createdAt: serverTimestamp()
         });
         await updateDoc(doc(db, 'characters', charId), {
-          likesCount: (characters.find(c => c.id === charId)?.likesCount || 0) + 1
+          likesCount: increment(1)
         });
 
         // Notify creator
@@ -290,6 +290,18 @@ export function Home() {
         let q;
         
         if (tab === 'public') {
+          // STRATEGY 1: Client-Side Cache for Public Bots
+          // Fetch from localStorage instead of Firestore if cache is valid (0 reads!)
+          if (!isLoadMore) {
+            const { getCachedPublicBots } = await import('../lib/quotaSaver');
+            const cachedBots = await getCachedPublicBots();
+            
+            if (cachedBots.length > 0) {
+              setCharacters(cachedBots);
+              return;
+            }
+          }
+          
           const pageSize = 10; // Further reduced from 12
           if (isLoadMore && lastVisible) {
             q = query(charactersRef, where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), startAfter(lastVisible), limit(pageSize));
