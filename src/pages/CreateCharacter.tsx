@@ -337,18 +337,21 @@ export function CreateCharacter() {
                 creatorName,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
+                participantIds: [user.uid, finalCharId],
                 title: `Imported Chat with ${formData.name}`
               });
 
-              // Add messages in sequential batches to preserve order
-              const messagesColl = collection(dbChat, `chats/${chatId}/messages`);
-              for (const msg of messages) {
-                await addDoc(messagesColl, {
-                  ...msg,
-                  createdAt: serverTimestamp()
-                });
-                await new Promise(resolve => setTimeout(resolve, 10));
-              }
+              // Optimization: Save ALL imported messages to the bucket in ONE write
+              const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+              const messagesWithIds = messages.map(m => ({
+                ...m,
+                id: `imp_${Math.random().toString(36).substring(2, 11)}`
+              }));
+
+              await setDoc(bucketRef, {
+                messages: messagesWithIds,
+                lastUpdatedAt: serverTimestamp()
+              });
 
               setImportModal({ isOpen: false, data: null });
               navigate(`/chat/${finalCharId}/${chatId}`);

@@ -204,21 +204,6 @@ export function Home() {
         return;
       }
 
-      // Check localStorage for 'public' tab (2 hour cache)
-      if (tab === 'public' && !isLoadMore) {
-        const cached = localStorage.getItem('cached_public_characters');
-        const lastFetch = localStorage.getItem('last_public_fetch');
-        const now = Date.now();
-        const twoHours = 2 * 60 * 60 * 1000;
-
-        if (cached && lastFetch && (now - parseInt(lastFetch)) < twoHours) {
-          const parsed = JSON.parse(cached);
-          setCharacters(parsed);
-          setLoading(false);
-          return;
-        }
-      }
-
       // Check local component cache
       if (tab === 'recent' && cachedData.recent.length > 0) {
         setRecentChats(cachedData.recent);
@@ -372,8 +357,8 @@ export function Home() {
           updateGlobalCache('public', updatedPublic);
           setCachedData(prev => ({ ...prev, public: updatedPublic }));
           if (!isLoadMore) {
-            localStorage.setItem('cached_public_characters', JSON.stringify(chars));
-            localStorage.setItem('last_public_fetch', Date.now().toString());
+            localStorage.setItem('hub_characters', JSON.stringify(chars));
+            localStorage.setItem('hub_characters_time', Date.now().toString());
           }
         } else {
           updateGlobalCache('mine', chars);

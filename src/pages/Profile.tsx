@@ -430,6 +430,16 @@ export function Profile() {
                               await addDoc(collection(dbPrivate, 'private_chats'), {
                                 type: 'direct',
                                 participants: [user.uid, targetUserId],
+                                participantInfo: {
+                                  [user.uid]: {
+                                    displayName: currentUserProfile?.displayName || 'User',
+                                    photoURL: currentUserProfile?.photoURL || ''
+                                  },
+                                  [targetUserId]: {
+                                    displayName: formData?.displayName || 'User',
+                                    photoURL: formData?.photoURL || ''
+                                  }
+                                },
                                 updatedAt: serverTimestamp(),
                                 lastMessage: 'Chat started',
                                 lastMessageAt: serverTimestamp()

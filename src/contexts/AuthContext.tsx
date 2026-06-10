@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { User, onAuthStateChanged, getRedirectResult, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { auth, db, isQuotaError, isInsideMedianApp } from '../lib/firebase';
+import { User, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
+import { auth, db, isQuotaError } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { checkAndAwardBadges } from '../services/badgeService';
@@ -137,107 +137,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (result) {
-          console.log('Redirect sign-in completed successfully for:', result?.user?.email);
-          const fromApp = localStorage.getItem('auth_from_app');
-          if (fromApp === 'true') {
-            localStorage.removeItem('auth_from_app');
-            try {
-              const googleCred = GoogleAuthProvider.credentialFromResult(result);
-              let targetUrl = '';
-              const transferId = localStorage.getItem('auth_transfer_id');
-              
-              let idTokenVal: string | null = googleCred ? googleCred.idToken || null : null;
-              let accessTokenVal: string | null = googleCred ? googleCred.accessToken || null : null;
-              
-              if (!idTokenVal) {
-                try {
-                  idTokenVal = await result.user.getIdToken();
-                } catch (tokError) {
-                  console.error('Error getting user ID Token:', tokError);
-                }
-              }
-              
-              // Securely write to firestore transfer collection so the app WebView receives the authenticated state
-              if (transferId) {
-                try {
-                  const docRef = doc(db, 'sessionTransfers', transferId);
-                  await setDoc(docRef, {
-                    idToken: idTokenVal,
-                    accessToken: accessTokenVal,
-                    uid: result.user.uid,
-                    status: 'authenticated',
-                    createdAt: new Date().toISOString()
-                  });
-                  console.log('Successfully wrote session transfer to firestore:', transferId);
-                  localStorage.removeItem('auth_transfer_id');
-                } catch (fsErr) {
-                  console.error('Failed to write transfer credentials to Firestore:', fsErr);
-                }
-              }
-              
-              if (googleCred && (googleCred.idToken || googleCred.accessToken)) {
-                const credsObj = {
-                  idToken: googleCred.idToken || null,
-                  accessToken: googleCred.accessToken || null,
-                };
-                const serialized = JSON.stringify(credsObj);
-                sessionStorage.setItem('temp_app_creds', serialized);
-                targetUrl = `personachat://auth-callback?creds=${encodeURIComponent(serialized)}`;
-                console.log('Initiating deep link redirect back to PersonaChat app with Google credentials');
-              } else {
-                const idToken = await result.user.getIdToken();
-                targetUrl = `personachat://auth-callback?token=${encodeURIComponent(idToken)}`;
-                console.log('Initiating deep link redirect back to PersonaChat app with fallback Firebase ID token');
-              }
-              window.location.href = targetUrl;
-            } catch (err) {
-              console.error('Error preparing app redirect url:', err);
-            }
-          }
-        }
-      })
-      .catch((error) => {
-        console.error('Error handling redirect sign-in result:', error);
-      });
-  }, []);
-
-  // Listen for session transfers if currently inside the Median.co App WebView
-  useEffect(() => {
-    if (!isInsideMedianApp() || user) return;
-    
-    // Check if we have a transferId of a pending auth in localStorage
-    const transferId = localStorage.getItem('median_auth_transfer_id');
-    if (!transferId) return;
-    
-    console.log('Listening to session transfer on Firestore for ID:', transferId);
-    
-    const docRef = doc(db, 'sessionTransfers', transferId);
-    const unsubscribe = onSnapshot(docRef, async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data.status === 'authenticated' && data.idToken) {
-          console.log('Found authenticated transfer credentials! Logging in...');
-          try {
-            const credential = GoogleAuthProvider.credential(data.idToken, data.accessToken || undefined);
-            await signInWithCredential(auth, credential);
-            console.log('Successfully logged in app WebView via session transfer!');
-            localStorage.removeItem('median_auth_transfer_id');
-          } catch (err) {
-            console.error('Error signing in with transferred credentials:', err);
-          }
-        }
-      }
-    }, (error) => {
-      console.error('Error in session transfer listener:', error);
+    // Handle Google Redirect result
+    getRedirectResult(auth).catch((error) => {
+      console.error("Error handling redirect result:", error);
     });
-    
-    return () => unsubscribe();
-  }, [user]);
 
-  useEffect(() => {
     const trackVisitor = async () => {
       const lastIncrement = localStorage.getItem('last_visitor_increment');
       const nowTime = Date.now();

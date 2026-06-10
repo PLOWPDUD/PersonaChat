@@ -96,56 +96,23 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-export const isInsideMedianApp = (): boolean => {
-  if (typeof window === 'undefined' || !window.navigator) return false;
-  const ua = window.navigator.userAgent || window.navigator.vendor || '';
-  return /gonative|median/i.test(ua.toLowerCase());
-};
-
-export const isMobileOrWebView = (): boolean => {
-  if (typeof window === 'undefined' || !window.navigator) return false;
-  const ua = window.navigator.userAgent || window.navigator.vendor || '';
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-  const isWebView = /gonative|median|webview|wv|ip(hone|od|ad).*applewebkit|android.*webkit/i.test(ua.toLowerCase());
-  const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-  return isMobile || isWebView || !!isStandalone;
-};
-
 export const signInWithGoogle = async () => {
   try {
-    if (isInsideMedianApp()) {
-      console.log('Median / GoNative App WebView detected. Opening Google login in external system browser.');
-      const transferId = 'tx_' + Math.floor(Math.random() * 1000000) + '_' + Date.now();
-      localStorage.setItem('median_auth_transfer_id', transferId);
-      const googleLoginUrl = `${window.location.origin}/login?trigger_google=true&transfer_id=${transferId}`;
-      const nativeScheme = /median/i.test(window.navigator.userAgent) ? 'median' : 'gonative';
-      window.location.href = `${nativeScheme}://openExternalBrowser?url=${encodeURIComponent(googleLoginUrl)}`;
-      return null;
-    }
-
-    if (isMobileOrWebView()) {
-      console.log('Mobile browser detected. Using signInWithRedirect.');
+    // Priority: signInWithPopup for mejor experience in most browsers and AI Studio preview
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error: any) {
+    const closedOrBlocked = 
+      error?.code === 'auth/popup-blocked' || 
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request';
+        
+    if (closedOrBlocked) {
+      console.warn('Google Sign-In popup blocked or closed. Falling back to signInWithRedirect.');
       await signInWithRedirect(auth, googleProvider);
       return null;
     }
-
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      return result.user;
-    } catch (popupError: any) {
-      const closedOrBlocked = 
-        popupError?.code === 'auth/popup-blocked' || 
-        popupError?.code === 'auth/popup-closed-by-user' ||
-        popupError?.code === 'auth/cancelled-popup-request';
-        
-      if (closedOrBlocked) {
-        console.warn('Google Sign-In popup blocked or closed. Falling back to signInWithRedirect.');
-        await signInWithRedirect(auth, googleProvider);
-        return null;
-      }
-      throw popupError;
-    }
-  } catch (error) {
+    
     console.error('Error signing in with Google:', error);
     throw error;
   }

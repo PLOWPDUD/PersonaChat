@@ -4,12 +4,12 @@ import { Character } from '../types';
 
 /**
  * STRATEGY 1: Client-Side Cache for Public/Popular Bots
- * Fetches global public bots exactly ONCE every 24 hours.
+ * Fetches global public bots with a 10-minute client-side expiration to save reads.
  */
 export async function getCachedPublicBots(): Promise<Character[]> {
-  const CACHE_KEY = 'global_public_bots_cache';
-  const CACHE_TIME_KEY = 'global_public_bots_timestamp';
-  const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const CACHE_KEY = 'hub_characters';
+  const CACHE_TIME_KEY = 'hub_characters_time';
+  const CACHE_DURATION_MS = 600000; // 10 minutes (600,000 ms)
 
   const cachedData = localStorage.getItem(CACHE_KEY);
   const cacheTimestamp = localStorage.getItem(CACHE_TIME_KEY);
@@ -18,7 +18,7 @@ export async function getCachedPublicBots(): Promise<Character[]> {
   
   if (cachedData && cacheTimestamp) {
     const age = now - parseInt(cacheTimestamp, 10);
-    // If cache is less than 24 hours old, return instantly (0 reads!)
+    // If cache is fresh, return instantly
     if (age < CACHE_DURATION_MS) {
       return JSON.parse(cachedData) as Character[];
     }
@@ -28,8 +28,8 @@ export async function getCachedPublicBots(): Promise<Character[]> {
   try {
     const q = query(
       collection(db, 'characters'),
-      where('isPublic', '==', true),
-      orderBy('usersCount', 'desc'), // Or however you sort popular bots
+      where('visibility', '==', 'public'),
+      orderBy('createdAt', 'desc'),
       limit(20)
     );
     const snapshot = await getDocs(q);

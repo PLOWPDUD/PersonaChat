@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { db, dbPrivate, handleFirestoreError, OperationType, isQuotaError } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, limit, getDocs, deleteDoc, arrayRemove, setDoc, arrayUnion } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { Send, User, Loader2, Search, ArrowLeft, MessageSquare, Plus, X, Users, Bot, Image as ImageIcon, Check, MoreVertical, Edit2, Trash2, Reply, Smile, ShieldAlert, FileText, Info, UserX, UserCheck, Download, Paperclip, Palette, ChevronDown } from 'lucide-react';
@@ -90,6 +90,10 @@ export default function Messages() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [activeReactionPickerId, setActiveReactionPickerId] = useState<string | null>(null);
 
+  const [localQuotaExceeded, setLocalQuotaExceeded] = useState(false);
+  const [isLocalMode, setIsLocalMode] = useState(false);
+  const quotaExceeded = localQuotaExceeded || (typeof (useAuth() as any).quotaExceeded === 'boolean' ? (useAuth() as any).quotaExceeded : false);
+
   const isBlocked = (targetId: string) => profile?.blockedUsers?.includes(targetId);
 
   // Initialize Gemini
@@ -101,8 +105,7 @@ export default function Messages() {
     const q = query(
       collection(dbPrivate, 'private_chats'),
       where('participants', 'array-contains', user.uid),
-      orderBy('updatedAt', 'desc'),
-      limit(8) // Reduced further to 8
+      limit(40)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -129,6 +132,21 @@ export default function Messages() {
           name: data.name || (data.type === 'group' ? t('messages.groupChat') : undefined)
         } as Chat;
       });
+
+      // Sort client-side by updatedAt/lastMessageAt safely to avoid needing composite indexes
+      chatList.sort((a: any, b: any) => {
+        const getMs = (val: any) => {
+          if (!val) return 0;
+          if (typeof val.toMillis === 'function') return val.toMillis();
+          if (val.seconds) return val.seconds * 1000;
+          if (val instanceof Date) return val.getTime();
+          return Number(val) || 0;
+        };
+        const timeA = getMs(a.updatedAt) || getMs(a.lastMessageAt);
+        const timeB = getMs(b.updatedAt) || getMs(b.lastMessageAt);
+        return timeB - timeA;
+      });
+
       setChats(chatList);
       setLoading(false);
     }, (error) => {
@@ -150,8 +168,8 @@ export default function Messages() {
           const interactedUids = new Set<string>();
 
           if (isOwner) {
-            // Owner can talk to everyone - limit to 30 to save quota
-            const allProfilesSnap = await getDocs(query(collection(db, 'profiles'), limit(30)));
+            // Owner can talk to everyone - fetch more to allow searching, but limit to prevent quota exhaustion
+            const allProfilesSnap = await getDocs(query(collection(db, 'profiles'), limit(100)));
             allProfilesSnap.docs.forEach(doc => interactedUids.add(doc.id));
           } else {
             // 1. Fetch followers - limit to 20
@@ -212,6 +230,55 @@ export default function Messages() {
       fetchAvailable();
     }
   }, [isCreateGroupOpen, isCreateDirectOpen, user, isOwner]);
+
+  // Debounced live-search for all profiles in Firestore (specifically useful for Owner to search any user)
+  useEffect(() => {
+    if ((!isCreateGroupOpen && !isCreateDirectOpen) || !user) return;
+    if (searchQuery.trim().length < 2) return;
+
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const term = searchQuery.trim();
+        const termCapitalized = term.charAt(0).toUpperCase() + term.slice(1);
+        const termLower = term.toLowerCase();
+
+        // Run queries in parallel across single-field indexes (requires NO composite indexes)
+        const queryPromises = [
+          getDocs(query(collection(db, 'profiles'), where('displayName', '>=', term), where('displayName', '<=', term + '\uf8ff'), limit(15))),
+          getDocs(query(collection(db, 'profiles'), where('displayName', '>=', termCapitalized), where('displayName', '<=', termCapitalized + '\uf8ff'), limit(15))),
+          getDocs(query(collection(db, 'profiles'), where('displayName', '>=', termLower), where('displayName', '<=', termLower + '\uf8ff'), limit(15))),
+          getDocs(query(collection(db, 'profiles'), where('email', '==', termLower), limit(10)))
+        ];
+
+        const snapshots = await Promise.all(queryPromises);
+        
+        // Merge profiles by uid to avoid duplicate matches
+        const foundProfiles = new Map<string, any>();
+        snapshots.forEach(snap => {
+          snap.docs.forEach(doc => {
+            if (doc.id !== user.uid) {
+              foundProfiles.set(doc.id, { uid: doc.id, ...doc.data() });
+            }
+          });
+        });
+
+        // Add them to availableUsers state if they aren't already included
+        setAvailableUsers(prev => {
+          const merged = new Map<string, any>();
+          // Preserve existing pre-loaded or pre-selected ones
+          prev.forEach(u => merged.set(u.uid, u));
+          // Append/update newly matched profiles
+          foundProfiles.forEach((u, uid) => merged.set(uid, u));
+          return Array.from(merged.values());
+        });
+
+      } catch (err) {
+        console.error("Error searching profiles from Firestore:", err);
+      }
+    }, 400); // 400ms debounce to prevent quota thrashing
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery, isCreateGroupOpen, isCreateDirectOpen, user]);
 
   const handleCreateGroup = async () => {
     if (!user || !groupName.trim() || (selectedUsers.length === 0 && selectedBots.length === 0)) return;
@@ -277,11 +344,13 @@ export default function Messages() {
       // Check if chat already exists
       const q = query(
         collection(dbPrivate, 'private_chats'),
-        where('type', '==', 'direct'),
         where('participants', 'array-contains', user.uid)
       );
       const snap = await getDocs(q);
-      const existingChat = snap.docs.find(doc => doc.data().participants.includes(targetUserId));
+      const existingChat = snap.docs.find(doc => {
+        const data = doc.data();
+        return data.type === 'direct' && data.participants?.includes(targetUserId);
+      });
 
       if (existingChat) {
         setActiveChat({ id: existingChat.id, ...existingChat.data() } as any);
@@ -347,6 +416,9 @@ export default function Messages() {
     playSound('click');
 
     try {
+      console.log('User profile:', profile);
+      console.log('Sending message in chat:', activeChat.id, 'Participants:', activeChat.participants, 'ParticipantInfo:', activeChat.participantInfo);
+      
       const newLocalMsg: Message = {
         id: `local_${Date.now()}`,
         senderId: user.uid,
@@ -365,18 +437,38 @@ export default function Messages() {
         reactions: {}
       };
       
+      // ...
       setMessages(prev => [newLocalMsg, ...prev]);
 
-      const { id, ...msgData } = newLocalMsg;
-      await addDoc(collection(dbPrivate, `private_chats/${activeChat.id}/messages`), { ...msgData, createdAt: serverTimestamp() });
+      try {
+        const { id, ...msgData } = newLocalMsg;
+        // Optimization: Use Message Buckets to save reads
+        const bucketRef = doc(dbPrivate, `private_chats/${activeChat.id}/buckets`, 'current');
+        
+        // Firestore arrayUnion doesn't support serverTimestamp() inside array objects.
+        // We use a regular ISO string or timestamp number for sorting.
+        const messageForBucket = {
+          ...msgData,
+          id: id.startsWith('local_') ? `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : id,
+          createdAt: new Date().toISOString()
+        };
 
-      await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
-        lastMessage: imageUrl ? 'Sent an image' : currentFile ? `Sent a file: ${currentFile.name}` : content,
-        lastMessageAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+        await setDoc(bucketRef, {
+          messages: arrayUnion(messageForBucket),
+          lastUpdatedAt: serverTimestamp()
+        }, { merge: true });
 
-      // Notify other users in group
+        await updateDoc(doc(dbPrivate, 'private_chats', activeChat.id), {
+          lastMessage: imageUrl ? 'Sent an image' : currentFile ? `Sent a file: ${currentFile.name}` : content,
+          lastMessageAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Final error sending message:', err);
+        handleFirestoreError(err, OperationType.WRITE, `private_chats/${activeChat.id}/buckets/current`);
+      }
+
+      // Notify other users
       if (activeChat.type === 'group') {
         activeChat.participants.forEach(async (pId) => {
           if (pId !== user.uid) {
@@ -547,14 +639,23 @@ export default function Messages() {
       // Ensure that the conversation is still active when we write
       if (activeChat.id !== chatId) return;
 
-      await addDoc(collection(dbPrivate, `private_chats/${chatId}/messages`), {
+      const botMessageId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const bucketRef = doc(dbPrivate, `private_chats/${chatId}/buckets`, 'current');
+      const botMsgData = {
+        id: botMessageId,
         senderId: bot.id,
         senderName: bot.name,
         senderPhotoURL: bot.avatarUrl || '',
         content: responseText,
         isBot: true,
-        createdAt: serverTimestamp()
-      });
+        createdAt: new Date().toISOString(),
+        reactions: {}
+      };
+
+      await setDoc(bucketRef, {
+        messages: arrayUnion(botMsgData),
+        lastUpdatedAt: serverTimestamp()
+      }, { merge: true });
 
       await updateDoc(doc(dbPrivate, 'private_chats', chatId), {
         lastMessage: responseText,
@@ -612,9 +713,21 @@ export default function Messages() {
     }
 
     try {
-      const messageRef = doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId);
-      await updateDoc(messageRef, { reactions: newReactions });
-      playSound('click');
+      const bucketRef = doc(dbPrivate, `private_chats/${activeChat.id}/buckets`, 'current');
+      const bucketSnap = await getDoc(bucketRef);
+      
+      if (bucketSnap.exists()) {
+        const messagesArr = (bucketSnap.data().messages || []) as any[];
+        const updatedMessages = messagesArr.map(m => {
+          if (m.id === messageId) {
+            return { ...m, reactions: newReactions };
+          }
+          return m;
+        });
+
+        await updateDoc(bucketRef, { messages: updatedMessages });
+        playSound('click');
+      }
     } catch (error) {
       console.error('Error toggling reaction:', error);
     }
@@ -623,26 +736,42 @@ export default function Messages() {
   const handleEditMessage = async (messageId: string, newContent: string) => {
     if (!activeChat || !newContent.trim() || !user) return;
     try {
-      const messageRef = doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId);
-      await updateDoc(messageRef, {
-        content: newContent.trim(),
-        updatedAt: serverTimestamp()
-      });
-      setEditingMessageId(null);
-      playSound('success');
+      const bucketRef = doc(dbPrivate, `private_chats/${activeChat.id}/buckets`, 'current');
+      const bucketSnap = await getDoc(bucketRef);
+      
+      if (bucketSnap.exists()) {
+        const messagesArr = (bucketSnap.data().messages || []) as any[];
+        const updatedMessages = messagesArr.map(m => {
+          if (m.id === messageId) {
+            return { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() };
+          }
+          return m;
+        });
+
+        await updateDoc(bucketRef, { messages: updatedMessages });
+        setEditingMessageId(null);
+        playSound('success');
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `private_chats/${activeChat.id}/messages/${messageId}`);
+      handleFirestoreError(error, OperationType.UPDATE, `private_chats/${activeChat.id}/buckets/current`);
     }
   };
 
   const handleDeleteMessage = async (messageId: string) => {
     if (!activeChat) return;
     try {
-      await deleteDoc(doc(dbPrivate, `private_chats/${activeChat.id}/messages`, messageId));
-      setMessageToDelete(null);
-      playSound('success');
+      const bucketRef = doc(dbPrivate, `private_chats/${activeChat.id}/buckets`, 'current');
+      const bucketSnap = await getDoc(bucketRef);
+      
+      if (bucketSnap.exists()) {
+        const messagesArr = (bucketSnap.data().messages || []) as any[];
+        const updatedMessages = messagesArr.filter(m => m.id !== messageId);
+        await updateDoc(bucketRef, { messages: updatedMessages });
+        setMessageToDelete(null);
+        playSound('success');
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `private_chats/${activeChat.id}/messages/${messageId}`);
+      handleFirestoreError(error, OperationType.DELETE, `private_chats/${activeChat.id}/buckets/current`);
     }
   };
 
@@ -695,27 +824,41 @@ export default function Messages() {
   useEffect(() => {
     if (!activeChat) return;
 
-    const q = query(
-      collection(dbPrivate, `private_chats/${activeChat.id}/messages`),
-      orderBy('createdAt', 'desc'),
-      limit(10) // Further reduced to save quota
-    );
+    setLoadingMessages(true);
+    // Optimization: Listen to a single "current" bucket document instead of a whole collection.
+    // This reduces reads from N (number of messages) to 1.
+    const bucketRef = doc(dbPrivate, `private_chats/${activeChat.id}/buckets`, 'current');
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messageList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).reverse() as Message[];
-      
-      const initialLoad = messages.length === 0 && messageList.length > 0;
-      setMessages(messageList);
+    const unsubscribe = onSnapshot(bucketRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const bucketMessages = (data.messages || []) as any[];
+        
+        // Convert ISO strings/timestamps back to compatible objects for the UI
+        const formattedMessages = bucketMessages.map(m => ({
+          ...m,
+          createdAt: typeof m.createdAt === 'string' ? { toDate: () => new Date(m.createdAt) } : m.createdAt
+        })).sort((a: any, b: any) => {
+          const timeA = new Date(a.createdAt?.toDate?.() || a.createdAt).getTime();
+          const timeB = new Date(b.createdAt?.toDate?.() || b.createdAt).getTime();
+          return timeA - timeB;
+        });
+
+        setMessages(formattedMessages);
+      } else {
+        // Fallback or empty state
+        setMessages([]);
+      }
+
       setLoadingMessages(false);
-      if (initialLoad) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      
+      // Auto scroll to bottom
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }, (error) => {
       if (isQuotaError(error)) {
         console.warn("Messages sync hit quota.");
       } else {
-        console.error("Error syncing private messages:", error);
+        console.error("Error syncing private messages bucket:", error);
       }
       setLoadingMessages(false);
     });
@@ -914,9 +1057,9 @@ export default function Messages() {
                     <div className="flex-shrink-0 mt-auto">
                       {!msg.isBot ? (
                         <Link to={`/profile/${msg.senderId}`} className="block hover:opacity-80 transition-opacity">
-                          {msg.senderPhotoURL ? (
+                          {msg.senderPhotoURL && msg.senderPhotoURL !== '' ? (
                             <img src={msg.senderPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-800" referrerPolicy="no-referrer" />
-                          ) : activeChat.participantInfo?.[msg.senderId]?.photoURL ? (
+                          ) : activeChat.participantInfo?.[msg.senderId]?.photoURL && activeChat.participantInfo[msg.senderId].photoURL !== '' ? (
                             <img 
                               src={activeChat.participantInfo[msg.senderId].photoURL} 
                               alt="" 

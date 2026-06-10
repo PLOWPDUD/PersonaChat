@@ -611,9 +611,15 @@ export function Chat() {
 
     if (!isLocalMode && !chatId.startsWith('local_chat_') && currentMessages.length > 0) {
         try {
-            // STRATEGY 3: Update parent document directly with payload array
+            // Optimization: Use Message Buckets to save reads and avoid metadata bloat
+            const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+            await setDoc(bucketRef, {
+                messages: arrayUnion(...arrayUnionPayload),
+                lastUpdatedAt: serverTimestamp()
+            }, { merge: true });
+
             await updateDoc(doc(dbChat, 'chats', chatId), {
-                messages: arrayUnion(...arrayUnionPayload)
+                updatedAt: serverTimestamp()
             });
         } catch (e: any) {
             if (isQuotaError(e)) {
@@ -722,31 +728,29 @@ export function Chat() {
       setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
     } else {
       try {
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        const docSnap = await getDoc(messageRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          currentReactions = data.reactions || {};
-          
-          const users = currentReactions[emoji] || [];
-          let newUsers;
-          if (users.includes(targetUserId)) {
-            newUsers = users.filter((uid: string) => uid !== targetUserId);
-          } else {
-            newUsers = [...users, targetUserId];
+        const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+        const bucketSnap = await getDoc(bucketRef);
+        
+        if (bucketSnap.exists()) {
+          const messagesArr = (bucketSnap.data().messages || []) as any[];
+          const message = messagesArr.find(m => m.id === messageId);
+          if (message) {
+            currentReactions = message.reactions || {};
+            const users = currentReactions[emoji] || [];
+            let newUsers = users.includes(targetUserId) 
+              ? users.filter((uid: string) => uid !== targetUserId)
+              : [...users, targetUserId];
+            
+            const newReactions = { ...currentReactions };
+            if (newUsers.length === 0) delete newReactions[emoji];
+            else newReactions[emoji] = newUsers;
+
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, reactions: newReactions } : m);
+            await updateDoc(bucketRef, { messages: updatedMessages });
           }
-          
-          const newReactions = { ...currentReactions };
-          if (newUsers.length === 0) {
-            delete newReactions[emoji];
-          } else {
-            newReactions[emoji] = newUsers;
-          }
-          
-          await updateDoc(messageRef, { reactions: newReactions });
         }
       } catch (error) {
-        console.error('Error toggling reaction in Firestore:', error);
+        console.error('Error toggling reaction in bucket:', error);
       }
     }
 
@@ -826,12 +830,22 @@ export function Chat() {
         localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
         setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
       } else {
-        // 1. Update the message itself
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        await setDoc(messageRef, {
-          content: newContent.trim(),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+        const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+        const bucketSnap = await getDoc(bucketRef);
+        if (bucketSnap.exists()) {
+          const messagesArr = (bucketSnap.data().messages || []) as any[];
+          const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() } : m);
+          await updateDoc(bucketRef, { messages: updatedMessages });
+        } else {
+          // Fallback to parent doc
+          const chatRef = doc(dbChat, `chats/${chatId}`);
+          const chatSnap = await getDoc(chatRef);
+          if (chatSnap.exists()) {
+            const messagesArr = (chatSnap.data().messages || []) as any[];
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() } : m);
+            await updateDoc(chatRef, { messages: updatedMessages });
+          }
+        }
       }
       
       setEditingMessageId(null);
@@ -848,11 +862,27 @@ export function Chat() {
             localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedLocalMsgs));
             setMessages(prev => prev.filter(m => !subsequentMessages.some(sm => sm.id === m.id)));
         } else {
-            for (const msg of subsequentMessages) {
-              try {
-                await deleteDoc(doc(dbChat, `chats/${chatId}/messages`, msg.id));
-              } catch (e) {
-                console.error('Error deleting subsequent message:', e);
+            // Rewind bucket by removing everything after the edited message
+            const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+            const bucketSnap = await getDoc(bucketRef);
+            if (bucketSnap.exists()) {
+              const cloudMessages = (bucketSnap.data().messages || []) as any[];
+              const cloudIdx = cloudMessages.findIndex(m => m.id === messageId);
+              if (cloudIdx !== -1) {
+                const rewoundMessages = cloudMessages.slice(0, cloudIdx + 1);
+                await updateDoc(bucketRef, { messages: rewoundMessages });
+              }
+            } else {
+              // Fallback to parent doc
+              const chatRef = doc(dbChat, `chats/${chatId}`);
+              const chatSnap = await getDoc(chatRef);
+              if (chatSnap.exists()) {
+                const cloudMessages = (chatSnap.data().messages || []) as any[];
+                const cloudIdx = cloudMessages.findIndex(m => m.id === messageId);
+                if (cloudIdx !== -1) {
+                  const rewoundMessages = cloudMessages.slice(0, cloudIdx + 1);
+                  await updateDoc(chatRef, { messages: rewoundMessages });
+                }
               }
             }
         }
@@ -1000,11 +1030,13 @@ export function Chat() {
           localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
           setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
         } else {
-          const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-          await setDoc(messageRef, {
-            content: fullAiResponse,
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+          const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+          const bucketSnap = await getDoc(bucketRef);
+          if (bucketSnap.exists()) {
+            const messagesArr = (bucketSnap.data().messages || []) as any[];
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: new Date().toISOString() } : m);
+            await updateDoc(bucketRef, { messages: updatedMessages });
+          }
         }
       } else {
         prompt = "(Continue the conversation)";
@@ -1041,11 +1073,13 @@ export function Chat() {
           localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
           setMessages(updatedMsgs.map((m: any) => ({ ...m, createdAt: { toDate: () => new Date(m.createdAt) } })));
         } else {
-          const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-          await setDoc(messageRef, {
-            content: fullAiResponse,
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+          const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+          const bucketSnap = await getDoc(bucketRef);
+          if (bucketSnap.exists()) {
+            const messagesArr = (bucketSnap.data().messages || []) as any[];
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: new Date().toISOString() } : m);
+            await updateDoc(bucketRef, { messages: updatedMessages });
+          }
         }
       }
 
@@ -1072,12 +1106,26 @@ export function Chat() {
         localStorage.setItem(`chat_${chatId}`, JSON.stringify(updatedMsgs));
         setMessages(prev => prev.filter(m => m.id !== messageId));
       } else {
-        const messageRef = doc(dbChat, `chats/${chatId}/messages`, messageId);
-        await deleteDoc(messageRef);
+        const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+        const bucketSnap = await getDoc(bucketRef);
+        if (bucketSnap.exists()) {
+          const messagesArr = (bucketSnap.data().messages || []) as any[];
+          const updatedMessages = messagesArr.filter(m => m.id !== messageId);
+          await updateDoc(bucketRef, { messages: updatedMessages });
+        } else {
+          // Fallback to parent doc
+          const chatRef = doc(dbChat, `chats/${chatId}`);
+          const chatSnap = await getDoc(chatRef);
+          if (chatSnap.exists()) {
+            const messagesArr = (chatSnap.data().messages || []) as any[];
+            const updatedMessages = messagesArr.filter(m => m.id !== messageId);
+            await updateDoc(chatRef, { messages: updatedMessages });
+          }
+        }
       }
       setMessageToDelete(null);
     } catch (error: any) {
-      handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/messages/${messageId}`);
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}/buckets/current`);
       setNotification({ message: `Failed to delete message: ${error.message || 'Unknown error'}`, type: 'error' });
     }
   };
@@ -1672,93 +1720,78 @@ export function Chat() {
       return;
     }
 
-    // STRATEGY 2: Eliminate onSnapshot for message history (Pagination-Based Fetches)
-    // STRATEGY 3: Message Compaction - Read from the parent document's `messages` array if available
-    const fetchSessionData = async () => {
+    // OPTIMIZATION: Real-time Message Bucket Sync (The "Message Bucket" Trick)
+    // Listen to a single "current" bucket document instead of a whole collection or metadata doc.
+    const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
+
+    const unsubscribe = onSnapshot(bucketRef, async (docSnap) => {
       try {
         let msgs: Message[] = [];
         
-        // 1. Check if the messages are compacted into the single parent document
-        const chatDocSnap = await getDoc(doc(dbChat, `chats/${chatId}`));
-        const chatData = chatDocSnap.data();
-        
-        if (chatDocSnap.exists() && chatData?.messages && Array.isArray(chatData.messages)) {
-          // MIGRATION / OPTIMIZED: The entire chat log costs exactly 1 read!
-          msgs = chatData.messages.map((m: any) => ({
-            ...m,
-            createdAt: m.createdAt?.toDate ? m.createdAt : { toDate: () => new Date(m.createdAt || Date.now()) }
-          })) as Message[];
-        } else {
-          // FALLBACK / TRANSITION: Read from the old subcollection, but use getDocs() (no listeners)
-          const messagesRef = collection(dbChat, `chats/${chatId}/messages`);
-          const mq = query(messagesRef, orderBy('createdAt', 'desc'), limit(50));
-          const snapshot = await getDocs(mq);
+        if (docSnap.exists()) {
+          const bucketData = docSnap.data();
+          const bucketMessages = (bucketData.messages || []) as any[];
           
-          const seenIds = new Set<string>();
-          snapshot.docs.forEach((doc) => {
-            if (seenIds.has(doc.id)) return;
-            seenIds.add(doc.id);
-            const data = doc.data();
-            msgs.push({
-              id: doc.id, 
-              ...data,
-              createdAt: data.createdAt?.toDate ? data.createdAt : { toDate: () => new Date(data.createdAt || Date.now()) }
-            } as Message);
-          });
-          // Sort ascending!
-          msgs.sort((a, b) => {
-            const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-            const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-            return timeA - timeB;
-          });
+          msgs = bucketMessages.map(m => ({
+            ...m,
+            createdAt: typeof m.createdAt === 'string' ? { toDate: () => new Date(m.createdAt) } : m.createdAt
+          }));
+        } else {
+          // MIGRATION / FALLBACK: Check if messages are in the parent document's `messages` array
+          const chatDocSnap = await getDoc(doc(dbChat, `chats/${chatId}`));
+          const chatData = chatDocSnap.data();
+          
+          if (chatDocSnap.exists() && chatData?.messages && Array.isArray(chatData.messages)) {
+            msgs = chatData.messages.map((m: any) => ({
+              ...m,
+              createdAt: m.createdAt?.toDate ? m.createdAt : { toDate: () => new Date(m.createdAt || Date.now()) }
+            }));
+          }
         }
-      
+
+        // Apply local merging for pending messages
         const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-        const merged = [...msgs];
-        const seenLocalIds = new Set(msgs.map(m => m.id));
-        
+        const mergedMessages = [...msgs];
+        const seenRemoteIds = new Set(msgs.map(m => m.id));
+
         localMsgs.forEach((lm: any) => {
           const isSynced = msgs.some(fm => 
             fm.id === lm.id || 
             (fm.role === lm.role && fm.content === lm.content && Math.abs(new Date(fm.createdAt?.toDate ? fm.createdAt.toDate() : fm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
           );
 
-          if (!isSynced && !seenLocalIds.has(lm.id)) {
-            merged.push({
+          if (!isSynced && !seenRemoteIds.has(lm.id)) {
+            mergedMessages.push({
               ...lm,
               createdAt: { toDate: () => new Date(lm.createdAt) }
             });
-            seenLocalIds.add(lm.id);
+            seenRemoteIds.add(lm.id);
           }
         });
-        
-        setMessages(merged.sort((a, b) => {
+
+        // Sort ascending
+        const sorted = mergedMessages.sort((a, b) => {
           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
           return dateA.getTime() - dateB.getTime();
-        }));
+        });
+
+        setMessages(sorted);
         setLoading(false);
-      } catch (error: any) {
-        console.error("fetchSessionData error:", error);
-        if (error?.message?.includes('Quota limit exceeded') || error?.code === 'resource-exhausted') {
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } catch (err: any) {
+        if (isQuotaError(err)) {
           setIsLocalMode(true);
-          const localMsgs = JSON.parse(localStorage.getItem(`chat_${chatId}`) || '[]');
-          setMessages(localMsgs.map((lm: any) => ({
-            ...lm,
-            createdAt: { toDate: () => new Date(lm.createdAt) }
-          })));
-          setLoading(false);
         } else {
-          handleFirestoreError(error, OperationType.LIST, `chats/${chatId}/messages`);
+          console.error("Bucket sync error:", err);
         }
       }
-    };
+    }, (error) => {
+      console.error("Chat bucket sync error:", error);
+      if (isQuotaError(error)) setIsLocalMode(true);
+    });
 
-    fetchSessionData();
-
-    return () => {
-      // Nothing to unsubscribe anymore because we use one-time fetches (Strategy 2)
-    };
+    return () => unsubscribe();
   }, [chatId, isLocalMode]);
 
   const getCurrentPersona = () => {
@@ -1962,15 +1995,21 @@ export function Chat() {
     // Firestore sync (only if not local mode)
     if (!isLocalMode && !chatId.startsWith('local_chat_')) {
       try {
-        // STRATEGY 3: Append message to single document array in one write
+        // Optimization: Use Message Buckets to save reads
+        const bucketRef = doc(dbChat, `chats/${chatId}/buckets`, 'current');
         const msgToAppend = {
           ...newUserMessage,
           replyToId: currentReplyTo?.id || null,
           replyToContent: currentReplyTo?.content || null,
           createdAt: new Date().toISOString()
         };
-        await updateDoc(doc(dbChat, 'chats', chatId), {
+
+        await setDoc(bucketRef, {
           messages: arrayUnion(msgToAppend),
+          lastUpdatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await updateDoc(doc(dbChat, 'chats', chatId), {
           updatedAt: serverTimestamp()
         });
       } catch (e: any) {
@@ -1979,7 +2018,7 @@ export function Chat() {
           setIsLocalMode(true);
           setMessages(prev => [...prev, newUserMessage as Message]);
         } else {
-          console.error("Failed to save message to Firestore:", e);
+          console.error("Failed to save message to Firestore Bucket:", e);
         }
       }
     } else {

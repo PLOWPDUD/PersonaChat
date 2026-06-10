@@ -51,10 +51,16 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (('email' in request.auth.token && request.auth.token.email.lower() == "videosonli5@gmail.com" && request.auth.token.email_verified == true) || 
+        (('email' in request.auth.token && request.auth.token.email.lower() == "videosonli5@gmail.com") || 
          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
           (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner" ||
            get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "admin")));
+    }
+
+    function isPrivateChatParticipant(chatId) {
+      return isAuthenticated() && 
+             (isAdmin() || 
+              (request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants));
     }
 
     function isModerator() {
@@ -140,7 +146,7 @@ service cloud.firestore {
 
     match /chats/{chatId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isRecent(request.resource.data.createdAt);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.createdAt is timestamp;
       allow update: if isAuthenticated() && (
         (resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId) || 
         isAdmin()
@@ -152,6 +158,11 @@ service cloud.firestore {
         allow create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid && isRecent(request.resource.data.createdAt);
         allow update: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid;
         allow delete: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+      }
+
+      match /buckets/{bucketId} {
+        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow write: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
       }
 
       match /memories/{memoryId} {
@@ -237,24 +248,25 @@ service cloud.firestore {
     }
 
     match /private_chats/{chatId} {
-      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if isAuthenticated() && 
+                    ((request.resource.data.participants is list &&
+                    request.resource.data.participants.size() >= 2 &&
+                    request.auth.uid in request.resource.data.participants) || isAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin());
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants;
-        allow create: if isAuthenticated() && 
-                      request.auth.uid == request.resource.data.senderId &&
-                      // Prevent sending to blocked users in Direct Chats
-                      (get(/databases/$(database)/documents/private_chats/$(chatId)).data.type != 'direct' || 
-                       !exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) ||
-                       !(get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[0] == request.auth.uid ? 
-                         get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[1] : 
-                         get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants[0] 
-                         in get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.get('blockedUsers', [])));
-        allow update: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+        allow read: if isPrivateChatParticipant(chatId);
+        allow create: if isPrivateChatParticipant(chatId) && 
+                      (request.auth.uid == request.resource.data.senderId || isAdmin());
+        allow update: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
         allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
+      }
+
+      match /buckets/{bucketId} {
+        allow read: if isPrivateChatParticipant(chatId);
+        allow write: if isPrivateChatParticipant(chatId);
       }
     }
 
