@@ -381,7 +381,7 @@ export function Chat() {
           characterId: targetCharId,
           score: userRating,
           review: userReview.trim() || null,
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         });
         
         const newCount = (targetChar.ratingCount || 0) + 1;
@@ -423,7 +423,7 @@ export function Chat() {
         type: 'character',
         reason: reportReason.trim(),
         status: 'pending',
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp()
       });
       setIsReportModalOpen(false);
       setReportReason('');
@@ -470,7 +470,7 @@ export function Chat() {
         characterAvatarUrl: primaryChar.avatarUrl,
         creatorName: primaryChar.creatorName || 'Unknown',
         creatorId: primaryChar.creatorId || null,
-        createdAt: new Date().toISOString(),
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${characters.length > 1 ? 'Group' : primaryChar.name}`
       };
@@ -480,7 +480,7 @@ export function Chat() {
         role: 'model',
         characterId: primaryChar.id,
         content: primaryChar.greeting,
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp()
       };
 
       try {
@@ -527,14 +527,14 @@ export function Chat() {
     
     setIsClearing(true);
     try {
-      const initialMessage = {
-        chatId,
-        role: 'model',
-        characterId: primaryChar.id,
-        content: primaryChar.greeting,
-        createdAt: new Date().toISOString(),
-        id: crypto.randomUUID()
-      };
+        const initialMessage = {
+          chatId,
+          role: 'model',
+          characterId: primaryChar.id,
+          content: primaryChar.greeting,
+          createdAt: serverTimestamp(),
+          id: crypto.randomUUID()
+        };
 
       // STRATEGY 3: To clear history, we reset the messages array for exactly 1 write
       await updateDoc(doc(dbChat, `chats/${chatId}`), {
@@ -601,7 +601,7 @@ export function Chat() {
             role: 'model' as const,
             characterId: msg.charId || characters[0].id,
             content: msg.content,
-            createdAt: new Date().toISOString(),
+            createdAt: serverTimestamp(),
             sequenceIndex: i // Added for strict ordering within the same second
         };
 
@@ -834,7 +834,7 @@ export function Chat() {
         const bucketSnap = await getDoc(bucketRef);
         if (bucketSnap.exists()) {
           const messagesArr = (bucketSnap.data().messages || []) as any[];
-          const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() } : m);
+          const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: serverTimestamp() } : m);
           await updateDoc(bucketRef, { messages: updatedMessages });
         } else {
           // Fallback to parent doc
@@ -842,7 +842,7 @@ export function Chat() {
           const chatSnap = await getDoc(chatRef);
           if (chatSnap.exists()) {
             const messagesArr = (chatSnap.data().messages || []) as any[];
-            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: new Date().toISOString() } : m);
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: newContent.trim(), updatedAt: serverTimestamp() } : m);
             await updateDoc(chatRef, { messages: updatedMessages });
           }
         }
@@ -1034,7 +1034,7 @@ export function Chat() {
           const bucketSnap = await getDoc(bucketRef);
           if (bucketSnap.exists()) {
             const messagesArr = (bucketSnap.data().messages || []) as any[];
-            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: new Date().toISOString() } : m);
+            const updatedMessages = messagesArr.map(m => m.id === messageId ? { ...m, content: fullAiResponse, updatedAt: serverTimestamp() } : m);
             await updateDoc(bucketRef, { messages: updatedMessages });
           }
         }
@@ -1278,7 +1278,7 @@ export function Chat() {
         characterAvatarUrl: char.avatarUrl,
         creatorName: char.creatorName || 'Unknown',
         creatorId: char.creatorId || null,
-        createdAt: new Date().toISOString(),
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         title: `Chat with ${char.name}`
       };
@@ -1288,7 +1288,7 @@ export function Chat() {
         role: 'model',
         characterId: char.id,
         content: char.greeting,
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp()
       };
 
       // STRATEGY 3: Store initial message in the parent document array in one write
@@ -1317,7 +1317,7 @@ export function Chat() {
       const memoryObj = {
         chatId,
         content: newMemory.trim(),
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp()
       };
       
       if (isLocalMode || chatId.startsWith('local_chat_')) {
@@ -1330,7 +1330,7 @@ export function Chat() {
         await addDoc(collection(dbChat, `chats/${chatId}/memories`), {
           chatId,
           content: newMemory.trim(),
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         });
       }
       setNewMemory('');
@@ -1581,7 +1581,7 @@ export function Chat() {
                 characterName: primaryChar.name,
                 characterAvatarUrl: primaryChar.avatarUrl,
                 creatorName: primaryChar.creatorName || 'Unknown',
-                createdAt: new Date().toISOString(),
+                createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 title: `Chat with ${primaryChar.name}`
               };
@@ -1591,7 +1591,7 @@ export function Chat() {
                 role: 'model',
                 characterId: primaryChar.id,
                 content: primaryChar.greeting,
-                createdAt: new Date().toISOString()
+                createdAt: serverTimestamp()
               };
 
               try {
@@ -2001,7 +2001,7 @@ export function Chat() {
           ...newUserMessage,
           replyToId: currentReplyTo?.id || null,
           replyToContent: currentReplyTo?.content || null,
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         };
 
         await setDoc(bucketRef, {
