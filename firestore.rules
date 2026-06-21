@@ -53,21 +53,18 @@ service cloud.firestore {
       return isAuthenticated() &&
         (('email' in request.auth.token && request.auth.token.email.lower() == "videosonli5@gmail.com") || 
          (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
-          (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "owner" ||
-           get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "admin")));
+          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role in ['owner', 'admin']));
     }
 
     function isPrivateChatParticipant(chatId) {
       return isAuthenticated() && 
-             (isAdmin() || 
-              (request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants));
+             ((request.auth.uid in get(/databases/$(database)/documents/private_chats/$(chatId)).data.participants) || isAdmin());
     }
 
     function isModerator() {
       return isAuthenticated() && 
-        (isAdmin() || 
-         (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator"));
+        (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == "moderator") || isAdmin();
     }
 
     function isValidRating(data) {
@@ -154,15 +151,15 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
-        allow create: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid) && isRecent(request.resource.data.createdAt);
-        allow update: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
-        allow delete: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
+        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow create: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin()) && isRecent(request.resource.data.createdAt);
+        allow update: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow delete: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
       }
 
       match /buckets/{bucketId} {
-        allow read: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
-        allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid);
+        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow write: if isAuthenticated() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || isAdmin());
       }
 
       match /memories/{memoryId} {

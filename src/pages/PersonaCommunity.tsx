@@ -331,7 +331,11 @@ export default function PersonaCommunity() {
 
   // Fetch user likes and saves - Optimized to reduce reads
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setUserLikes(new Set());
+      setUserSaves(new Set());
+      return;
+    }
 
     const fetchUserInteractions = async () => {
       try {
@@ -346,7 +350,7 @@ export default function PersonaCommunity() {
           setCachedUserSaves(savesSet);
         }
 
-        // Fetch likes - Check if we have a global set of liked post IDs
+        // Fetch likes
         const cachedLikes = getCachedUserLikes();
         if (cachedLikes) {
           setUserLikes(cachedLikes);
@@ -368,7 +372,7 @@ export default function PersonaCommunity() {
     };
     
     fetchUserInteractions();
-  }, [user, posts.length]);
+  }, [user]);
 
   const fetchMorePosts = async () => {
     if (!hasMore || isFetchingMore || !lastVisible) return;
