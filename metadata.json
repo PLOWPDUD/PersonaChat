@@ -1,5 +1,6 @@
 {
   "name": "PersonaChat",
   "description": "A Character.ai-like app where users can create and chat with AI personalities.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

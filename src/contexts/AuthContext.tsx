@@ -137,10 +137,224 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Handle Google Redirect result
-    getRedirectResult(auth).catch((error) => {
-      console.error("Error handling redirect result:", error);
-    });
+    let isMounted = true;
+    let unsubscribe: (() => void) | null = null;
+
+    const initializeAuth = async () => {
+      try {
+        // First, check if we are returning from a redirect
+        await getRedirectResult(auth);
+      } catch (error) {
+        console.error("Error handling redirect result:", error);
+      }
+
+      if (!isMounted) return;
+
+      // Then, set up the auth state listener
+      unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        if (!isMounted) return;
+        
+        setUser(currentUser);
+        
+        if (currentUser) {
+          const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
+          
+          if (currentUser?.email === 'videosonli5@gmail.com') {
+            setRoles({ isOwner: true, isModerator: true });
+          }
+
+          // Use the latest profile if available to avoid unnecessary loading
+          if (profileRef.current && profileRef.current.uid === currentUser.uid) {
+            setLoading(false);
+          }
+
+          const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
+          const now = Date.now();
+          const syncThreshold = currentUser.isAnonymous ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
+          
+          if (lastSync && (now - parseInt(lastSync)) < syncThreshold) {
+            setLoading(false);
+            return;
+          }
+
+          if (isSyncing.current || (quotaExceededRef.current && !profileRef.current)) {
+            setLoading(false);
+            return;
+          }
+
+          isSyncing.current = true;
+
+          // Process profile sync
+          try {
+            const profileRef = doc(db, 'profiles', currentUser.uid);
+            const profileSnap = await getDoc(profileRef);
+            
+            if (!isMounted) return;
+
+            const fallBackName = currentUser.isAnonymous 
+              ? `Guest ${currentUser.uid.slice(0, 5)}` 
+              : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
+
+            const profileData = {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
+              photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
+              email: currentUser.email || googleProviderData?.email || '',
+              updatedAt: serverTimestamp()
+            };
+
+            if (!profileSnap.exists()) {
+              const newProfile = {
+                ...profileData,
+                displayName_lowercase: profileData.displayName.toLowerCase(),
+                createdAt: serverTimestamp(),
+                role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
+                hasSeenRules: false,
+                isCounted: true,
+                blockedUsers: []
+              };
+              await setDoc(profileRef, newProfile);
+              
+              if (isMounted) {
+                const localProfile = { ...newProfile, updatedAt: new Date(), createdAt: new Date() };
+                setProfile(localProfile);
+                localStorage.setItem('cached_profile', JSON.stringify(localProfile));
+                
+                const newRoles = {
+                  isOwner: currentUser.email === 'videosonli5@gmail.com',
+                  isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin' || newProfile.role === 'moderator'
+                };
+                setRoles(newRoles);
+                sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
+              }
+
+              try {
+                const statsRef = doc(db, 'siteStats', 'global');
+                await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
+              } catch (statsErr) {
+                console.warn("Failed to increment user count:", statsErr);
+              }
+            } else {
+              const data = profileSnap.data();
+              const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid || !data.blockedUsers;
+              const needsCount = !data.isCounted && !currentUser.isAnonymous;
+              const isGenericName = data.displayName === 'Anonymous User' || data.displayName === 'Persona User' || data.displayName.startsWith('Guest ');
+              const hasGoogleNameNow = currentUser.displayName && isGenericName;
+              
+              const hasChanged = hasGoogleNameNow || 
+                                 (currentUser.displayName && data.displayName !== currentUser.displayName) || 
+                                 (currentUser.photoURL && data.photoURL !== currentUser.photoURL) ||
+                                 (currentUser.email && data.email !== currentUser.email) ||
+                                 needsCount;
+
+              const isOwnerEmail = currentUser.email === 'videosonli5@gmail.com';
+              const needsRoleUpgrade = isOwnerEmail && data.role !== 'owner' && data.role !== 'admin';
+
+              if (needsUpdate || hasChanged || needsRoleUpgrade) {
+                const updates: any = {
+                  uid: data.uid || profileData.uid,
+                  displayName: currentUser.displayName || data.displayName || fallBackName,
+                  displayName_lowercase: (currentUser.displayName || data.displayName || fallBackName).toLowerCase(),
+                  photoURL: currentUser.photoURL || data.photoURL || '',
+                  email: data.email || currentUser.email || '',
+                  updatedAt: serverTimestamp()
+                };
+                if (!data.createdAt) updates.createdAt = serverTimestamp();
+                if (needsRoleUpgrade) updates.role = 'owner';
+                if (needsCount) updates.isCounted = true;
+                if (!data.blockedUsers) updates.blockedUsers = [];
+                
+                await updateDoc(profileRef, updates);
+                
+                if (needsCount) {
+                  try {
+                    const statsRef = doc(db, 'siteStats', 'global');
+                    await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
+                  } catch (statsErr) {
+                    console.warn("Failed to increment user count:", statsErr);
+                  }
+                }
+
+                if (isMounted) {
+                  const updatedProfile = { ...data, ...updates, updatedAt: new Date() };
+                  setProfile(updatedProfile);
+                  localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
+                }
+              } else {
+                if (isMounted) {
+                  setProfile(data);
+                  localStorage.setItem('cached_profile', JSON.stringify(data));
+                }
+              }
+
+              if (isMounted) {
+                const newRoles = {
+                  isOwner: currentUser.email === 'videosonli5@gmail.com',
+                  isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin' || data.role === 'moderator'
+                };
+                setRoles(newRoles);
+                sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
+              }
+            }
+
+            localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
+            checkAndAwardBadges(currentUser.uid);
+
+          } catch (error: any) {
+            if (isQuotaError(error)) {
+              setQuotaExceeded(true);
+              localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
+              
+              if (isMounted && !profileRef.current) {
+                const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
+                const fallBackName = currentUser.isAnonymous 
+                  ? `Guest ${currentUser.uid.slice(0, 5)}` 
+                  : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
+
+                const fallbackProfile = {
+                  uid: currentUser.uid,
+                  displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
+                  photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
+                  email: currentUser.email || googleProviderData?.email || '',
+                  role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
+                  hasSeenRules: true,
+                  isLocalFallback: true,
+                  blockedUsers: [],
+                  updatedAt: new Date()
+                };
+
+                setProfile(fallbackProfile);
+                localStorage.setItem('cached_profile', JSON.stringify(fallbackProfile));
+                
+                setRoles({
+                  isOwner: currentUser.email === 'videosonli5@gmail.com',
+                  isModerator: currentUser.email === 'videosonli5@gmail.com'
+                });
+              }
+              console.warn('Firestore Quota Exceeded during profile sync, fell back to cached/local profile.');
+            } else {
+              console.error('Error syncing profile:', error);
+            }
+          } finally {
+            if (isMounted) {
+              isSyncing.current = false;
+              setLoading(false);
+            }
+          }
+        } else {
+          // No user - clear state
+          if (isMounted) {
+            setProfile(null);
+            setRoles({ isOwner: false, isModerator: false });
+            localStorage.removeItem('cached_profile');
+            sessionStorage.removeItem('cached_roles');
+            setLoading(false);
+          }
+        }
+      });
+    };
+
+    initializeAuth();
 
     const trackVisitor = async () => {
       const lastIncrement = localStorage.getItem('last_visitor_increment');
@@ -162,199 +376,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     trackVisitor();
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      
-      if (currentUser) {
-        const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
-        
-        if (currentUser?.email === 'videosonli5@gmail.com') {
-          setRoles({ isOwner: true, isModerator: true });
-        }
-
-        if (profileRef.current && profileRef.current.uid === currentUser.uid) {
-          setLoading(false);
-        }
-
-        const lastSync = localStorage.getItem(`profile_sync_time_${currentUser.uid}`);
-        const now = Date.now();
-        const syncThreshold = currentUser.isAnonymous ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
-        
-        if (lastSync && (now - parseInt(lastSync)) < syncThreshold) {
-          setLoading(false);
-          return;
-        }
-
-        if (isSyncing.current || (quotaExceededRef.current && !profileRef.current)) {
-          setLoading(false);
-          return;
-        }
-
-        isSyncing.current = true;
-
-        const syncTimeout = setTimeout(async () => {
-          try {
-          const profileRef = doc(db, 'profiles', currentUser.uid);
-          const profileSnap = await getDoc(profileRef);
-          
-          const fallBackName = currentUser.isAnonymous 
-            ? `Guest ${currentUser.uid.slice(0, 5)}` 
-            : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
-
-          const profileData = {
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
-            photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
-            email: currentUser.email || googleProviderData?.email || '',
-            updatedAt: serverTimestamp()
-          };
-
-          if (!profileSnap.exists()) {
-            const newProfile = {
-              ...profileData,
-              displayName_lowercase: profileData.displayName.toLowerCase(),
-              createdAt: serverTimestamp(),
-              role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
-              hasSeenRules: false,
-              isCounted: true,
-              blockedUsers: []
-            };
-            await setDoc(profileRef, newProfile);
-            
-            const localProfile = { ...newProfile, updatedAt: new Date(), createdAt: new Date() };
-            setProfile(localProfile);
-            localStorage.setItem('cached_profile', JSON.stringify(localProfile));
-            
-            const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com',
-              isModerator: currentUser.email === 'videosonli5@gmail.com' || newProfile.role === 'owner' || newProfile.role === 'admin' || newProfile.role === 'moderator'
-            };
-            setRoles(newRoles);
-            sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
-
-            try {
-              const statsRef = doc(db, 'siteStats', 'global');
-              await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
-            } catch (statsErr) {
-              console.warn("Failed to increment user count:", statsErr);
-            }
-          } else {
-            const data = profileSnap.data();
-            const needsUpdate = !data.displayName_lowercase || !data.email || !data.createdAt || !data.displayName || !data.uid || !data.blockedUsers;
-            const needsCount = !data.isCounted && !currentUser.isAnonymous;
-            const isGenericName = data.displayName === 'Anonymous User' || data.displayName === 'Persona User' || data.displayName.startsWith('Guest ');
-            const hasGoogleNameNow = currentUser.displayName && isGenericName;
-            
-            const hasChanged = hasGoogleNameNow || 
-                               (currentUser.displayName && data.displayName !== currentUser.displayName) || 
-                               (currentUser.photoURL && data.photoURL !== currentUser.photoURL) ||
-                               (currentUser.email && data.email !== currentUser.email) ||
-                               needsCount;
-
-            const isOwnerEmail = currentUser.email === 'videosonli5@gmail.com';
-            const needsRoleUpgrade = isOwnerEmail && data.role !== 'owner' && data.role !== 'admin';
-
-            if (needsUpdate || hasChanged || needsRoleUpgrade) {
-              const updates: any = {
-                uid: data.uid || profileData.uid,
-                displayName: currentUser.displayName || data.displayName || fallBackName,
-                displayName_lowercase: (currentUser.displayName || data.displayName || fallBackName).toLowerCase(),
-                photoURL: currentUser.photoURL || data.photoURL || '',
-                email: data.email || currentUser.email || '',
-                updatedAt: serverTimestamp()
-              };
-              if (!data.createdAt) updates.createdAt = serverTimestamp();
-              if (needsRoleUpgrade) updates.role = 'owner';
-              if (needsCount) updates.isCounted = true;
-              if (!data.blockedUsers) updates.blockedUsers = [];
-              
-              await updateDoc(profileRef, updates);
-              
-              if (needsCount) {
-                try {
-                  const statsRef = doc(db, 'siteStats', 'global');
-                  await setDoc(statsRef, { userCount: increment(1) }, { merge: true });
-                } catch (statsErr) {
-                  console.warn("Failed to increment user count:", statsErr);
-                }
-              }
-
-              const updatedProfile = { ...data, ...updates, updatedAt: new Date() };
-              setProfile(updatedProfile);
-              localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
-            } else {
-              setProfile(data);
-              localStorage.setItem('cached_profile', JSON.stringify(data));
-            }
-
-            const newRoles = {
-              isOwner: currentUser.email === 'videosonli5@gmail.com',
-              isModerator: currentUser.email === 'videosonli5@gmail.com' || data.role === 'owner' || data.role === 'admin' || data.role === 'moderator'
-            };
-            setRoles(newRoles);
-            sessionStorage.setItem('cached_roles', JSON.stringify(newRoles));
-          }
-
-          localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
-          checkAndAwardBadges(currentUser.uid);
-
-        } catch (error: any) {
-          if (isQuotaError(error)) {
-            setQuotaExceeded(true);
-            
-            // Set sync fallback time so we don't spam requests when quota is exceeded
-            localStorage.setItem(`profile_sync_time_${currentUser.uid}`, Date.now().toString());
-            
-            // If we don't have a profile yet, build a local fallback profile from currentUser
-            if (!profileRef.current) {
-              const googleProviderData = currentUser.providerData.find(p => p.providerId === 'google.com');
-              const fallBackName = currentUser.isAnonymous 
-                ? `Guest ${currentUser.uid.slice(0, 5)}` 
-                : (currentUser.email ? currentUser.email.split('@')[0] : 'Persona User');
-
-              const fallbackProfile = {
-                uid: currentUser.uid,
-                displayName: currentUser.displayName || googleProviderData?.displayName || fallBackName,
-                photoURL: currentUser.photoURL || googleProviderData?.photoURL || '',
-                email: currentUser.email || googleProviderData?.email || '',
-                role: currentUser.email === 'videosonli5@gmail.com' ? 'owner' : 'user',
-                hasSeenRules: true,
-                isLocalFallback: true,
-                blockedUsers: [],
-                updatedAt: new Date()
-              };
-
-              setProfile(fallbackProfile);
-              localStorage.setItem('cached_profile', JSON.stringify(fallbackProfile));
-              
-              setRoles({
-                isOwner: currentUser.email === 'videosonli5@gmail.com',
-                isModerator: currentUser.email === 'videosonli5@gmail.com'
-              });
-            }
-            console.warn('Firestore Quota Exceeded during profile sync, fell back to cached/local profile.');
-          } else {
-            console.error('Error syncing profile:', error);
-          }
-        } finally {
-          isSyncing.current = false;
-        }
-      }, 1500);
-
-      return () => clearTimeout(syncTimeout);
-    } else {
-        setProfile(null);
-        setRoles({ isOwner: false, isModerator: false });
-        localStorage.removeItem('cached_profile');
-        sessionStorage.removeItem('cached_roles');
-      }
-      
-      setTimeout(() => {
-        setLoading(false);
-      }, 200);
-    });
-
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   return (

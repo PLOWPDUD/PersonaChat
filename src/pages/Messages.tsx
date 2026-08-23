@@ -9,7 +9,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { addNotification } from '../lib/gamification';
 import { playSound } from '../lib/sounds';
-import { GoogleGenAI } from '@google/genai';
 import { moderateImage } from '../services/aiService';
 import { getCachedProfile, setCachedProfile } from '../lib/cache';
 import { getChatTheme, CHAT_THEMES } from '../lib/chatThemes';
@@ -95,9 +94,6 @@ export default function Messages() {
   const quotaExceeded = localQuotaExceeded || (typeof (useAuth() as any).quotaExceeded === 'boolean' ? (useAuth() as any).quotaExceeded : false);
 
   const isBlocked = (targetId: string) => profile?.blockedUsers?.includes(targetId);
-
-  // Initialize Gemini
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   useEffect(() => {
     if (!user) return;
@@ -630,11 +626,13 @@ export default function Messages() {
         ${instructionsText}
       `;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt
+      const response = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, model: "gemini-3-flash-preview" }),
       });
-      const responseText = result.text;
+      const data = await response.json();
+      const responseText = data.text || '';
 
       // Ensure that the conversation is still active when we write
       if (activeChat.id !== chatId) return;

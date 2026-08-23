@@ -11,7 +11,7 @@ import { checkAndAwardBadges } from '../services/badgeService';
 import { addNotification } from '../lib/gamification';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile, ChevronDown, UserCheck, UserX, Palette } from 'lucide-react';
+import { Send, User, Bot, ArrowLeft, Loader2, Trash2, Edit2, Check, X, RefreshCw, MoreVertical, BookOpen, MessageSquare, Plus, History, ChevronRight, Star, Flag, Image as ImageIcon, AlertCircle, UserPlus, Search, Reply, Smile, ChevronDown, UserCheck, UserX, Palette, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { playSound } from '../lib/sounds';
 import { getChatTheme, CHAT_THEMES } from '../lib/chatThemes';
@@ -109,6 +109,7 @@ export function Chat() {
   const [streamingText, setStreamingText] = useState('');
   const [streamingCharId, setStreamingCharId] = useState<string | null>(null);
   const [selectedRatingCharId, setSelectedRatingCharId] = useState<string | null>(null);
+  const [isStopRequested, setIsStopRequested] = useState(false);
 
   const quotaExceeded = globalQuotaExceeded || localQuotaExceeded;
 
@@ -194,6 +195,8 @@ export function Chat() {
   const personaDropdownRef = useRef<HTMLDivElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isStopRequestedRef = useRef(false);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -771,6 +774,9 @@ export function Chat() {
     let detectedCharId: string | null = initialTargetCharId;
 
     for await (const chunk of stream) {
+      if (isStopRequestedRef.current) {
+        break;
+      }
       fullAiResponse += chunk;
       
       let displayText = fullAiResponse;
@@ -814,6 +820,13 @@ export function Chat() {
     return finalCleanText;
   };
 
+  const handleStopGeneration = () => {
+    isStopRequestedRef.current = true;
+    setIsStopRequested(true);
+    setIsTyping(false);
+    setIsRegenerating(false);
+  };
+
   const handleEditMessage = async (messageId: string, newContent: string) => {
     if (!chatId || !newContent.trim() || characters.length === 0 || !user) return;
     
@@ -852,6 +865,8 @@ export function Chat() {
 
       // 2. If it's a user message, we should regenerate the AI response
       if (isUserMessage) {
+        isStopRequestedRef.current = false;
+        setIsStopRequested(false);
         setIsTyping(true);
         
         // Delete subsequent messages to "rewind" the conversation
@@ -982,6 +997,8 @@ export function Chat() {
 
     if (messages[messageIndex].role !== 'model') return;
 
+    isStopRequestedRef.current = false;
+    setIsStopRequested(false);
     setIsRegenerating(true);
     setIsTyping(true);
 
@@ -1133,6 +1150,8 @@ export function Chat() {
   const handleSkipResponse = async () => {
     if (!chatId || characters.length === 0 || isTyping || isRegenerating) return;
 
+    isStopRequestedRef.current = false;
+    setIsStopRequested(false);
     setIsRegenerating(true);
     setIsTyping(true);
 
@@ -1881,21 +1900,61 @@ export function Chat() {
   async function checkAndTriggerBotMentions(aiResponseText: string, senderCharId: string | null, depth = 0) {
     if (depth >= 3 || characters.length <= 1 || !chatId) return;
     
+    // Clean headers like "Alice:" or "Bob:" from the text first to avoid self-triggering and header-name false positives
+    let cleanTextOnly = aiResponseText;
+    characters.forEach(char => {
+      const escapedName = char.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      // Replace name prefix (e.g. "Alice:")
+      const headerRegex = new RegExp(`(^|\\n)\\s*${escapedName}\\s*:`, 'gi');
+      cleanTextOnly = cleanTextOnly.replace(headerRegex, '$1');
+      
+      const firstWord = char.name.split(' ')[0];
+      if (firstWord && firstWord.length > 2) {
+        const escapedFirst = firstWord.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const firstHeaderRegex = new RegExp(`(^|\\n)\\s*${escapedFirst}\\s*:`, 'gi');
+        cleanTextOnly = cleanTextOnly.replace(firstHeaderRegex, '$1');
+      }
+    });
+
+    // Helper to extract mentionable names for a character and prevent substring false positives
+    const getMentionableNames = (name: string): string[] => {
+      const names: string[] = [name.toLowerCase()];
+      const parts = name.split(/\s+/).map(p => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const firstLower = parts[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        const commonTitles = ['dr', 'mr', 'mrs', 'ms', 'prof', 'sir', 'madam', 'lady', 'lord', 'agent', 'officer', 'capt', 'captain', 'detective'];
+        if (commonTitles.includes(firstLower) || firstLower.length <= 2) {
+          if (parts[1]) names.push(parts[1].toLowerCase());
+        } else {
+          names.push(parts[0].toLowerCase());
+        }
+      }
+      return names;
+    };
+
+    const isMentioned = (text: string, nameToMatch: string): boolean => {
+      const escapedName = nameToMatch.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      // Matches @Name or Name as whole word
+      const regex = new RegExp(`(?:@|\\b)${escapedName}\\b`, 'i');
+      return regex.test(text);
+    };
+
     // Find if any other character in the group chat is mentioned
     for (const char of characters) {
       if (char.id === senderCharId) continue;
       
-      const hasMention = aiResponseText.toLowerCase().includes(`@${char.name.toLowerCase()}`) ||
-                         aiResponseText.toLowerCase().includes(char.name.toLowerCase()) ||
-                         aiResponseText.toLowerCase().includes(char.name.split(' ')[0].toLowerCase());
+      const namesToCheck = getMentionableNames(char.name);
+      const hasMention = namesToCheck.some(name => isMentioned(cleanTextOnly, name));
                          
       if (hasMention) {
         console.log(`Character ${char.name} was mentioned! Triggering response (depth: ${depth})...`);
         
         // 1.5 seconds delay for realistic pacing
         setTimeout(() => {
-          triggerAutoBotResponse(char, depth);
-        }, 1500);
+          if (!isStopRequestedRef.current) {
+            triggerAutoBotResponse(char, depth);
+          }
+        }, 1550);
         
         break; // Only trigger one mentioned bot at a time to prevent absolute chaos
       }
@@ -1903,7 +1962,7 @@ export function Chat() {
   }
 
   async function triggerAutoBotResponse(targetChar: Character, depth = 0) {
-    if (!chatId || isTyping || isRegenerating) return;
+    if (!chatId || isTyping || isRegenerating || isStopRequestedRef.current) return;
     
     setIsTyping(true);
     
@@ -1960,14 +2019,38 @@ export function Chat() {
     }
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
+      
+      if (e.shiftKey) {
+        // Shift + Enter always adds a new line
+        return;
+      }
+      
+      if (!isMobile) {
+        // Desktop: Enter sends message (unless shift is held)
+        e.preventDefault();
+        handleSend(e as unknown as React.FormEvent);
+      }
+      // Mobile: Enter just adds a new line (handled by textarea default)
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || !user || !chatId || characters.length === 0 || isTyping) return;
+
+    isStopRequestedRef.current = false;
+    setIsStopRequested(false);
 
     const userMessage = input.trim();
     const userImageUrl = selectedImage;
     setLastInput(userMessage);
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '54px';
+    }
     setSelectedImage(null);
     setIsTyping(true);
 
@@ -3030,7 +3113,20 @@ export function Chat() {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+            <div className="p-4 border-t border-zinc-800 bg-zinc-950/50 relative pii-isolation-safe">
+              {isTyping && (
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <button
+                    type="button"
+                    onClick={handleStopGeneration}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-white rounded-full text-xs font-semibold shadow-xl transition-all active:scale-95 duration-200"
+                    title={t('common.stop', 'Stop generating')}
+                  >
+                    <Square className="w-3 h-3 fill-zinc-300 text-zinc-300" />
+                    {t('common.stopResponse', 'Stop generating')}
+                  </button>
+                </div>
+              )}
               {replyTo && (
                 <div className="mb-3 p-3 bg-zinc-900 border-l-4 border-indigo-500 rounded-lg flex items-start justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="min-w-0">
@@ -3103,24 +3199,42 @@ export function Chat() {
                     <ImageIcon className="w-5 h-5" />
                   </button>
                   <div className="relative flex-1">
-                    <input
-                      type="text"
+                    <textarea
+                      ref={textareaRef}
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                      }}
+                      onKeyDown={handleKeyDown}
                       placeholder={respondingCharacterId 
                         ? t('chat.messageWithName', { name: characters.find(c => c.id === respondingCharacterId)?.name })
                         : t('chat.messagePlaceholderGroup', { name: characters.length > 1 ? t('chat.group') : characters[0]?.name || t('chat.character') })
                       }
                       disabled={isTyping}
-                      className={`w-full rounded-full pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 transition-all disabled:opacity-50 ${chatThemeObj.inputClass}`}
+                      rows={1}
+                      className={`w-full rounded-2xl pl-6 pr-14 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 transition-all disabled:opacity-50 resize-none overflow-y-auto ${chatThemeObj.inputClass}`}
+                      style={{ height: '54px', minHeight: '54px', maxHeight: '160px' }}
                     />
-                    <button
-                      type="submit"
-                      disabled={(!input.trim() && !selectedImage) || isTyping}
-                      className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all disabled:opacity-50 ${chatThemeObj.buttonClass}`}
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
+                    {isTyping ? (
+                      <button
+                        type="button"
+                        onClick={handleStopGeneration}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all bg-red-600 hover:bg-red-500 text-white flex items-center justify-center animate-pulse"
+                        title={t('common.stop', 'Stop generating')}
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current text-white" />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={(!input.trim() && !selectedImage)}
+                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all disabled:opacity-50 ${chatThemeObj.buttonClass}`}
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 

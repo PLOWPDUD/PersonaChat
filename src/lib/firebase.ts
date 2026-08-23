@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, signInAnonymously as firebaseSignInAnonymously } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, signInAnonymously as firebaseSignInAnonymously, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -13,6 +13,12 @@ export const dbChat = db;
 export const dbPrivate = db;
 
 export const auth = getAuth(app);
+
+// Explicitly set persistence to LOCAL
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.error("Auth persistence error:", err);
+});
+
 export const storage = getStorage(app);
 
 // Enable offline persistence
